@@ -10,6 +10,8 @@ brew "shellcheck"
 # Node 버전 관리
 brew "fnm"
 
+# Node LTS + Claude Code는 tools/node.sh 에서 처리
+
 # GitHub CLI
 brew "gh"
 

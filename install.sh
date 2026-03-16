@@ -23,6 +23,7 @@ done
 # Tools
 echo "==> Installing tools..."
 bash "$DOTFILES_DIR/tools/fnm.sh"
+bash "$DOTFILES_DIR/tools/node.sh"
 
 # OS-specific
 if is_macos; then
