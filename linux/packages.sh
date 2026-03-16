@@ -26,3 +26,8 @@ echo "    Installing packages: ${PACKAGES[*]}"
 sudo apt-get install -y "${PACKAGES[@]}"
 
 echo "    Linux packages installed."
+
+# Locale 설정
+echo "    Setting up locale..."
+sudo locale-gen en_US.UTF-8
+sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
