@@ -6,36 +6,24 @@ CLAUDE_CONFIG_DIR="$HOME/.claude"
 
 mkdir -p "$CLAUDE_CONFIG_DIR"
 
-# Link Claude global CLAUDE.md
+# Claude settings.json
+if [[ -f "$DOTFILES_DIR/agents/claude/settings.json" ]]; then
+  ln -sf "$DOTFILES_DIR/agents/claude/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+  echo "    linked settings.json"
+fi
+
+# Claude global CLAUDE.md
 if [[ -f "$DOTFILES_DIR/agents/claude/CLAUDE.md" ]]; then
   ln -sf "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
   echo "    linked CLAUDE.md"
 fi
 
-# Link Claude settings.json
-if [[ -f "$DOTFILES_DIR/agents/claude/settings.json" ]]; then
-  ln -sf "$DOTFILES_DIR/agents/claude/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
-  echo "    linked claude settings.json"
-fi
+# The Agency 서브에이전트 설치
+echo "    Installing subagents (The Agency)..."
+bash "$DOTFILES_DIR/agents/restore-agents.sh"
 
-# Link subagents
-if [[ -d "$DOTFILES_DIR/agents/claude/subagents" ]]; then
-  mkdir -p "$CLAUDE_CONFIG_DIR/agents"
-  for f in "$DOTFILES_DIR/agents/claude/subagents"/*.md; do
-    [[ -f "$f" ]] || continue
-    ln -sf "$f" "$CLAUDE_CONFIG_DIR/agents/$(basename "$f")"
-    echo "    linked subagent: $(basename "$f")"
-  done
-fi
+# npx skills 복원
+echo "    Restoring skills..."
+bash "$DOTFILES_DIR/agents/restore-skills.sh"
 
-# Link skills
-if [[ -d "$DOTFILES_DIR/agents/claude/skills" ]]; then
-  mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-  for f in "$DOTFILES_DIR/agents/claude/skills"/*.md; do
-    [[ -f "$f" ]] || continue
-    ln -sf "$f" "$CLAUDE_CONFIG_DIR/skills/$(basename "$f")"
-    echo "    linked skill: $(basename "$f")"
-  done
-fi
-
-echo "    Agent configs linked."
+echo "    Agent setup complete."

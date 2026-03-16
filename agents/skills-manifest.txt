@@ -1,0 +1,21 @@
+# npx skills 설치 목록 (agents/restore-skills.sh 에서 읽어 설치)
+# 형식: owner/repo@skill-name
+
+# Skills management
+vercel-labs/skills@find-skills
+
+# Example / Creator
+anthropics/skills@skill-creator
+
+# Documents
+anthropics/skills@pdf
+anthropics/skills@pptx
+anthropics/skills@docx
+anthropics/skills@xlsx
+
+# Shell / Bash
+wshobson/agents@bash-defensive-patterns
+wshobson/agents@shellcheck-configuration
+
+# Windows
+sickn33/antigravity-awesome-skills@powershell-windows
