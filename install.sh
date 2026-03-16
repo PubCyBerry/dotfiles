@@ -20,12 +20,7 @@ for file in "$DOTFILES_DIR"/bash/.*; do
   echo "    linked $name"
 done
 
-# Tools
-echo "==> Installing tools..."
-bash "$DOTFILES_DIR/tools/fnm.sh"
-bash "$DOTFILES_DIR/tools/node.sh"
-
-# OS-specific
+# OS-specific (패키지 먼저 - tools 의존성 충족)
 if is_macos; then
   echo "==> Running macOS setup..."
   bash "$DOTFILES_DIR/macos/install.sh"
@@ -33,6 +28,11 @@ elif is_wsl || is_linux; then
   echo "==> Running Linux setup..."
   bash "$DOTFILES_DIR/linux/packages.sh"
 fi
+
+# Tools
+echo "==> Installing tools..."
+bash "$DOTFILES_DIR/tools/fnm.sh"
+bash "$DOTFILES_DIR/tools/node.sh"
 
 # Agents
 echo "==> Linking agent configs..."
