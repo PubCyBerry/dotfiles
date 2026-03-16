@@ -1,0 +1,24 @@
+# ~/.aliases
+
+# Navigation
+alias ..="cd .."
+alias ...="cd ../.."
+alias ~="cd ~"
+
+# List
+alias ls="ls --color=auto"
+alias ll="ls -lhF"
+alias la="ls -lAhF"
+
+# Git
+alias g="git"
+alias gs="git status"
+alias ga="git add"
+alias gc="git commit"
+alias gp="git push"
+alias gl="git log --oneline --graph --decorate"
+
+# Safety
+alias cp="cp -i"
+alias mv="mv -i"
+alias rm="rm -i"
