@@ -1,0 +1,8 @@
+# ~/.gitconfig.local
+# 이 파일은 dotfiles repo에 포함되지 않습니다 (.gitignore 처리됨).
+# 복사 후 본인 정보로 수정하세요:
+#   cp ~/dotfiles/bash/.gitconfig.local.example ~/.gitconfig.local
+
+[user]
+  name = Your Name
+  email = your@email.com

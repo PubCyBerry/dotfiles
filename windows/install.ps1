@@ -5,7 +5,14 @@ $packages = @(
     "Git.Git",
     "GitHub.cli",
     "Schniz.fnm",
-    "Microsoft.WindowsTerminal"
+    "Microsoft.WindowsTerminal",
+    # Modern CLI
+    "sharkdp.bat",
+    "junegunn.fzf",
+    "eza-community.eza",
+    "sharkdp.fd",
+    "dandavison.delta",
+    "BurntSushi.ripgrep.MSVC"
 )
 
 Write-Host "==> Installing packages via winget..."

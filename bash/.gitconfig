@@ -1,0 +1,43 @@
+# Shared git configuration
+# 머신별 설정(user.name, user.email 등)은 ~/.gitconfig.local에 작성
+# (bash/.gitconfig.local.example 참고)
+
+[include]
+  path = ~/.gitconfig.local
+
+[core]
+  autocrlf = input
+  editor = vim
+  pager = delta
+  excludesfile = ~/.gitignore_global
+
+[delta]
+  navigate = true
+  side-by-side = true
+  line-numbers = true
+
+[interactive]
+  diffFilter = delta --color-only
+
+[merge]
+  conflictstyle = diff3
+
+[diff]
+  colorMoved = default
+
+[pull]
+  rebase = false
+
+[push]
+  default = current
+
+[init]
+  defaultBranch = main
+
+[alias]
+  st   = status -sb
+  co   = checkout
+  br   = branch
+  lg   = log --oneline --graph --decorate --all
+  last = log -1 HEAD
+  undo = reset --soft HEAD~1
