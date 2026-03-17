@@ -180,7 +180,54 @@ delta file1 file2
 | 파일 | 위치 | 내용 |
 |------|------|------|
 | `agents/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 Claude 행동 설정 |
-| `agents/claude/settings.json` | `~/.claude/settings.json` | Claude Code 설정 |
+| `agents/claude/settings.json` | `~/.claude/settings.json` | Claude Code 설정 (플러그인, MCP, statusLine 포함) |
+
+### 플러그인
+
+Claude Code 플러그인은 `settings.json`의 `enabledPlugins`로 관리된다.
+`agents/setup.sh`로 settings.json을 링크하면 활성화 목록은 자동 복원되지만,
+**플러그인 파일 자체는 Claude Code 내에서 별도 설치 필요:**
+
+```
+/plugin   # 플러그인 마켓에서 superpowers, context7 검색 후 설치
+```
+
+| 플러그인 | 설명 |
+|----------|------|
+| `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
+| `context7@claude-plugins-official` | 라이브러리 최신 문서 조회 MCP 서버 제공 |
+
+superpowers 플러그인이 제공하는 주요 skills:
+
+| skill | 설명 |
+|-------|------|
+| `superpowers:subagent-driven-development` | 플랜을 서브에이전트로 병렬 실행 |
+| `superpowers:writing-plans` | 구현 전 상세 계획 수립 |
+| `superpowers:test-driven-development` | TDD 방식 구현 가이드 |
+| `superpowers:systematic-debugging` | 버그/실패 원인 체계적 분석 |
+| `superpowers:requesting-code-review` | 구현 완료 후 코드 리뷰 요청 |
+
+### MCP 서버
+
+`agents/claude/settings.json`의 `mcpServers`로 전역 MCP 서버를 관리한다.
+settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
+
+| MCP 서버 | 패키지 | 설명 |
+|----------|--------|------|
+| `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking` | 단계적 사고 도구 |
+
+> **주의 — Windows vs macOS/Linux:**
+> 현재 `settings.json`의 MCP 명령은 Windows 전용(`cmd /c npx ...`)이다.
+> macOS/Linux에서 사용 시 `agents/setup.sh` 실행 후 아래 명령으로 수동 등록:
+> ```bash
+> claude mcp add sequential-thinking npx -- -y @modelcontextprotocol/server-sequential-thinking
+> ```
+
+### ccstatusline
+
+터미널 상태 표시줄에 Claude Code 세션 정보(모델, 토큰 사용량, 비용)를 표시.
+`settings.json`의 `statusLine`으로 설정되어 있어 settings.json 링크 시 자동 적용됨.
+별도 설치 불필요 (npx로 자동 실행).
 
 ### 에이전트/스킬 복원
 
@@ -194,7 +241,7 @@ bash ~/dotfiles/agents/restore-agents.sh
 bash ~/dotfiles/agents/restore-skills.sh
 ```
 
-### 설치된 skills 목록
+### 설치된 npx skills 목록
 
 | 스킬 | 설명 |
 |------|------|
