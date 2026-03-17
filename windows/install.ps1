@@ -84,5 +84,72 @@ if (-not (Test-Path $rtkExe) -and -not (Test-Path "$rtkDir\rtk")) {
     Write-Host "    RTK already installed: $rtkExe"
 }
 
+# ast-grep / difftastic — winget 미지원, GitHub Releases에서 직접 다운로드
+$toolsDir = "$env:USERPROFILE\.local\bin"
+New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+
+# PATH에 $toolsDir 추가
+$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+if ($userPath -notlike "*$toolsDir*") {
+    [System.Environment]::SetEnvironmentVariable("PATH", "$toolsDir;$userPath", "User")
+}
+$env:PATH = "$toolsDir;$env:PATH"
+
+# ast-grep (sg.exe)
+Write-Host ""
+Write-Host "==> Installing ast-grep (sg)..."
+if (-not (Test-Path "$toolsDir\sg.exe")) {
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ast-grep/ast-grep/releases/latest" `
+            -Headers @{Accept="application/vnd.github.v3+json"}
+        $asset = $release.assets | Where-Object { $_.name -like "*x86_64-pc-windows-msvc*" } | Select-Object -First 1
+        if ($asset) {
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:TEMP\ast-grep.zip"
+            Expand-Archive -Path "$env:TEMP\ast-grep.zip" -DestinationPath "$env:TEMP\ast-grep" -Force
+            $sgExe = Get-ChildItem -Path "$env:TEMP\ast-grep" -Recurse -Filter "sg.exe" | Select-Object -First 1
+            if ($sgExe) {
+                Move-Item $sgExe.FullName "$toolsDir\sg.exe" -Force
+                Write-Host "    ast-grep installed: $toolsDir\sg.exe"
+            }
+            Remove-Item "$env:TEMP\ast-grep.zip", "$env:TEMP\ast-grep" -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "    [!] ast-grep Windows binary not found. Install manually from:"
+            Write-Host "        https://github.com/ast-grep/ast-grep/releases"
+        }
+    } catch {
+        Write-Host "    [!] Failed to download ast-grep: $_"
+    }
+} else {
+    Write-Host "    ast-grep already installed: $toolsDir\sg.exe"
+}
+
+# difftastic (difft.exe)
+Write-Host ""
+Write-Host "==> Installing difftastic (difft)..."
+if (-not (Test-Path "$toolsDir\difft.exe")) {
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/Wilfred/difftastic/releases/latest" `
+            -Headers @{Accept="application/vnd.github.v3+json"}
+        $asset = $release.assets | Where-Object { $_.name -like "*x86_64-pc-windows-msvc*" } | Select-Object -First 1
+        if ($asset) {
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:TEMP\difft.zip"
+            Expand-Archive -Path "$env:TEMP\difft.zip" -DestinationPath "$env:TEMP\difft" -Force
+            $difftExe = Get-ChildItem -Path "$env:TEMP\difft" -Recurse -Filter "difft.exe" | Select-Object -First 1
+            if ($difftExe) {
+                Move-Item $difftExe.FullName "$toolsDir\difft.exe" -Force
+                Write-Host "    difftastic installed: $toolsDir\difft.exe"
+            }
+            Remove-Item "$env:TEMP\difft.zip", "$env:TEMP\difft" -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "    [!] difftastic Windows binary not found. Install manually from:"
+            Write-Host "        https://github.com/Wilfred/difftastic/releases"
+        }
+    } catch {
+        Write-Host "    [!] Failed to download difftastic: $_"
+    }
+} else {
+    Write-Host "    difftastic already installed: $toolsDir\difft.exe"
+}
+
 Write-Host ""
 Write-Host "==> Done! Restart your terminal."

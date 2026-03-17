@@ -1,0 +1,24 @@
+# ~/.extra — 머신별 개인 설정 템플릿
+# -------------------------------------------------------
+# 이 파일은 git에 포함되지 않는 개인 설정용 템플릿입니다.
+# 새 머신에서는 아래처럼 복사 후 수정하세요:
+#
+#   cp ~/dotfiles/bash/.extra.example ~/dotfiles/bash/.extra
+#
+# .bashrc가 자동으로 ~/.extra를 source합니다.
+# -------------------------------------------------------
+
+# 예시: 머신별 환경변수
+# export WORK_DIR="$HOME/projects/company"
+# export DOCKER_HOST="tcp://localhost:2375"
+
+# 예시: 커스텀 alias
+# alias myserver="ssh user@192.168.1.100"
+# alias vpn="sudo openvpn ~/vpn/config.ovpn"
+
+# 예시: 경로 추가
+# export PATH="$HOME/.local/bin:$PATH"
+
+# 예시: API 키 (절대 git에 올리지 마세요!)
+# export OPENAI_API_KEY="sk-..."
+# export ANTHROPIC_API_KEY="sk-ant-..."

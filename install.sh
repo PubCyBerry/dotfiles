@@ -21,6 +21,16 @@ for file in "$DOTFILES_DIR"/bash/.*; do
   echo "    linked $name"
 done
 
+# XDG config 파일 링크 (~/.config/*)
+echo "==> Linking config files..."
+mkdir -p "$HOME/.config"
+for file in "$DOTFILES_DIR"/config/*; do
+  [[ -f "$file" ]] || continue
+  name="$(basename "$file")"
+  ln -sf "$file" "$HOME/.config/$name"
+  echo "    linked $name → ~/.config/$name"
+done
+
 # .gitconfig.local 없으면 안내
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
   echo ""

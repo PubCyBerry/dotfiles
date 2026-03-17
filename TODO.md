@@ -3,10 +3,10 @@
 ## dotfiles 개선
 
 ### 단기 (간단한 작업)
-- [ ] `.extra` 빈 템플릿 파일 추가 + `.gitignore`에서 제외 처리
-- [ ] 루트 `.gitignore` 추가 (`.extra`, `.gitconfig.local` 보호)
-- [ ] `starship.toml` 기본 설정 추가 (`~/.config/starship.toml`)
-- [ ] Windows에서 `ast-grep`/`difftastic` 바이너리 직접 다운로드 지원
+- [x] `.extra` 빈 템플릿 파일 추가 + `.gitignore`에서 제외 처리
+- [x] 루트 `.gitignore` 추가 (`.extra`, `.gitconfig.local` 보호)
+- [x] `starship.toml` 기본 설정 추가 (`~/.config/starship.toml`)
+- [x] Windows에서 `ast-grep`/`difftastic` 바이너리 직접 다운로드 지원
 
 ### 중기
 - [ ] `uv` (Python 환경 관리) 설치 스크립트 추가 (Linux/macOS/Windows)

@@ -6,7 +6,7 @@ Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 dotfiles.
 
 | 환경 | 지원 |
 |------|------|
-| Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) — difftastic/ast-grep 미지원 |
+| Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) — ast-grep/difftastic GitHub Releases 자동 다운로드 |
 | Ubuntu 22.04 (WSL2 / 네이티브) | ✅ 완전 지원 |
 | macOS | ✅ 완전 지원 |
 
@@ -18,7 +18,7 @@ Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 dotfiles.
 
 ```bash
 # 1. 클론
-git clone git@github.com:PubCyBerry/dotfiles.git ~/dotfiles
+git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
 
 # 2. 설치
 cd ~/dotfiles && bash install.sh
@@ -38,7 +38,7 @@ exec bash
 ```powershell
 # PowerShell (관리자 권한)
 # 1. 저장소 클론
-git clone git@github.com:PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
+git clone https://github.com/PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 
 # 2. winget 패키지 + Node.js LTS + Claude Code 설치
 .\dotfiles\windows\install.ps1
@@ -427,7 +427,10 @@ dotfiles/
     .inputrc                  # Readline 설정 (자동완성, 히스토리 검색)
     .gitconfig                # git 전역 설정 (공유)
     .gitconfig.local.example  # 머신별 설정 템플릿
+    .extra.example            # 머신별 개인 설정 템플릿 (git 제외)
     .gitignore_global         # 전역 gitignore
+  config/
+    starship.toml             # Starship prompt 기본 설정 → ~/.config/starship.toml
   tools/
     fnm.sh                    # fnm 설치
     node.sh                   # Node LTS + Claude Code 설치
