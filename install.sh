@@ -47,6 +47,7 @@ bash "$DOTFILES_DIR/tools/fnm.sh"
 bash "$DOTFILES_DIR/tools/node.sh"
 bash "$DOTFILES_DIR/tools/bun.sh"
 bash "$DOTFILES_DIR/tools/global-packages.sh"
+bash "$DOTFILES_DIR/tools/rtk.sh"
 
 # Agents
 echo "==> Linking agent configs..."

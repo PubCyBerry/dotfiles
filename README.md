@@ -66,12 +66,13 @@ git config --global user.email "kth7186@gmail.com"
 ```
 1. bash/ 파일들 → ~/.* 심볼릭 링크
 2. OS 패키지 설치 (apt / brew)
-3. Modern CLI 도구 설치 (eza, delta 등)
+3. Modern CLI 도구 설치 (eza, delta, zoxide, starship 등)
 4. fnm 설치
 5. Node.js LTS + Claude Code 설치
 6. bun 설치
 7. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
-8. AI 에이전트 설정 (The Agency, npx skills)
+8. RTK 설치 및 hook 등록
+9. AI 에이전트 설정 (The Agency, npx skills)
 ```
 
 ---
@@ -157,6 +158,70 @@ git log -p            # 전체 히스토리 diff
 
 # delta 직접 실행
 delta file1 file2
+```
+
+### zoxide — 스마트 cd
+
+```bash
+z foo          # 'foo'가 포함된 자주 간 디렉토리로 이동
+z foo bar      # 'foo'와 'bar' 모두 포함된 경로로 이동
+zi             # fzf로 히스토리 대화형 선택
+```
+
+### lazygit — TUI git 클라이언트
+
+```bash
+lazygit        # 현재 저장소에서 실행
+```
+`space`로 스테이징, `c`로 커밋, `P`로 푸시. `?`로 단축키 목록.
+
+### yazi — TUI 파일 매니저
+
+```bash
+yazi           # 현재 디렉토리에서 실행
+```
+`hjkl`로 탐색, `Enter`로 열기, `y`로 복사, `d`로 삭제.
+
+### starship — 쉘 프롬프트
+
+`~/.config/starship.toml`로 커스터마이징. 기본값으로 git 브랜치/상태, 언어 버전 자동 표시.
+
+```bash
+starship preset --list          # 프리셋 목록
+starship preset pastel-powerline -o ~/.config/starship.toml  # 프리셋 적용
+```
+
+### RTK — 토큰 최적화 프록시
+
+```bash
+rtk git status      # git 명령어 압축 출력 (59-80% 절감)
+rtk gh pr list      # GitHub CLI 압축 출력 (26-87% 절감)
+rtk cargo test      # 테스트 실패만 출력 (90%+ 절감)
+rtk gain            # 누적 토큰 절감 통계
+rtk gain --history  # 명령어별 절감 히스토리
+```
+
+### ruff — Python 린터/포매터
+
+```bash
+ruff check .         # 린팅
+ruff check . --fix   # 자동 수정
+ruff format .        # 포매팅
+```
+
+### jq / yq — 데이터 처리
+
+```bash
+cat data.json | jq '.users[].name'    # JSON 필드 추출
+cat config.yaml | yq '.database.host' # YAML 필드 추출
+yq -o=json config.yaml                # YAML → JSON 변환
+```
+
+### difftastic — AST 기반 diff
+
+```bash
+difft file1.js file2.js   # AST 기반 비교 (공백/포매팅 무시)
+# git diff에서 자동 사용: GIT_EXTERNAL_DIFF=difft git diff
 ```
 
 ### shell functions
@@ -330,6 +395,7 @@ dotfiles/
   tools/
     fnm.sh                    # fnm 설치
     node.sh                   # Node LTS + Claude Code 설치
+    rtk.sh                    # RTK 설치 및 hook 등록
   linux/
     packages.sh               # apt 패키지 (카카오 미러)
     install-extras.sh         # eza, delta (apt 미지원 도구)
@@ -338,8 +404,9 @@ dotfiles/
     Brewfile                  # macOS 패키지 목록
     .macos                    # macOS 시스템 설정 자동화 (Dock, Finder, 키보드 등)
   windows/
-    install.ps1               # winget 패키지 설치
-    agents-setup.ps1          # Claude Code 설정 자동 복사
+    install.ps1               # winget 패키지 설치 + RTK 바이너리 다운로드
+    agents-setup.ps1          # Claude Code 설정 자동 복사 + $PROFILE 관리
+    profile.ps1               # PowerShell $PROFILE에 추가할 설정
     .wslconfig                # WSL2 전역 설정 템플릿
   agents/
     setup.sh                  # Claude 설정 링크 + 에이전트 설치
@@ -357,5 +424,6 @@ dotfiles/
 
 ### 장기
 - [x] `macos/.macos` — macOS 시스템 설정 자동화 (`bash macos/install.sh --with-defaults`)
+- [x] RTK 설치 자동화 + Claude Code hook + CLAUDE.md 규칙 통합
 - [ ] Gemini CLI, antigravity 설정 추가 (agents/gemini/ 디렉토리)
 - [ ] README.md 한국어/영어 분리

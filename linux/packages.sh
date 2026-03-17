@@ -25,6 +25,8 @@ PACKAGES=(
   fzf          # 퍼지 파인더
   fd-find      # 빠른 find 대체 (Ubuntu에서 binary명: fdfind)
   ripgrep      # 빠른 grep 대체 (rg)
+  jq           # JSON 처리
+  httpie       # HTTP 클라이언트 (http/https 명령어)
 )
 
 echo "    Installing packages: ${PACKAGES[*]}"

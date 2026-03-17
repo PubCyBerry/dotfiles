@@ -50,6 +50,78 @@ if (Test-Path $src) {
     Write-Host "    [!] $src not found, skipping .wslconfig"
 }
 
+# RTK hook 스크립트 생성 (Windows용 수동 설치 — rtk init --global이 Windows 미지원)
+Write-Host ""
+Write-Host "==> Setting up RTK hook for Claude Code..."
+$hooksDir = "$claudeDir\hooks"
+New-Item -ItemType Directory -Force -Path $hooksDir | Out-Null
+$hookScript = "$hooksDir\rtk-rewrite.sh"
+$rtkHookContent = @'
+#!/bin/bash
+# RTK PreToolUse hook — Bash 명령어를 rtk 래퍼로 자동 변환
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('command', ''))
+except:
+    print('')
+" 2>/dev/null)
+if [ -z "$CMD" ]; then echo "$INPUT"; exit 0; fi
+REWRITTEN=$(rtk rewrite "$CMD" 2>/dev/null)
+if [ -n "$REWRITTEN" ] && [ "$REWRITTEN" != "$CMD" ]; then
+    echo "$INPUT" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+import os
+d['command'] = os.environ.get('RTK_CMD', d['command'])
+print(json.dumps(d))
+" RTK_CMD="$REWRITTEN"
+else
+    echo "$INPUT"
+fi
+'@
+$rtkHookContent | Out-File -FilePath $hookScript -Encoding utf8 -NoNewline
+Write-Host "    Created RTK hook: $hookScript"
+
+# PowerShell $PROFILE 관리 (마커 방식 — 기존 내용 보존, 반복 실행 안전)
+Write-Host ""
+Write-Host "==> Updating PowerShell profile..."
+$profileSrc = "$DotfilesDir\windows\profile.ps1"
+if (Test-Path $profileSrc) {
+    $markerBegin = "# ===== dotfiles-begin ====="
+    $markerEnd   = "# ===== dotfiles-end ====="
+    $newBlock    = "$markerBegin`n$(Get-Content $profileSrc -Raw)`n$markerEnd"
+
+    # $PROFILE 디렉토리 생성
+    $profileDir = Split-Path $PROFILE
+    if (-not (Test-Path $profileDir)) {
+        New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+    }
+    # $PROFILE 파일이 없으면 빈 파일 생성
+    if (-not (Test-Path $PROFILE)) {
+        New-Item -ItemType File -Force -Path $PROFILE | Out-Null
+    }
+
+    $existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+    if ($null -eq $existing) { $existing = "" }
+
+    if ($existing -match [regex]::Escape($markerBegin)) {
+        # 기존 마커 블록 교체
+        $updated = $existing -replace "(?s)$([regex]::Escape($markerBegin)).*?$([regex]::Escape($markerEnd))", $newBlock
+        $updated | Out-File -FilePath $PROFILE -Encoding utf8 -NoNewline
+        Write-Host "    Updated dotfiles block in $PROFILE"
+    } else {
+        # 마커 블록 추가 (기존 내용 뒤에 추가)
+        "`n$newBlock" | Add-Content -Path $PROFILE -Encoding utf8
+        Write-Host "    Appended dotfiles block to $PROFILE"
+    }
+} else {
+    Write-Host "    [!] $profileSrc not found, skipping profile setup"
+}
+
 Write-Host ""
 Write-Host "==> Claude Code config setup complete."
 Write-Host "    Run 'claude' and install plugins with /plugin (superpowers, context7)"
+Write-Host "    Restart PowerShell to apply profile changes."
