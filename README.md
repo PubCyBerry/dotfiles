@@ -146,6 +146,22 @@ git log -p            # 전체 히스토리 diff
 delta file1 file2
 ```
 
+### bun — JavaScript 런타임 & 패키지 매니저
+
+Node.js 호환 런타임. npx보다 빠른 스크립트 실행과 패키지 관리에 사용.
+
+| OS | 설치 방법 |
+|----|-----------|
+| macOS | `brew install oven-sh/bun/bun` (Brewfile 자동) |
+| WSL2/Linux | `curl -fsSL https://bun.sh/install \| bash` (install.sh 자동) |
+| Windows | `winget install Oven-sh.Bun` (install.ps1 자동) |
+
+```bash
+bun --version      # 설치 확인
+bunx <package>     # npx 대체
+bun install        # npm install 대체 (빠름)
+```
+
 ---
 
 ## git 설정

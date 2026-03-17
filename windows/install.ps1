@@ -12,7 +12,8 @@ $packages = @(
     "eza-community.eza",
     "sharkdp.fd",
     "dandavison.delta",
-    "BurntSushi.ripgrep.MSVC"
+    "BurntSushi.ripgrep.MSVC",
+    "Oven-sh.Bun"
 )
 
 Write-Host "==> Installing packages via winget..."

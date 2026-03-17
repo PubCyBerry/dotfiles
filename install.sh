@@ -45,6 +45,7 @@ fi
 echo "==> Installing tools..."
 bash "$DOTFILES_DIR/tools/fnm.sh"
 bash "$DOTFILES_DIR/tools/node.sh"
+bash "$DOTFILES_DIR/tools/bun.sh"
 
 # Agents
 echo "==> Linking agent configs..."

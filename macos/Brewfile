@@ -25,3 +25,4 @@ brew "eza"        # 컬러/아이콘 ls 대체
 brew "fd"         # 빠른 find 대체
 brew "delta"      # git diff 뷰어
 brew "ripgrep"    # 빠른 grep 대체 (rg)
+brew "oven-sh/bun/bun"
