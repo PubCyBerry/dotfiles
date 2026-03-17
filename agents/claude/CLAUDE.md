@@ -4,6 +4,7 @@
 
 ---
 
+<!-- rtk-instructions v2 -->
 ## RTK (Rust Token Killer) — 토큰 최적화
 
 ### 황금 규칙
@@ -33,6 +34,7 @@ rtk git add . && rtk git commit -m "msg" && rtk git push
 | **분석** | `rtk err <cmd>`, `rtk log <file>`, `rtk summary <cmd>` | 70-90% |
 
 > rg/fd/eza/bat/ast-grep은 이미 간결한 출력 → RTK 불필요, 직접 사용.
+<!-- /rtk-instructions -->
 
 ---
 
