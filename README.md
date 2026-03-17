@@ -197,7 +197,7 @@ Claude Code 플러그인은 `settings.json`의 `enabledPlugins`로 관리된다.
 | `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
 | `context7@claude-plugins-official` | 라이브러리 최신 문서 조회 MCP 서버 제공 |
 
-superpowers 플러그인이 제공하는 주요 skills:
+superpowers 플러그인이 제공하는 주요 skills (플러그인 설치 후 자동 제공, 별도 설치 불필요):
 
 | skill | 설명 |
 |-------|------|
@@ -218,9 +218,13 @@ settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
 
 > **주의 — Windows vs macOS/Linux:**
 > 현재 `settings.json`의 MCP 명령은 Windows 전용(`cmd /c npx ...`)이다.
-> macOS/Linux에서 사용 시 `agents/setup.sh` 실행 후 아래 명령으로 수동 등록:
-> ```bash
-> claude mcp add sequential-thinking npx -- -y @modelcontextprotocol/server-sequential-thinking
+> macOS/Linux에서는 `settings.json`의 `sequential-thinking` 항목을 아래와 같이 수정:
+> ```json
+> "sequential-thinking": {
+>   "type": "stdio",
+>   "command": "npx",
+>   "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+> }
 > ```
 
 ### ccstatusline
