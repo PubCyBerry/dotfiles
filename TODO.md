@@ -1,0 +1,34 @@
+# TODO
+
+## dotfiles 개선
+
+### 단기 (간단한 작업)
+- [ ] `.extra` 빈 템플릿 파일 추가 + `.gitignore`에서 제외 처리
+- [ ] 루트 `.gitignore` 추가 (`.extra`, `.gitconfig.local` 보호)
+- [ ] `starship.toml` 기본 설정 추가 (`~/.config/starship.toml`)
+- [ ] Windows에서 `ast-grep`/`difftastic` 바이너리 직접 다운로드 지원
+
+### 중기
+- [ ] `uv` (Python 환경 관리) 설치 스크립트 추가 (Linux/macOS/Windows)
+- [ ] SSH config 템플릿 (`~/.ssh/config.example`)
+- [ ] README 한국어/영어 분리
+
+### Claude Code 확장 — MCP 서버
+- [ ] **GitHub MCP** (`@modelcontextprotocol/server-github`) — PR/이슈/저장소 자동화
+- [ ] **Playwright MCP** (`@playwright/mcp`) — 웹 자동화, E2E 테스트
+- [ ] **Filesystem MCP** (`@modelcontextprotocol/server-filesystem`) — 로컬 파일 직접 접근
+
+### Claude Code 확장 — Skills
+현재: pdf, pptx, docx, xlsx, bash-defensive-patterns, shellcheck-configuration, powershell-windows, find-skills, skill-creator
+- [ ] **antigravity-awesome-skills** — 1,234+ skill 라이브러리 (`npx antigravity-awesome-skills`)
+- [ ] **Valyu** — 웹 검색 + SEC/PubMed/FRED 등 36+ 데이터소스
+- [ ] **anthropic/frontend-design** — 프론트엔드 전문 skill
+
+### 기타
+- [ ] Antigravity `agents/` 설정 추가 (Claude 구독 소진 시 대안)
+
+### 장기 / 별도 저장소 검토
+- [ ] Claude Code harness 저장소 구성 검토
+  - 참고: `code-yeongyu/oh-my-openagent`, `Yeachan-Heo/oh-my-claudecode`
+  - dotfiles와 분리 권장 (변경 주기·공유 대상 다름)
+  - 개인용이면 dotfiles 통합, 공개 배포 목적이면 별도 repo

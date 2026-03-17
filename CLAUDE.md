@@ -37,7 +37,7 @@ bash agents/restore-skills.sh   # npx skills
 
 ### bash 설정 로딩 체인
 
-`.bash_profile` → `.bashrc` → `.exports`, `.aliases`, `.functions`(미구현), `.extra`(미구현) 순으로 source.
+`.bash_profile` → `.bashrc` → `.exports`, `.aliases`, `.functions`, `.extra`(머신별 개인 설정, git 제외) 순으로 source.
 심볼릭 링크이므로 `git pull` 후 즉시 반영된다.
 
 ### Claude Code 설정
