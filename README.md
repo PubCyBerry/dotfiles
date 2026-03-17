@@ -33,18 +33,33 @@ exec bash
 
 ### Windows 11
 
+> **주의:** Windows에서는 bash 심볼릭 링크가 지원되지 않는다. bash 설정(`.bashrc` 등)은 WSL2에서 관리한다.
+
 ```powershell
 # PowerShell (관리자 권한)
 # 1. 저장소 클론
 git clone git@github.com:PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 
-# 2. winget 패키지 설치
+# 2. winget 패키지 + Node.js LTS + Claude Code 설치
 .\dotfiles\windows\install.ps1
 
 # 3. git 사용자 정보 설정
 git config --global user.name "PubCyBerry"
 git config --global user.email "kth7186@gmail.com"
+
+# 4. Claude Code 설정 복사 (심볼릭 링크 대신 수동 복사)
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
+Copy-Item "$env:USERPROFILE\dotfiles\agents\claude\settings.json" `
+          "$env:USERPROFILE\.claude\settings.json" -Force
+Copy-Item "$env:USERPROFILE\dotfiles\agents\claude\CLAUDE.md" `
+          "$env:USERPROFILE\.claude\CLAUDE.md" -Force
+
+# 5. Claude Code 실행 후 플러그인 설치
+# claude 실행 → /plugin 명령으로 superpowers, context7 설치
 ```
+
+> **MCP 서버**: `settings.json` 복사 시 `sequential-thinking` MCP가 자동 등록됨 (`cmd /c npx` 형식 포함).
+> **settings.json 업데이트**: dotfiles에서 변경 사항이 있으면 4번 복사 명령을 다시 실행.
 
 ---
 
