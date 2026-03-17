@@ -354,15 +354,6 @@ dotfiles/
 
 ## TODO
 
-### 중기
-- [ ] MCP 서버 cross-platform 자동화 — `agents/setup.sh`에서 OS별 분기 처리 (`cmd /c npx` → `npx`)
-- [ ] `bash/.functions` — 자주 쓰는 셸 함수 모음 (`mkcd`, `extract` 등)
-- [ ] `bash/.inputrc` — 히스토리 검색, 단축키 개선
-- [x] `.wslconfig` — WSL2 메모리/CPU 제한 최적화
-- [ ] WSL ↔ Windows 클립보드/경로 변환 함수
-- [ ] `tools/global-packages.txt` — npm 전역 패키지 목록 관리
-- [x] `windows/agents-setup.ps1` — PowerShell에서 Claude 설정 자동 복사 (현재 수동)
-
 ### 장기
 - [ ] `macos/.macos` — macOS 시스템 설정 자동화
 - [ ] Gemini CLI, antigravity 설정 추가

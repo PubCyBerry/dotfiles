@@ -23,7 +23,7 @@ for name, server in mcp.items():
     # cmd /c npx ... → npx ... 로 변환
     if server.get("command") == "cmd" and server.get("args", [])[:2] == ["/c", "npx"]:
         server["command"] = "npx"
-        server["args"] = server["args"][2:]  # /c, cmd 제거
+        server["args"] = server["args"][2:]  # "/c", "npx" 제거
 
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2, ensure_ascii=False)
