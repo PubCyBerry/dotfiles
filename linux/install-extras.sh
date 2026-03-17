@@ -119,7 +119,7 @@ fi
 if ! command -v sg &>/dev/null; then
   echo "    Installing ast-grep..."
   curl -fsSLo /tmp/ast-grep.zip \
-    "https://github.com/ast-grep/ast-grep/releases/latest/download/app-x86_64-unknown-linux-musl.zip"
+    "https://github.com/ast-grep/ast-grep/releases/latest/download/app-x86_64-unknown-linux-gnu.zip"
   unzip -q /tmp/ast-grep.zip -d /tmp/ast_grep_extract
   mv /tmp/ast_grep_extract/sg ~/.local/bin/sg
   rm -rf /tmp/ast-grep.zip /tmp/ast_grep_extract

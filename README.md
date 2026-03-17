@@ -6,7 +6,7 @@ Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 dotfiles.
 
 | 환경 | 지원 |
 |------|------|
-| Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) |
+| Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) — difftastic/ast-grep 미지원 |
 | Ubuntu 22.04 (WSL2 / 네이티브) | ✅ 완전 지원 |
 | macOS | ✅ 완전 지원 |
 
