@@ -47,7 +47,7 @@ git clone git@github.com:PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 git config --global user.name "PubCyBerry"
 git config --global user.email "kth7186@gmail.com"
 
-# 4. Claude Code 설정 복사 (ccstatusline, .wslconfig 포함)
+# 4. Claude Code 설정 복사 + PowerShell $PROFILE 설정 + RTK hook 등록
 .\dotfiles\windows\agents-setup.ps1
 
 # 5. Claude Code에서 플러그인 설치
@@ -224,6 +224,47 @@ difft file1.js file2.js   # AST 기반 비교 (공백/포매팅 무시)
 # git diff에서 자동 사용: GIT_EXTERNAL_DIFF=difft git diff
 ```
 
+### atuin — 히스토리 강화
+
+셸 히스토리를 SQLite DB로 관리. 검색 속도와 컨텍스트(작업 디렉토리, 종료 코드 등)가 향상됨.
+
+```bash
+# Ctrl+R 대신 atuin 검색 UI 사용 (자동 바인딩)
+# 또는 직접 실행:
+atuin search <키워드>
+atuin stats          # 명령어 사용 통계
+```
+
+### ast-grep — AST 기반 코드 검색/리팩터
+
+문자열이 아닌 코드 구조로 검색. `sg` 명령어로 실행.
+
+```bash
+sg -p 'console.log($A)' src/          # console.log 호출 검색
+sg -p 'console.log($A)' -r 'logger.info($A)' src/  # 일괄 치환
+sg -p 'useState($A)' -l ts            # TypeScript 파일에서 useState 검색
+```
+
+### httpie — HTTP 클라이언트
+
+```bash
+http GET https://api.example.com/users        # GET 요청
+http POST https://api.example.com/users name=foo email=bar@example.com  # POST (JSON 자동)
+http -a user:pass GET https://api.example.com # Basic Auth
+https example.com                             # HTTPS 단축 명령
+```
+
+### .inputrc — Readline 설정
+
+`~/.inputrc`에 정의된 터미널 입력 개선 설정. bash 시작 시 자동 적용.
+
+| 기능 | 동작 |
+|------|------|
+| 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
+| 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
+| Tab 한 번에 목록 표시 | 두 번 누를 필요 없음 |
+| 컬러 자동완성 | 파일 타입별 색상 표시 |
+
 ### shell functions
 
 `~/.functions`에 정의된 유틸리티 함수 모음.
@@ -329,16 +370,9 @@ settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
 |----------|--------|------|
 | `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking` | 단계적 사고 도구 |
 
-> **주의 — Windows vs macOS/Linux:**
-> 현재 `settings.json`의 MCP 명령은 Windows 전용(`cmd /c npx ...`)이다.
-> macOS/Linux에서는 `settings.json`의 `sequential-thinking` 항목을 아래와 같이 수정:
-> ```json
-> "sequential-thinking": {
->   "type": "stdio",
->   "command": "npx",
->   "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-> }
-> ```
+> **Windows vs macOS/Linux:**
+> `settings.json`의 MCP 명령은 Windows 전용(`cmd /c npx ...`)으로 저장되어 있다.
+> macOS/Linux에서는 `agents/setup.sh`가 설치 시 자동으로 `npx` 형식으로 패치하므로 수동 수정 불필요.
 
 ### ccstatusline
 
@@ -385,20 +419,27 @@ bash ~/dotfiles/agents/restore-skills.sh
 dotfiles/
   install.sh                  # 메인 진입점
   bash/
-    .bashrc                   # 셸 초기화
+    .bashrc                   # 셸 초기화 (starship/zoxide/fzf/atuin init 포함)
     .bash_profile             # 로그인 셸
-    .aliases                  # 명령어 단축키
-    .exports                  # 환경변수
+    .aliases                  # 명령어 단축키 (eza, bat, git 단축 등)
+    .exports                  # 환경변수 (PATH, EDITOR, HISTSIZE 등)
+    .functions                # 셸 유틸리티 함수 (mkcd, up, extract, WSL 연동)
+    .inputrc                  # Readline 설정 (자동완성, 히스토리 검색)
     .gitconfig                # git 전역 설정 (공유)
     .gitconfig.local.example  # 머신별 설정 템플릿
     .gitignore_global         # 전역 gitignore
   tools/
     fnm.sh                    # fnm 설치
     node.sh                   # Node LTS + Claude Code 설치
+    bun.sh                    # bun 설치 (OS별 분기)
+    global-packages.sh        # npm 전역 패키지 설치
+    global-packages.txt       # 전역 패키지 목록 (gemini-cli, codex 등)
     rtk.sh                    # RTK 설치 및 hook 등록
   linux/
     packages.sh               # apt 패키지 (카카오 미러)
-    install-extras.sh         # eza, delta (apt 미지원 도구)
+    install-extras.sh         # apt 미지원 도구 바이너리 설치
+                              # (zoxide, starship, ruff, atuin, lazygit,
+                              #  yazi, difftastic, ast-grep, yq 등)
   macos/
     install.sh                # Homebrew + Brewfile (--with-defaults 플래그로 .macos도 실행)
     Brewfile                  # macOS 패키지 목록
@@ -414,8 +455,9 @@ dotfiles/
     restore-skills.sh         # npx skills 재설치
     skills-manifest.txt       # 설치할 skills 목록
     claude/
-      CLAUDE.md               # Claude 전역 행동 설정
-      settings.json           # Claude Code 설정
+      CLAUDE.md               # Claude 전역 행동 설정 (RTK 규칙, 도구 사용 규칙 포함)
+      settings.json           # Claude Code 설정 (플러그인, MCP, hook, statusLine)
+      ccstatusline-settings.json  # ccstatusline 레이아웃 설정
 ```
 
 ---
