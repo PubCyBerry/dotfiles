@@ -260,9 +260,17 @@ settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
 
 ### ccstatusline
 
-터미널 상태 표시줄에 Claude Code 세션 정보(모델, 토큰 사용량, 비용)를 표시.
-`settings.json`의 `statusLine`으로 설정되어 있어 settings.json 링크 시 자동 적용됨.
+터미널 상태 표시줄에 Claude Code 세션 정보를 표시.
+`agents/setup.sh`가 실행 설정(settings.json)과 레이아웃 설정 모두 자동 링크함.
 별도 설치 불필요 (npx로 자동 실행).
+
+| 파일 | 링크 위치 | 내용 |
+|------|-----------|------|
+| `agents/claude/ccstatusline-settings.json` | `~/.config/ccstatusline/settings.json` | 레이아웃 설정 |
+
+현재 레이아웃:
+- 1줄: `모델 | Thinking Effort | Context % | Cost | Session Wall time`
+- 2줄: `git branch | git worktree | changes`
 
 ### 에이전트/스킬 복원
 
