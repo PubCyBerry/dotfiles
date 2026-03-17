@@ -47,19 +47,15 @@ git clone git@github.com:PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 git config --global user.name "PubCyBerry"
 git config --global user.email "kth7186@gmail.com"
 
-# 4. Claude Code 설정 복사 (심볼릭 링크 대신 수동 복사)
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude" | Out-Null
-Copy-Item "$env:USERPROFILE\dotfiles\agents\claude\settings.json" `
-          "$env:USERPROFILE\.claude\settings.json" -Force
-Copy-Item "$env:USERPROFILE\dotfiles\agents\claude\CLAUDE.md" `
-          "$env:USERPROFILE\.claude\CLAUDE.md" -Force
+# 4. Claude Code 설정 복사 (ccstatusline, .wslconfig 포함)
+.\dotfiles\windows\agents-setup.ps1
 
-# 5. Claude Code 실행 후 플러그인 설치
-# claude 실행 → /plugin 명령으로 superpowers, context7 설치
+# 5. Claude Code에서 플러그인 설치
+# claude 실행 후 /plugin 명령으로 superpowers, context7 설치
 ```
 
-> **MCP 서버**: `settings.json` 복사 시 `sequential-thinking` MCP가 자동 등록됨 (`cmd /c npx` 형식 포함).
-> **settings.json 업데이트**: dotfiles에서 변경 사항이 있으면 4번 복사 명령을 다시 실행.
+> **MCP 서버**: `settings.json` 복사 시 `sequential-thinking` MCP가 자동 등록됨.
+> **설정 업데이트**: dotfiles 변경 사항 적용 시 `agents-setup.ps1`을 다시 실행.
 
 ---
 
@@ -340,6 +336,8 @@ dotfiles/
     Brewfile                  # macOS 패키지 목록
   windows/
     install.ps1               # winget 패키지 설치
+    agents-setup.ps1          # Claude Code 설정 자동 복사
+    .wslconfig                # WSL2 전역 설정 템플릿
   agents/
     setup.sh                  # Claude 설정 링크 + 에이전트 설치
     restore-agents.sh         # The Agency 재설치
@@ -358,10 +356,10 @@ dotfiles/
 - [ ] MCP 서버 cross-platform 자동화 — `agents/setup.sh`에서 OS별 분기 처리 (`cmd /c npx` → `npx`)
 - [ ] `bash/.functions` — 자주 쓰는 셸 함수 모음 (`mkcd`, `extract` 등)
 - [ ] `bash/.inputrc` — 히스토리 검색, 단축키 개선
-- [ ] `.wslconfig` — WSL2 메모리/CPU 제한 최적화
+- [x] `.wslconfig` — WSL2 메모리/CPU 제한 최적화
 - [ ] WSL ↔ Windows 클립보드/경로 변환 함수
 - [ ] `tools/global-packages.txt` — npm 전역 패키지 목록 관리
-- [ ] `windows/agents-setup.ps1` — PowerShell에서 Claude 설정 자동 복사 (현재 수동)
+- [x] `windows/agents-setup.ps1` — PowerShell에서 Claude 설정 자동 복사 (현재 수동)
 
 ### 장기
 - [ ] `macos/.macos` — macOS 시스템 설정 자동화
