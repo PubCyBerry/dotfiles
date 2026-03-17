@@ -334,8 +334,9 @@ dotfiles/
     packages.sh               # apt 패키지 (카카오 미러)
     install-extras.sh         # eza, delta (apt 미지원 도구)
   macos/
-    install.sh                # Homebrew + Brewfile
+    install.sh                # Homebrew + Brewfile (--with-defaults 플래그로 .macos도 실행)
     Brewfile                  # macOS 패키지 목록
+    .macos                    # macOS 시스템 설정 자동화 (Dock, Finder, 키보드 등)
   windows/
     install.ps1               # winget 패키지 설치
     agents-setup.ps1          # Claude Code 설정 자동 복사
@@ -355,6 +356,6 @@ dotfiles/
 ## TODO
 
 ### 장기
-- [ ] `macos/.macos` — macOS 시스템 설정 자동화
-- [ ] Gemini CLI, antigravity 설정 추가
+- [x] `macos/.macos` — macOS 시스템 설정 자동화 (`bash macos/install.sh --with-defaults`)
+- [ ] Gemini CLI, antigravity 설정 추가 (agents/gemini/ 디렉토리)
 - [ ] README.md 한국어/영어 분리
