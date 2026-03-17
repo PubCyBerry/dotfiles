@@ -161,6 +161,25 @@ git log -p            # 전체 히스토리 diff
 delta file1 file2
 ```
 
+### shell functions
+
+`~/.functions`에 정의된 유틸리티 함수 모음.
+
+```bash
+mkcd my-project     # mkdir + cd 한번에
+up 2                # 2단계 위 디렉토리로 이동 (기본값: 1)
+extract file.tar.gz # 확장자 자동 감지 후 압축 해제
+```
+
+WSL2 전용 (Windows 클립보드 연동):
+
+```bash
+echo "hello" | clip  # Windows 클립보드로 복사
+paste                 # 클립보드 내용 출력
+wpath ~/dotfiles      # WSL 경로 → Windows 경로
+upath "C:\Users\foo"  # Windows 경로 → WSL 경로
+```
+
 ### bun — JavaScript 런타임 & 패키지 매니저
 
 Node.js 호환 런타임. npx보다 빠른 스크립트 실행과 패키지 관리에 사용.

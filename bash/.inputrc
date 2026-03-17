@@ -1,0 +1,19 @@
+# ~/.inputrc - Readline 설정
+
+# 대소문자 무시 자동완성
+set completion-ignore-case on
+
+# 모호한 자동완성 시 목록 바로 표시 (두 번 Tab 불필요)
+set show-all-if-ambiguous on
+
+# 히스토리 검색: 현재 입력을 prefix로 사용
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+
+# Home/End 키
+"\e[H": beginning-of-line
+"\e[F": end-of-line
+
+# 컬러 자동완성
+set colored-stats on
+set colored-completion-prefix on
