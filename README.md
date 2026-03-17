@@ -69,7 +69,9 @@ git config --global user.email "kth7186@gmail.com"
 3. Modern CLI 도구 설치 (eza, delta 등)
 4. fnm 설치
 5. Node.js LTS + Claude Code 설치
-6. AI 에이전트 설정 (The Agency, npx skills)
+6. bun 설치
+7. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
+8. AI 에이전트 설정 (The Agency, npx skills)
 ```
 
 ---
