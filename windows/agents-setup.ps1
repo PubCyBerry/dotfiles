@@ -60,24 +60,11 @@ $rtkHookContent = @'
 #!/bin/bash
 # RTK PreToolUse hook — Bash 명령어를 rtk 래퍼로 자동 변환
 INPUT=$(cat)
-CMD=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('command', ''))
-except:
-    print('')
-" 2>/dev/null)
+CMD=$(echo "$INPUT" | jq -r '.command // ""' 2>/dev/null)
 if [ -z "$CMD" ]; then echo "$INPUT"; exit 0; fi
 REWRITTEN=$(rtk rewrite "$CMD" 2>/dev/null)
 if [ -n "$REWRITTEN" ] && [ "$REWRITTEN" != "$CMD" ]; then
-    echo "$INPUT" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-import os
-d['command'] = os.environ.get('RTK_CMD', d['command'])
-print(json.dumps(d))
-" RTK_CMD="$REWRITTEN"
+    echo "$INPUT" | jq --arg cmd "$REWRITTEN" '.command = $cmd'
 else
     echo "$INPUT"
 fi

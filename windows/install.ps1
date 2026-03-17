@@ -55,7 +55,7 @@ Write-Host ""
 Write-Host "==> Installing RTK (Rust Token Killer)..."
 $rtkDir = "$env:USERPROFILE\rtk"
 $rtkExe = "$rtkDir\rtk.exe"
-if (-not (Test-Path $rtkExe)) {
+if (-not (Test-Path $rtkExe) -and -not (Test-Path "$rtkDir\rtk")) {
     # GitHub Releases에서 최신 Windows 바이너리 다운로드
     $releaseApi = "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
     try {

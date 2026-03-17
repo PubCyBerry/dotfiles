@@ -7,14 +7,14 @@ Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 dotfiles.
 | 환경 | 지원 |
 |------|------|
 | Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) |
-| WSL2 Ubuntu 22.04 | ✅ 완전 지원 |
+| Ubuntu 22.04 (WSL2 / 네이티브) | ✅ 완전 지원 |
 | macOS | ✅ 완전 지원 |
 
 ---
 
 ## 새 머신 셋업 가이드
 
-### WSL2 / macOS
+### Linux / macOS
 
 ```bash
 # 1. 클론
@@ -83,7 +83,7 @@ git config --global user.email "kth7186@gmail.com"
 cd ~/dotfiles && git pull
 # 심볼릭 링크라서 bash 설정은 pull 즉시 반영됨
 # 새 패키지가 추가된 경우:
-bash linux/packages.sh        # WSL
+bash linux/packages.sh        # Linux/Ubuntu
 bash macos/install.sh         # macOS
 ```
 
@@ -291,7 +291,7 @@ Node.js 호환 런타임. npx보다 빠른 스크립트 실행과 패키지 관�
 | OS | 설치 방법 |
 |----|-----------|
 | macOS | `brew install oven-sh/bun/bun` (Brewfile 자동) |
-| WSL2/Linux | `curl -fsSL https://bun.sh/install \| bash` (install.sh 자동) |
+| Linux/Ubuntu | `curl -fsSL https://bun.sh/install \| bash` (install.sh 자동) |
 | Windows | `winget install Oven-sh.Bun` (install.ps1 자동) |
 
 ```bash
