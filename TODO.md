@@ -25,7 +25,7 @@
 - [ ] **anthropic/frontend-design** — 프론트엔드 전문 skill
 
 ### 기타
-- [ ] Antigravity `agents/` 설정 추가 (Claude 구독 소진 시 대안)
+- [ ] Gemini CLI + antigravity 설정 추가 (`agents/gemini/` 디렉토리, Claude 구독 소진 시 대안)
 
 ### 장기 / 별도 저장소 검토
 - [ ] Claude Code harness 저장소 구성 검토

@@ -19,11 +19,11 @@ fnm use lts-latest
 
 echo "    Node $(node --version) installed."
 
-# Claude Code 설치
+# Claude Code 설치 (네이티브 — npm 설치 시 'claude install' 마이그레이션 경고 발생)
 if ! command -v claude &>/dev/null; then
-  echo "    Installing Claude Code..."
-  npm install -g @anthropic-ai/claude-code
-  echo "    Claude Code $(claude --version) installed."
+  echo "    Installing Claude Code (native)..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  echo "    Claude Code installed."
 else
   echo "    Claude Code already installed: $(claude --version)"
 fi

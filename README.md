@@ -40,7 +40,7 @@ exec bash
 # 1. 저장소 클론
 git clone https://github.com/PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 
-# 2. winget 패키지 + Node.js LTS + Claude Code 설치
+# 2. winget 패키지 + Node.js LTS + Claude Code (네이티브) 설치
 .\dotfiles\windows\install.ps1
 
 # 3. git 사용자 정보 설정
@@ -68,7 +68,7 @@ git config --global user.email "kth7186@gmail.com"
 2. OS 패키지 설치 (apt / brew)
 3. Modern CLI 도구 설치 (eza, delta, zoxide, starship 등)
 4. fnm 설치
-5. Node.js LTS + Claude Code 설치
+5. Node.js LTS 설치 + Claude Code 네이티브 설치
 6. bun 설치
 7. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
 8. RTK 설치 및 hook 등록
@@ -463,12 +463,3 @@ dotfiles/
       ccstatusline-settings.json  # ccstatusline 레이아웃 설정
 ```
 
----
-
-## TODO
-
-### 장기
-- [x] `macos/.macos` — macOS 시스템 설정 자동화 (`bash macos/install.sh --with-defaults`)
-- [x] RTK 설치 자동화 + Claude Code hook + CLAUDE.md 규칙 통합
-- [ ] Gemini CLI, antigravity 설정 추가 (agents/gemini/ 디렉토리)
-- [ ] README.md 한국어/영어 분리
