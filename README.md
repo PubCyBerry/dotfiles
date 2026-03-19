@@ -385,8 +385,9 @@ settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
 | `agents/claude/ccstatusline-settings.json` | `~/.config/ccstatusline/settings.json` | 레이아웃 설정 |
 
 현재 레이아웃:
-- 1줄: `모델 | Thinking Effort | Context % | Cost | Session Wall time`
-- 2줄: `git branch | git worktree | changes`
+- 1줄: `model | thinking-effort | git-branch | git-worktree | git-changes`
+- 2줄: `tokens-output | tokens-cached | tokens-total | context-length | context-percentage-usable`
+- 3줄: `context-bar | session-cost | session-clock`
 
 ### 에이전트/스킬 복원
 
