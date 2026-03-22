@@ -284,6 +284,30 @@ wpath ~/dotfiles      # WSL 경로 → Windows 경로
 upath "C:\Users\foo"  # Windows 경로 → WSL 경로
 ```
 
+### tmux — 터미널 멀티플렉서
+
+`omc team` / rate-limit 감지 기능에 필수. 설치는 OS별로 자동 처리됨.
+
+| OS | 설치 방법 | 비고 |
+|----|-----------|------|
+| macOS | `brew install tmux` (Brewfile 자동) | — |
+| Ubuntu/WSL2 | `sudo apt install tmux` (packages.sh 자동) | — |
+| Windows (네이티브) | `winget install psmux` (install.ps1 자동) | psmux = Windows용 tmux 대체 |
+| Windows (WSL2) | WSL 내부에서 apt 경로로 자동 설치 | — |
+
+```bash
+tmux                    # 새 세션 시작
+tmux new -s dev         # 이름 있는 세션 시작
+tmux ls                 # 세션 목록
+tmux attach -t dev      # 세션 복원
+
+# 주요 단축키 (기본 prefix: Ctrl+B)
+Ctrl+B c    # 새 창
+Ctrl+B d    # 세션 분리 (백그라운드 유지)
+Ctrl+B %    # 수직 분할
+Ctrl+B "    # 수평 분할
+```
+
 ### bun — JavaScript 런타임 & 패키지 매니저
 
 Node.js 호환 런타임. npx보다 빠른 스크립트 실행과 패키지 관리에 사용.
@@ -440,16 +464,16 @@ dotfiles/
     global-packages.txt       # 전역 패키지 목록 (gemini-cli, codex 등)
     rtk.sh                    # RTK 설치 및 hook 등록
   linux/
-    packages.sh               # apt 패키지 (카카오 미러)
+    packages.sh               # apt 패키지 (카카오 미러, tmux 포함)
     install-extras.sh         # apt 미지원 도구 바이너리 설치
                               # (zoxide, starship, ruff, atuin, lazygit,
                               #  yazi, difftastic, ast-grep, yq 등)
   macos/
     install.sh                # Homebrew + Brewfile (--with-defaults 플래그로 .macos도 실행)
-    Brewfile                  # macOS 패키지 목록
+    Brewfile                  # macOS 패키지 목록 (tmux 포함)
     .macos                    # macOS 시스템 설정 자동화 (Dock, Finder, 키보드 등)
   windows/
-    install.ps1               # winget 패키지 설치 + RTK 바이너리 다운로드
+    install.ps1               # winget 패키지 설치 + psmux(tmux 대체) + RTK 바이너리 다운로드
     agents-setup.ps1          # Claude Code 설정 자동 복사 + $PROFILE 관리
     profile.ps1               # PowerShell $PROFILE에 추가할 설정
     .wslconfig                # WSL2 전역 설정 템플릿

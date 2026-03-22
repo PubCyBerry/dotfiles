@@ -6,6 +6,7 @@ $packages = @(
     "GitHub.cli",
     "Schniz.fnm",
     "Microsoft.WindowsTerminal",
+    "psmux",                    # tmux 대체 (네이티브 Windows; WSL2 사용자는 WSL 내에서 apt install tmux)
     # Modern CLI (기존)
     "sharkdp.bat",
     "junegunn.fzf",
