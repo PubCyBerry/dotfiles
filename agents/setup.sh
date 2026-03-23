@@ -32,24 +32,32 @@ with open(path, "w") as f:
 print("    patched MCP commands for macOS/Linux")
 EOF
   else
-    # Windows (Git Bash 등): 심볼릭 링크 유지
-    ln -sf "$DOTFILES_DIR/agents/claude/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+    # Windows (Git Bash): ln -sf는 관리자 권한 없이 실패하므로 cp 사용
+    cp "$DOTFILES_DIR/agents/claude/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
   fi
-  echo "    linked settings.json"
+  echo "    copied settings.json"
 fi
 
 # Claude global CLAUDE.md
 if [[ -f "$DOTFILES_DIR/agents/claude/CLAUDE.md" ]]; then
-  ln -sf "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
-  echo "    linked CLAUDE.md"
+  if [[ "$OSTYPE" == "darwin"* ]] || grep -qi microsoft /proc/version 2>/dev/null || [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    ln -sf "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
+  else
+    cp "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
+  fi
+  echo "    copied CLAUDE.md"
 fi
 
 # ccstatusline 설정
 CCSTATUSLINE_CONFIG_DIR="$HOME/.config/ccstatusline"
 if [[ -f "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" ]]; then
   mkdir -p "$CCSTATUSLINE_CONFIG_DIR"
-  ln -sf "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" "$CCSTATUSLINE_CONFIG_DIR/settings.json"
-  echo "    linked ccstatusline settings.json"
+  if [[ "$OSTYPE" == "darwin"* ]] || grep -qi microsoft /proc/version 2>/dev/null || [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    ln -sf "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" "$CCSTATUSLINE_CONFIG_DIR/settings.json"
+  else
+    cp "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" "$CCSTATUSLINE_CONFIG_DIR/settings.json"
+  fi
+  echo "    copied ccstatusline settings.json"
 fi
 
 # The Agency 서브에이전트 설치
