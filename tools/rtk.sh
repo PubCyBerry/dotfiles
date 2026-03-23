@@ -21,7 +21,21 @@ fi
 # --hook-only: ~/.claude/hooks/rtk-rewrite.sh 생성만 수행
 if command -v rtk &>/dev/null; then
   rtk init --global --hook-only 2>/dev/null && echo "    rtk hook installed" || \
-    echo "    [!] rtk hook install skipped (Windows는 agents-setup.ps1에서 처리)"
+    echo "    [!] rtk hook install skipped (Windows는 래퍼로 워닝 억제)"
+fi
+
+# Windows(Git Bash): ~/.local/bin/rtk 래퍼 설치
+# rtk init이 Windows에서 hook hash를 갱신할 수 없어 "Hook outdated" 워닝이
+# 매 명령마다 stderr에 출력됨 → 래퍼로 필터링
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OS" == "Windows_NT" ]]; then
+  WRAPPER_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rtk-wrapper"
+  WRAPPER_DST="$HOME/.local/bin/rtk"
+  if [[ -f "$WRAPPER_SRC" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    cp "$WRAPPER_SRC" "$WRAPPER_DST"
+    chmod +x "$WRAPPER_DST"
+    echo "    rtk wrapper installed → ~/.local/bin/rtk"
+  fi
 fi
 
 echo "    rtk setup complete."
