@@ -1,6 +1,9 @@
 {
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "PYTHONUTF8": "1"
+  },
   "language": "한국어",
   "statusLine": {
     "type": "command",
