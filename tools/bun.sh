@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Windows(Git Bash/MSYS)에서는 winget(install.ps1)으로 설치
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OS" == "Windows_NT" ]]; then
+  echo "    [skip] Windows detected — install Bun via install.ps1 (winget)"
+  exit 0
+fi
+
 if command -v bun &>/dev/null; then
   echo "    bun already installed: $(bun --version)"
   exit 0
