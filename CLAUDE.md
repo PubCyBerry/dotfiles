@@ -63,14 +63,6 @@ bash agents/restore-skills.sh   # npx skills
 # 목록에서 superpowers, context7 선택
 ```
 
-`agents/claude/settings.json`의 `mcpServers`로 전역 MCP 서버를 관리한다:
-
-| MCP 서버 | 패키지 | 설명 |
-|----------|--------|------|
-| `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking` | 단계적 사고 도구 |
-
-> **참고**: `command: "cmd"` + `args: ["/c", "npx", ...]` 형식은 Windows 전용이다. macOS/Linux에서는 `command: "npx"`, `args: ["-y", ...]`로 변경 필요.
-
 ### skills 관리
 
 `agents/skills-manifest.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `restore-skills.sh`가 `npx skills add ... -g -y`로 일괄 설치한다. 새 skill 추가 시 manifest에만 추가하면 된다.

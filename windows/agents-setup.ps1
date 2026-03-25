@@ -108,6 +108,19 @@ if (Test-Path $profileSrc) {
     Write-Host "    [!] $profileSrc not found, skipping profile setup"
 }
 
+# Claude Code 별칭 등록 (ccd = claude --dangerously-skip-permissions)
+Write-Host ""
+Write-Host "==> Registering Claude Code aliases..."
+$claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
+$existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+if ($null -eq $existing) { $existing = "" }
+if ($existing -notmatch [regex]::Escape("function global:ccd")) {
+    "`n$claudeAlias" | Add-Content -Path $PROFILE -Encoding utf8
+    Write-Host "    Registered: ccd -> claude --dangerously-skip-permissions"
+} else {
+    Write-Host "    ccd already registered, skipping"
+}
+
 Write-Host ""
 Write-Host "==> Claude Code config setup complete."
 Write-Host "    Run 'claude' and install plugins with /plugin (superpowers, context7)"

@@ -32,6 +32,9 @@ alias gc="git commit"
 alias gp="git push"
 alias gl="git log --oneline --graph --decorate"
 
+# Claude
+alias ccd="claude --dangerously-skip-permissions"
+
 # Safety
 alias cp="cp -i"
 alias mv="mv -i"

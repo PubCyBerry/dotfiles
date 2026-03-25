@@ -54,7 +54,6 @@ git config --global user.email "kth7186@gmail.com"
 # claude 실행 후 /plugin 명령으로 superpowers, context7 설치
 ```
 
-> **MCP 서버**: `settings.json` 복사 시 `sequential-thinking` MCP가 자동 등록됨.
 > **설정 업데이트**: dotfiles 변경 사항 적용 시 `agents-setup.ps1`을 다시 실행.
 
 ---
@@ -384,19 +383,6 @@ superpowers 플러그인이 제공하는 주요 skills (플러그인 설치 후 
 | `superpowers:test-driven-development` | TDD 방식 구현 가이드 |
 | `superpowers:systematic-debugging` | 버그/실패 원인 체계적 분석 |
 | `superpowers:requesting-code-review` | 구현 완료 후 코드 리뷰 요청 |
-
-### MCP 서버
-
-`agents/claude/settings.json`의 `mcpServers`로 전역 MCP 서버를 관리한다.
-settings.json 링크 후 Claude Code 재시작 시 자동 등록된다.
-
-| MCP 서버 | 패키지 | 설명 |
-|----------|--------|------|
-| `sequential-thinking` | `@modelcontextprotocol/server-sequential-thinking` | 단계적 사고 도구 |
-
-> **Windows vs macOS/Linux:**
-> `settings.json`의 MCP 명령은 Windows 전용(`cmd /c npx ...`)으로 저장되어 있다.
-> macOS/Linux에서는 `agents/setup.sh`가 설치 시 자동으로 `npx` 형식으로 패치하므로 수동 수정 불필요.
 
 ### ccstatusline
 
