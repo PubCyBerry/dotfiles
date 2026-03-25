@@ -30,13 +30,15 @@ if (Test-Path $src) {
     Write-Host "    [!] $src not found"
 }
 
-# ccstatusline 설정 복사
-$ccstatuslineDir = "$env:USERPROFILE\.config\ccstatusline"
-New-Item -ItemType Directory -Force -Path $ccstatuslineDir | Out-Null
-$src = "$DotfilesDir\agents\claude\ccstatusline-settings.json"
+# claude-hud 설정 복사
+$claudeHudDir = "$claudeDir\plugins\claude-hud"
+New-Item -ItemType Directory -Force -Path $claudeHudDir | Out-Null
+$src = "$DotfilesDir\agents\claude\claude-hud-config.json"
 if (Test-Path $src) {
-    Copy-Item $src "$ccstatuslineDir\settings.json" -Force
-    Write-Host "    Copied ccstatusline settings.json"
+    Copy-Item $src "$claudeHudDir\config.json" -Force
+    Write-Host "    Copied claude-hud config.json"
+    Write-Host "    [!] Install claude-hud: run /plugin install claude-hud in Claude Code"
+    Write-Host "    [!] Then run /claude-hud:setup to generate the Windows statusLine command"
 } else {
     Write-Host "    [!] $src not found"
 }

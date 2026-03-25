@@ -48,16 +48,18 @@ if [[ -f "$DOTFILES_DIR/agents/claude/CLAUDE.md" ]]; then
   echo "    copied CLAUDE.md"
 fi
 
-# ccstatusline 설정
-CCSTATUSLINE_CONFIG_DIR="$HOME/.config/ccstatusline"
-if [[ -f "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" ]]; then
-  mkdir -p "$CCSTATUSLINE_CONFIG_DIR"
+# claude-hud 설정
+CLAUDE_HUD_CONFIG_DIR="$CLAUDE_CONFIG_DIR/plugins/claude-hud"
+if [[ -f "$DOTFILES_DIR/agents/claude/claude-hud-config.json" ]]; then
+  mkdir -p "$CLAUDE_HUD_CONFIG_DIR"
   if [[ "$OSTYPE" == "darwin"* ]] || grep -qi microsoft /proc/version 2>/dev/null || [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    ln -sf "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" "$CCSTATUSLINE_CONFIG_DIR/settings.json"
+    ln -sf "$DOTFILES_DIR/agents/claude/claude-hud-config.json" "$CLAUDE_HUD_CONFIG_DIR/config.json"
   else
-    cp "$DOTFILES_DIR/agents/claude/ccstatusline-settings.json" "$CCSTATUSLINE_CONFIG_DIR/settings.json"
+    cp "$DOTFILES_DIR/agents/claude/claude-hud-config.json" "$CLAUDE_HUD_CONFIG_DIR/config.json"
   fi
-  echo "    copied ccstatusline settings.json"
+  echo "    copied claude-hud config.json"
+  echo "    [!] Install claude-hud: run /plugin install claude-hud in Claude Code"
+  echo "    [!] Then run /claude-hud:setup to finalize the statusLine command"
 fi
 
 # The Agency 서브에이전트 설치

@@ -384,20 +384,44 @@ superpowers 플러그인이 제공하는 주요 skills (플러그인 설치 후 
 | `superpowers:systematic-debugging` | 버그/실패 원인 체계적 분석 |
 | `superpowers:requesting-code-review` | 구현 완료 후 코드 리뷰 요청 |
 
-### ccstatusline
+### claude-hud
 
-터미널 상태 표시줄에 Claude Code 세션 정보를 표시.
-`agents/setup.sh`가 실행 설정(settings.json)과 레이아웃 설정 모두 자동 링크함.
-별도 설치 불필요 (npx로 자동 실행).
+터미널 상태 표시줄에 Claude Code 세션 정보를 표시하는 Claude Code 플러그인.
+`agents/setup.sh` / `agents-setup.ps1`이 표시 설정(config.json)을 자동 복사하지만,
+**statusLine 명령어는 머신별로 `/claude-hud:setup`으로 생성해야 함.**
 
-| 파일 | 링크 위치 | 내용 |
+| 파일 | 복사 위치 | 내용 |
 |------|-----------|------|
-| `agents/claude/ccstatusline-settings.json` | `~/.config/ccstatusline/settings.json` | 레이아웃 설정 |
+| `agents/claude/claude-hud-config.json` | `~/.claude/plugins/claude-hud/config.json` | 표시 항목 설정 |
 
-현재 레이아웃:
-- 1줄: `model | thinking-effort | git-branch | git-worktree | git-changes`
-- 2줄: `tokens-output | tokens-cached | tokens-total | context-length | context-percentage-usable`
-- 3줄: `context-bar | session-cost | session-clock`
+#### OS별 설치 절차
+
+| 단계 | Linux / macOS | Windows (Git Bash) | Windows (PowerShell) |
+|------|--------------|-------------------|----------------------|
+| 1. 런타임 | bun 또는 node (install.sh 자동) | 동일 | `winget install Oven-sh.Bun` |
+| 2. 플러그인 설치 | Claude Code에서 `/plugin install claude-hud` | 동일 | 동일 |
+| 3. statusLine 생성 | `/claude-hud:setup` 실행 | 동일 | `/claude-hud:setup` 실행 |
+| 4. 재시작 | Claude Code 재시작 | 동일 | 동일 |
+
+> **참고**: `settings.json`의 `statusLine.command`는 플랫폼/런타임 경로를 포함.
+> Linux/macOS/Git Bash는 bun·node를 자동 감지하는 크로스플랫폼 명령어가 기본으로 포함되어 동작할 수 있음.
+> Windows+PowerShell 또는 런타임 경로가 바뀐 경우 `/claude-hud:setup`으로 재생성 필요.
+
+#### 현재 활성화된 표시 항목
+
+| 항목 | 상태 |
+|------|------|
+| Model + Context bar | ✅ (항상 표시) |
+| Tools activity | ✅ |
+| Agents status | ✅ |
+| Todo progress | ✅ |
+| Session duration | ✅ |
+| Config counts | ✅ |
+| Session name | ✅ |
+| Project name | ✅ |
+| Token breakdown | ✅ |
+| Usage limits | ✅ |
+| Git status | ✅ (branch + dirty) |
 
 ### 에이전트/스킬 복원
 
@@ -470,7 +494,7 @@ dotfiles/
     skills-manifest.txt       # 설치할 skills 목록
     claude/
       CLAUDE.md               # Claude 전역 행동 설정 (RTK 규칙, 도구 사용 규칙 포함)
-      settings.json           # Claude Code 설정 (플러그인, MCP, hook, statusLine)
-      ccstatusline-settings.json  # ccstatusline 레이아웃 설정
+      settings.json           # Claude Code 설정 (플러그인, hook, claude-hud statusLine)
+      claude-hud-config.json  # claude-hud 표시 항목 설정
 ```
 
