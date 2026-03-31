@@ -10,7 +10,7 @@ memory=8GB
 processors=4
 
 # 스왑 크기 (기본값: RAM의 25%)
-swap=2GB
+swap=0
 
 # localhost 포워딩 활성화 (기본값: true)
 localhostForwarding=true

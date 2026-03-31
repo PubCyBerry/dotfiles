@@ -44,8 +44,9 @@ bash agents/restore-skills.sh   # npx skills
 
 `agents/claude/` 파일들이 심볼릭 링크된다:
 - `CLAUDE.md` → `~/.claude/CLAUDE.md` (전역 Claude 행동 설정)
-- `settings.json` → `~/.claude/settings.json` (플러그인, MCP, statusLine, 언어, 권한 포함)
-- `ccstatusline-settings.json` → `~/.config/ccstatusline/settings.json` (상태 표시줄 레이아웃)
+- `settings.json` → `~/.claude/settings.json` (플러그인, MCP, 언어, 권한 포함)
+- `claude-hud-config.json` → `~/.claude/plugins/claude-hud/config.json` (상태 표시줄 표시 항목)
+  - statusLine 명령어는 머신별로 `/claude-hud:setup`으로 별도 생성 필요
 
 ### 플러그인 & MCP 서버
 
@@ -55,6 +56,7 @@ bash agents/restore-skills.sh   # npx skills
 |----------|------|
 | `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
 | `context7@claude-plugins-official` | 라이브러리 문서 조회 MCP 서버 제공 |
+| `claude-hud@claude-hud` | 터미널 상태 표시줄 (statusLine) |
 
 플러그인 재설치:
 ```bash
