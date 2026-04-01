@@ -1,5 +1,9 @@
 {
+  "lineLayout": "expanded",
+  "showSeparators": false,
   "display": {
+    "showModel": true,
+    "showContextBar": true,
     "showTools": true,
     "showAgents": true,
     "showTodos": true,
@@ -8,12 +12,13 @@
     "showSessionName": true,
     "showProject": true,
     "showTokenBreakdown": true,
-    "showUsage": true
+    "showUsage": true,
+    "usageBarEnabled": true
   },
   "gitStatus": {
     "enabled": true,
     "showDirty": true,
-    "showAheadBehind": false,
+    "showAheadBehind": true,
     "showFileStats": false
   }
 }
