@@ -1,333 +1,104 @@
 # dotfiles
 
-Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 dotfiles.
+Windows 11 + WSL2 (Ubuntu 22.04) + macOS 환경을 위한 개인 dotfiles.
+bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
+
+## 목차
+
+- [지원 환경](#지원-환경)
+- [새 머신 셋업](#새-머신-셋업)
+- [기존 머신 업데이트](#기존-머신-업데이트)
+- [git 설정](#git-설정)
+- [파일 구조](#파일-구조)
+- [도구 사용법](docs/tools.md)
+- [AI 에이전트 설정](docs/ai-agents.md)
+- [클린 언인스톨](docs/uninstall.md)
 
 ## 지원 환경
 
 | 환경 | 지원 |
 |------|------|
-| Windows 11 (Git Bash) | 일부 (winget 패키지, PowerShell) — ast-grep/difftastic GitHub Releases 자동 다운로드 |
-| Ubuntu 22.04 (WSL2 / 네이티브) | ✅ 완전 지원 |
-| macOS | ✅ 완전 지원 |
+| Ubuntu 22.04 (WSL2 / 네이티브) | 완전 지원 |
+| macOS | 완전 지원 |
+| Windows 11 (PowerShell 7+) | 패키지 + Claude Code 설정 + 프로파일 관리 |
 
----
+> Windows에서는 bash 심볼릭 링크가 지원되지 않는다. bash 설정(`.bashrc` 등)은 WSL2에서 관리한다.
 
-## 새 머신 셋업 가이드
+## 새 머신 셋업
 
 ### Linux / macOS
 
+1. 저장소 클론
+2. 설치 스크립트 실행
+3. git 사용자 정보 설정 (최초 1회)
+4. 셸 재시작
+
 ```bash
-# 1. 클론
 git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
-
-# 2. 설치
 cd ~/dotfiles && bash install.sh
-
-# 3. git 사용자 정보 설정 (최초 1회)
 cp ~/dotfiles/bash/.gitconfig.local.example ~/.gitconfig.local
 # ~/.gitconfig.local 열어서 name/email 수정
-
-# 4. 셸 재시작
 exec bash
 ```
 
+<details>
+<summary><code>install.sh</code> 실행 순서</summary>
+
+1. `bash/.*` → `~/.*` 심볼릭 링크
+2. `config/*` → `~/.config/*` 심볼릭 링크
+3. OS 패키지 설치 (apt / brew)
+4. fnm → Node.js LTS → Claude Code (네이티브) 설치
+5. bun 설치
+6. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
+7. RTK 설치 및 hook 등록
+8. Claude Code 설정 링크 + 에이전트/스킬 설치
+
+</details>
+
 ### Windows 11
 
-> **주의:** Windows에서는 bash 심볼릭 링크가 지원되지 않는다. bash 설정(`.bashrc` 등)은 WSL2에서 관리한다.
+PowerShell 7+ (pwsh)을 기본 셸로 사용한다.
+
+1. PowerShell 7+ 설치 (관리자 권한)
+2. Windows Terminal에서 기본 프로필을 PowerShell 7로 변경
+3. 패키지 설치
+4. Claude Code 설정 + 프로파일 적용
+5. git 사용자 정보 설정
+6. Claude Code 플러그인 설치
 
 ```powershell
-# PowerShell (관리자 권한)
-# 1. 저장소 클론
+# 관리자 권한의 pwsh에서 실행
+winget install --id Microsoft.PowerShell --source winget
+
 git clone https://github.com/PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
+pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\install.ps1
+pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\agents-setup.ps1
 
-# 2. winget 패키지 + Node.js LTS + Claude Code (네이티브) 설치
-.\dotfiles\windows\install.ps1
-
-# 3. git 사용자 정보 설정
-git config --global user.name "PubCyBerry"
-git config --global user.email "kth7186@gmail.com"
-
-# 4. Claude Code 설정 복사 + PowerShell $PROFILE 설정 + RTK hook 등록
-.\dotfiles\windows\agents-setup.ps1
-
-# 5. Claude Code에서 플러그인 설치
-# claude 실행 후 /plugin 명령으로 superpowers, context7 설치
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+# claude 실행 후 /plugin 명령으로 superpowers, context7, claude-hud 설치
 ```
+
+`agents-setup.ps1`은 PS 5.1(`Documents\WindowsPowerShell`)과 PS 7+(`Documents\PowerShell`) 프로파일 양쪽에 dotfiles 블록과 `ccd` 별칭을 삽입한다.
 
 > **설정 업데이트**: dotfiles 변경 사항 적용 시 `agents-setup.ps1`을 다시 실행.
-
----
-
-## 설치 순서 상세
-
-`install.sh`는 다음 순서로 실행됩니다:
-
-```
-1. bash/ 파일들 → ~/.* 심볼릭 링크
-2. OS 패키지 설치 (apt / brew)
-3. Modern CLI 도구 설치 (eza, delta, zoxide, starship 등)
-4. fnm 설치
-5. Node.js LTS 설치 + Claude Code 네이티브 설치
-6. bun 설치
-7. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
-8. RTK 설치 및 hook 등록
-9. AI 에이전트 설정 (The Agency, npx skills)
-```
-
----
 
 ## 기존 머신 업데이트
 
 ```bash
 cd ~/dotfiles && git pull
 # 심볼릭 링크라서 bash 설정은 pull 즉시 반영됨
+
 # 새 패키지가 추가된 경우:
 bash linux/packages.sh        # Linux/Ubuntu
 bash macos/install.sh         # macOS
 ```
 
----
-
-## 도구 사용법
-
-### bat — syntax-highlighted cat
-
-```bash
-cat file.js          # alias로 bat 실행
-bat file.js          # 직접 실행
-bat -n file.js       # 줄 번호만 (색상 없이)
-bat --plain file.js  # 순수 텍스트 출력
-```
-
-### eza — 컬러 ls 대체
-
-```bash
-ls           # 기본 목록 (아이콘 포함)
-ll           # 상세 목록
-la           # 숨김 파일 포함 상세 목록
-lt           # 트리 뷰 (2 depth)
-eza --tree --level=3  # 트리 뷰 (depth 직접 지정)
-eza -lh --git         # git 상태 포함 상세 목록
-```
-
-### fzf — 퍼지 파인더
-
-```bash
-# 파일 검색
-fzf
-
-# 히스토리 검색 (Ctrl+R 대체)
-# 터미널에서 Ctrl+R 입력 시 fzf로 인터랙티브 검색
-
-# 명령어와 조합
-cat $(fzf)            # fzf로 파일 선택 후 cat
-code $(fzf)           # fzf로 파일 선택 후 VS Code로 열기
-```
-
-### fd — 빠른 find 대체
-
-```bash
-fd                    # 현재 디렉토리의 모든 파일
-fd pattern            # 이름에 pattern이 포함된 파일
-fd -e js              # .js 확장자 파일만
-fd -t d               # 디렉토리만
-fd pattern src/       # src/ 안에서 검색
-fd --hidden           # 숨김 파일 포함
-```
-
-### rg (ripgrep) — 빠른 grep 대체
-
-```bash
-rg "검색어"            # 현재 디렉토리 재귀 검색
-rg "검색어" src/       # 특정 디렉토리에서 검색
-rg -t js "검색어"      # .js 파일만 검색
-rg -l "검색어"         # 파일명만 출력
-rg -i "검색어"         # 대소문자 무시
-rg --no-ignore "검색어" # .gitignore 무시하고 검색
-```
-
-### delta — git diff 뷰어
-
-`git diff`, `git show`, `git log -p` 실행 시 자동으로 delta가 적용됩니다.
-
-```bash
-git diff              # delta로 예쁘게 표시
-git show HEAD         # 마지막 커밋 diff
-git log -p            # 전체 히스토리 diff
-
-# delta 직접 실행
-delta file1 file2
-```
-
-### zoxide — 스마트 cd
-
-```bash
-z foo          # 'foo'가 포함된 자주 간 디렉토리로 이동
-z foo bar      # 'foo'와 'bar' 모두 포함된 경로로 이동
-zi             # fzf로 히스토리 대화형 선택
-```
-
-### lazygit — TUI git 클라이언트
-
-```bash
-lazygit        # 현재 저장소에서 실행
-```
-`space`로 스테이징, `c`로 커밋, `P`로 푸시. `?`로 단축키 목록.
-
-### yazi — TUI 파일 매니저
-
-```bash
-yazi           # 현재 디렉토리에서 실행
-```
-`hjkl`로 탐색, `Enter`로 열기, `y`로 복사, `d`로 삭제.
-
-### starship — 쉘 프롬프트
-
-`~/.config/starship.toml`로 커스터마이징. 기본값으로 git 브랜치/상태, 언어 버전 자동 표시.
-
-```bash
-starship preset --list          # 프리셋 목록
-starship preset pastel-powerline -o ~/.config/starship.toml  # 프리셋 적용
-```
-
-### RTK — 토큰 최적화 프록시
-
-```bash
-rtk git status      # git 명령어 압축 출력 (59-80% 절감)
-rtk gh pr list      # GitHub CLI 압축 출력 (26-87% 절감)
-rtk cargo test      # 테스트 실패만 출력 (90%+ 절감)
-rtk gain            # 누적 토큰 절감 통계
-rtk gain --history  # 명령어별 절감 히스토리
-```
-
-### ruff — Python 린터/포매터
-
-```bash
-ruff check .         # 린팅
-ruff check . --fix   # 자동 수정
-ruff format .        # 포매팅
-```
-
-### jq / yq — 데이터 처리
-
-```bash
-cat data.json | jq '.users[].name'    # JSON 필드 추출
-cat config.yaml | yq '.database.host' # YAML 필드 추출
-yq -o=json config.yaml                # YAML → JSON 변환
-```
-
-### difftastic — AST 기반 diff
-
-```bash
-difft file1.js file2.js   # AST 기반 비교 (공백/포매팅 무시)
-# git diff에서 자동 사용: GIT_EXTERNAL_DIFF=difft git diff
-```
-
-### atuin — 히스토리 강화
-
-셸 히스토리를 SQLite DB로 관리. 검색 속도와 컨텍스트(작업 디렉토리, 종료 코드 등)가 향상됨.
-
-```bash
-# Ctrl+R 대신 atuin 검색 UI 사용 (자동 바인딩)
-# 또는 직접 실행:
-atuin search <키워드>
-atuin stats          # 명령어 사용 통계
-```
-
-### ast-grep — AST 기반 코드 검색/리팩터
-
-문자열이 아닌 코드 구조로 검색. `sg` 명령어로 실행.
-
-```bash
-sg -p 'console.log($A)' src/          # console.log 호출 검색
-sg -p 'console.log($A)' -r 'logger.info($A)' src/  # 일괄 치환
-sg -p 'useState($A)' -l ts            # TypeScript 파일에서 useState 검색
-```
-
-### httpie — HTTP 클라이언트
-
-```bash
-http GET https://api.example.com/users        # GET 요청
-http POST https://api.example.com/users name=foo email=bar@example.com  # POST (JSON 자동)
-http -a user:pass GET https://api.example.com # Basic Auth
-https example.com                             # HTTPS 단축 명령
-```
-
-### .inputrc — Readline 설정
-
-`~/.inputrc`에 정의된 터미널 입력 개선 설정. bash 시작 시 자동 적용.
-
-| 기능 | 동작 |
-|------|------|
-| 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
-| 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
-| Tab 한 번에 목록 표시 | 두 번 누를 필요 없음 |
-| 컬러 자동완성 | 파일 타입별 색상 표시 |
-
-### shell functions
-
-`~/.functions`에 정의된 유틸리티 함수 모음.
-
-```bash
-mkcd my-project     # mkdir + cd 한번에
-up 2                # 2단계 위 디렉토리로 이동 (기본값: 1)
-extract file.tar.gz # 확장자 자동 감지 후 압축 해제
-```
-
-WSL2 전용 (Windows 클립보드 연동):
-
-```bash
-echo "hello" | clip  # Windows 클립보드로 복사
-paste                 # 클립보드 내용 출력
-wpath ~/dotfiles      # WSL 경로 → Windows 경로
-upath "C:\Users\foo"  # Windows 경로 → WSL 경로
-```
-
-### tmux — 터미널 멀티플렉서
-
-`omc team` / rate-limit 감지 기능에 필수. 설치는 OS별로 자동 처리됨.
-
-| OS | 설치 방법 | 비고 |
-|----|-----------|------|
-| macOS | `brew install tmux` (Brewfile 자동) | — |
-| Ubuntu/WSL2 | `sudo apt install tmux` (packages.sh 자동) | — |
-| Windows (네이티브) | `winget install psmux` (install.ps1 자동) | psmux = Windows용 tmux 대체 |
-| Windows (WSL2) | WSL 내부에서 apt 경로로 자동 설치 | — |
-
-```bash
-tmux                    # 새 세션 시작
-tmux new -s dev         # 이름 있는 세션 시작
-tmux ls                 # 세션 목록
-tmux attach -t dev      # 세션 복원
-
-# 주요 단축키 (기본 prefix: Ctrl+B)
-Ctrl+B c    # 새 창
-Ctrl+B d    # 세션 분리 (백그라운드 유지)
-Ctrl+B %    # 수직 분할
-Ctrl+B "    # 수평 분할
-```
-
-### bun — JavaScript 런타임 & 패키지 매니저
-
-Node.js 호환 런타임. npx보다 빠른 스크립트 실행과 패키지 관리에 사용.
-
-| OS | 설치 방법 |
-|----|-----------|
-| macOS | `brew install oven-sh/bun/bun` (Brewfile 자동) |
-| Linux/Ubuntu | `curl -fsSL https://bun.sh/install \| bash` (install.sh 자동) |
-| Windows | `winget install Oven-sh.Bun` (install.ps1 자동) |
-
-```bash
-bun --version      # 설치 확인
-bunx <package>     # npx 대체
-bun install        # npm install 대체 (빠름)
-```
-
----
+Windows는 `install.ps1` + `agents-setup.ps1`을 다시 실행.
 
 ## git 설정
 
-### 전역 alias
+**전역 alias:**
 
 | alias | 원래 명령 |
 |-------|-----------|
@@ -338,154 +109,44 @@ bun install        # npm install 대체 (빠름)
 | `git last` | `git log -1 HEAD` |
 | `git undo` | `git reset --soft HEAD~1` |
 
-### 머신별 설정 (~/.gitconfig.local)
-
-```ini
-[user]
-  name = PubCyBerry
-  email = kth7186@gmail.com
-```
-
-> 회사 컴퓨터는 회사 이메일로 수정하세요.
-
----
-
-## AI 에이전트
-
-### Claude Code 설정
-
-| 파일 | 위치 | 내용 |
-|------|------|------|
-| `agents/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 Claude 행동 설정 |
-| `agents/claude/settings.json` | `~/.claude/settings.json` | Claude Code 설정 (플러그인, MCP, statusLine 포함) |
-
-### 플러그인
-
-Claude Code 플러그인은 `settings.json`의 `enabledPlugins`로 관리된다.
-`agents/setup.sh`로 settings.json을 링크하면 활성화 목록은 자동 복원되지만,
-**플러그인 파일 자체는 Claude Code 내에서 별도 설치 필요:**
-
-```
-/plugin   # 플러그인 마켓에서 superpowers, context7 검색 후 설치
-```
-
-| 플러그인 | 설명 |
-|----------|------|
-| `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
-| `context7@claude-plugins-official` | 라이브러리 최신 문서 조회 MCP 서버 제공 |
-
-superpowers 플러그인이 제공하는 주요 skills (플러그인 설치 후 자동 제공, 별도 설치 불필요):
-
-| skill | 설명 |
-|-------|------|
-| `superpowers:subagent-driven-development` | 플랜을 서브에이전트로 병렬 실행 |
-| `superpowers:writing-plans` | 구현 전 상세 계획 수립 |
-| `superpowers:test-driven-development` | TDD 방식 구현 가이드 |
-| `superpowers:systematic-debugging` | 버그/실패 원인 체계적 분석 |
-| `superpowers:requesting-code-review` | 구현 완료 후 코드 리뷰 요청 |
-
-### claude-hud
-
-터미널 상태 표시줄에 Claude Code 세션 정보를 표시하는 Claude Code 플러그인.
-`agents/setup.sh` / `agents-setup.ps1`이 표시 설정(config.json)을 자동 복사하지만,
-**statusLine 명령어는 머신별로 `/claude-hud:setup`으로 생성해야 함.**
-
-| 파일 | 복사 위치 | 내용 |
-|------|-----------|------|
-| `agents/claude/claude-hud-config.json` | `~/.claude/plugins/claude-hud/config.json` | 표시 항목 설정 |
-
-#### OS별 설치 절차
-
-| 단계 | Linux / macOS | Windows (Git Bash) | Windows (PowerShell) |
-|------|--------------|-------------------|----------------------|
-| 1. 런타임 | bun 또는 node (install.sh 자동) | 동일 | `winget install Oven-sh.Bun` |
-| 2. 플러그인 설치 | Claude Code에서 `/plugin install claude-hud` | 동일 | 동일 |
-| 3. statusLine 생성 | `/claude-hud:setup` 실행 | 동일 | `/claude-hud:setup` 실행 |
-| 4. 재시작 | Claude Code 재시작 | 동일 | 동일 |
-
-> **참고**: `settings.json`의 `statusLine.command`는 플랫폼/런타임 경로를 포함.
-> Linux/macOS/Git Bash는 bun·node를 자동 감지하는 크로스플랫폼 명령어가 기본으로 포함되어 동작할 수 있음.
-> Windows+PowerShell 또는 런타임 경로가 바뀐 경우 `/claude-hud:setup`으로 재생성 필요.
-
-#### 현재 활성화된 표시 항목
-
-| 항목 | 상태 |
-|------|------|
-| Model + Context bar | ✅ (항상 표시) |
-| Tools activity | ✅ |
-| Agents status | ✅ |
-| Todo progress | ✅ |
-| Session duration | ✅ |
-| Config counts | ✅ |
-| Session name | ✅ |
-| Project name | ✅ |
-| Token breakdown | ✅ |
-| Usage limits | ✅ |
-| Git status | ✅ (branch + dirty) |
-
-### 에이전트/스킬 복원
-
-새 머신에서 `install.sh`가 자동으로 실행하지만, 수동으로 재설치할 경우:
-
-```bash
-# The Agency 서브에이전트 재설치
-bash ~/dotfiles/agents/restore-agents.sh
-
-# npx skills 재설치
-bash ~/dotfiles/agents/restore-skills.sh
-```
-
-### 설치된 npx skills 목록
-
-| 스킬 | 설명 |
-|------|------|
-| `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 |
-| `bash-defensive-patterns` | 프로덕션용 bash 스크립트 패턴 |
-| `shellcheck-configuration` | shell 스크립트 린팅 |
-| `powershell-windows` | PowerShell 패턴 |
-| `skill-creator` | 새 skill 생성 |
-| `find-skills` | skill 검색/설치 |
-
----
+**머신별 설정:** `~/.gitconfig.local`에 user.name/email을 설정한다. `.gitconfig.local.example`을 복사해 수정.
 
 ## 파일 구조
 
 ```
 dotfiles/
-  install.sh                  # 메인 진입점
+  install.sh                  # 메인 진입점 (Linux/macOS)
   bash/
-    .bashrc                   # 셸 초기화 (starship/zoxide/fzf/atuin init 포함)
+    .bashrc                   # 셸 초기화 (starship/zoxide/fzf/atuin init)
     .bash_profile             # 로그인 셸
-    .aliases                  # 명령어 단축키 (eza, bat, git 단축 등)
+    .aliases                  # 명령어 단축키 (eza, bat, git, ccd 등)
     .exports                  # 환경변수 (PATH, EDITOR, HISTSIZE 등)
-    .functions                # 셸 유틸리티 함수 (mkcd, up, extract, WSL 연동)
-    .inputrc                  # Readline 설정 (자동완성, 히스토리 검색)
+    .functions                # 유틸리티 함수 (mkcd, up, extract, WSL 연동)
+    .inputrc                  # Readline 설정
     .gitconfig                # git 전역 설정 (공유)
     .gitconfig.local.example  # 머신별 설정 템플릿
     .extra.example            # 머신별 개인 설정 템플릿 (git 제외)
     .gitignore_global         # 전역 gitignore
   config/
-    starship.toml             # Starship prompt 기본 설정 → ~/.config/starship.toml
+    starship.toml             # Starship 프롬프트 설정 → ~/.config/
   tools/
     fnm.sh                    # fnm 설치
     node.sh                   # Node LTS + Claude Code 설치
     bun.sh                    # bun 설치 (OS별 분기)
     global-packages.sh        # npm 전역 패키지 설치
-    global-packages.txt       # 전역 패키지 목록 (gemini-cli, codex 등)
+    global-packages.txt       # 전역 패키지 목록
     rtk.sh                    # RTK 설치 및 hook 등록
   linux/
-    packages.sh               # apt 패키지 (카카오 미러, tmux 포함)
+    packages.sh               # apt 패키지 (카카오 미러)
     install-extras.sh         # apt 미지원 도구 바이너리 설치
-                              # (zoxide, starship, ruff, atuin, lazygit,
-                              #  yazi, difftastic, ast-grep, yq 등)
   macos/
-    install.sh                # Homebrew + Brewfile (--with-defaults 플래그로 .macos도 실행)
-    Brewfile                  # macOS 패키지 목록 (tmux 포함)
-    .macos                    # macOS 시스템 설정 자동화 (Dock, Finder, 키보드 등)
+    install.sh                # Homebrew + Brewfile
+    Brewfile                  # macOS 패키지 목록
+    .macos                    # macOS 시스템 설정 자동화
   windows/
-    install.ps1               # winget 패키지 설치 + psmux(tmux 대체) + RTK 바이너리 다운로드
-    agents-setup.ps1          # Claude Code 설정 자동 복사 + $PROFILE 관리
-    profile.ps1               # PowerShell $PROFILE에 추가할 설정
+    install.ps1               # winget 패키지 + RTK 바이너리 다운로드
+    agents-setup.ps1          # Claude Code 설정 복사 + $PROFILE 관리
+    profile.ps1               # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
     .wslconfig                # WSL2 전역 설정 템플릿
   agents/
     setup.sh                  # Claude 설정 링크 + 에이전트 설치
@@ -493,212 +154,11 @@ dotfiles/
     restore-skills.sh         # npx skills 재설치
     skills-manifest.txt       # 설치할 skills 목록
     claude/
-      CLAUDE.md               # Claude 전역 행동 설정 (RTK 규칙, 도구 사용 규칙 포함)
-      settings.json           # Claude Code 설정 (플러그인, hook, claude-hud statusLine)
+      CLAUDE.md               # Claude 전역 행동 설정
+      settings.json           # Claude Code 설정 (플러그인, hook, statusLine)
       claude-hud-config.json  # claude-hud 표시 항목 설정
+  docs/
+    tools.md                  # CLI 도구 사용법 cheatsheet
+    ai-agents.md              # Claude Code, 플러그인, skills 상세
+    uninstall.md              # 클린 언인스톨 가이드
 ```
-
----
-
-## 클린 언인스톨
-
-dotfiles가 설치한 모든 항목을 제거하는 방법. 필요한 항목만 선택적으로 제거 가능.
-
-### Linux / WSL2
-
-#### 1. 심볼릭 링크 제거 (bash 설정)
-
-```bash
-# dotfiles가 생성한 심볼릭 링크 제거
-for file in ~/dotfiles/bash/.*; do
-  [[ -f "$file" ]] || continue
-  name="$(basename "$file")"
-  [[ "$name" == ".gitconfig.local.example" ]] && continue
-  target="$HOME/$name"
-  [[ -L "$target" ]] && rm "$target" && echo "removed $target"
-done
-
-# XDG config 심볼릭 링크 제거
-rm -f ~/.config/starship.toml
-```
-
-#### 2. Claude Code 설정 제거
-
-```bash
-# Claude 설정 (심볼릭 링크 또는 복사된 파일)
-rm -f ~/.claude/CLAUDE.md ~/.claude/settings.json
-rm -f ~/.claude/plugins/claude-hud/config.json
-rm -f ~/.claude/hooks/rtk-rewrite.sh
-
-# The Agency 서브에이전트
-rm -rf ~/.agency-agents
-
-# npx skills 제거
-npx skills list -g  # 설치된 skills 확인
-npx skills remove <skill-name> -g  # 개별 제거
-```
-
-#### 3. 런타임 & 도구 제거
-
-```bash
-# fnm + Node.js
-rm -rf ~/.local/share/fnm
-
-# bun (curl로 설치한 경우)
-rm -rf ~/.bun
-
-# RTK (curl로 설치한 경우)
-rm -rf ~/.rtk
-
-# Claude Code (네이티브)
-claude uninstall  # 또는 수동: rm $(which claude)
-
-# ~/.local/bin에 설치된 바이너리
-rm -f ~/.local/bin/{yq,starship,lazygit,yazi,difft,sg,bat,fd,rtk}
-```
-
-#### 4. npm 전역 패키지 제거
-
-```bash
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
-```
-
-#### 5. apt 패키지 제거 (선택)
-
-```bash
-sudo apt remove --purge bat fzf fd-find ripgrep jq httpie tmux eza delta shellcheck
-sudo rm -f /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-sudo apt update
-```
-
-#### 6. apt 미러 복원 (선택)
-
-```bash
-# 카카오 미러 → 기본 미러로 복원
-sudo sed -i 's|mirror.kakao.com|archive.ubuntu.com|g' /etc/apt/sources.list
-sudo apt update
-```
-
-#### 7. 셸 초기화 잔여물 정리
-
-`.bashrc`에서 fnm, zoxide, atuin, starship의 `eval` / `source` 라인은 심볼릭 링크 제거(1단계)와 함께 사라진다. 수동으로 `.bashrc`를 작성한 경우, 해당 도구의 init 라인을 직접 제거한다.
-
-### macOS
-
-#### 1. 심볼릭 링크 제거
-
-Linux와 동일 (위 1단계).
-
-#### 2. Claude Code 설정 제거
-
-Linux와 동일 (위 2단계).
-
-#### 3. Homebrew 패키지 제거
-
-```bash
-# Brewfile에 정의된 패키지 일괄 제거
-cd ~/dotfiles && brew bundle cleanup --force
-
-# 또는 개별 제거
-brew uninstall bat fzf eza fd delta ripgrep zoxide yq lazygit yazi \
-  starship ruff httpie difftastic ast-grep atuin tmux rtk oven-sh/bun/bun fnm gh
-```
-
-#### 4. Claude Code + npm 전역 패키지 제거
-
-```bash
-claude uninstall
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
-```
-
-#### 5. macOS 시스템 설정 복원 (선택)
-
-`.macos`로 변경한 설정은 수동 복원 필요:
-
-```bash
-# Dock: 자동 숨기기 해제, 최근 앱 표시 복원
-defaults delete com.apple.dock autohide
-defaults write com.apple.dock show-recents -bool true
-defaults write com.apple.dock tilesize -int 64
-killall Dock
-
-# Finder: 숨김 파일 표시 해제, 타이틀 바 경로 제거
-defaults write com.apple.finder AppleShowAllFiles -bool false
-defaults delete com.apple.finder _FXShowPosixPathInTitle
-killall Finder
-
-# 키보드: 기본 반복 속도 복원
-defaults delete NSGlobalDomain KeyRepeat
-defaults delete NSGlobalDomain InitialKeyRepeat
-```
-
-전체 복원은 **시스템 설정 > 일반 > 전송 또는 재설정**에서 가능.
-
-### Windows
-
-#### 1. PowerShell 프로파일 정리
-
-```powershell
-# PS 7+ 프로파일에서 dotfiles 블록 제거
-$prof = "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-$content = Get-Content $prof -Raw
-$cleaned = $content -replace '(?s)# ===== dotfiles-begin =====.*?# ===== dotfiles-end =====\r?\n?', ''
-$cleaned | Out-File $prof -Encoding utf8
-
-# PS 5.1 프로파일도 동일하게 처리
-$prof5 = "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-if (Test-Path $prof5) {
-    $content = Get-Content $prof5 -Raw
-    $cleaned = $content -replace '(?s)# ===== dotfiles-begin =====.*?# ===== dotfiles-end =====\r?\n?', ''
-    $cleaned | Out-File $prof5 -Encoding utf8
-}
-```
-
-#### 2. Claude Code 설정 제거
-
-```powershell
-Remove-Item "$HOME\.claude\CLAUDE.md", "$HOME\.claude\settings.json" -Force -ErrorAction SilentlyContinue
-Remove-Item "$HOME\.claude\plugins\claude-hud\config.json" -Force -ErrorAction SilentlyContinue
-Remove-Item "$HOME\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
-```
-
-#### 3. RTK + 수동 설치 바이너리 제거
-
-```powershell
-# RTK
-Remove-Item "$HOME\rtk" -Recurse -Force -ErrorAction SilentlyContinue
-
-# ast-grep, difftastic
-Remove-Item "$HOME\.local\bin\sg.exe", "$HOME\.local\bin\difft.exe" -Force -ErrorAction SilentlyContinue
-```
-
-#### 4. winget 패키지 제거 (선택)
-
-```powershell
-$packages = @(
-    "Microsoft.PowerShell", "Git.Git", "GitHub.cli", "Schniz.fnm",
-    "Microsoft.WindowsTerminal", "psmux",
-    "sharkdp.bat", "junegunn.fzf", "eza-community.eza", "sharkdp.fd",
-    "dandavison.delta", "BurntSushi.ripgrep.MSVC", "Oven-sh.Bun", "jqlang.jq",
-    "ajeetdsouza.zoxide", "mikefarah.yq", "JesseDuffield.lazygit",
-    "sxyazi.yazi", "Starship.Starship", "astral-sh.ruff", "httpie.httpie"
-)
-foreach ($pkg in $packages) { winget uninstall --id $pkg }
-```
-
-#### 5. Claude Code 제거
-
-```powershell
-claude uninstall
-# npm 전역 패키지 (fnm 환경에서)
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
-```
-
-### dotfiles 저장소 자체 제거
-
-모든 OS 공통으로, 위 정리가 끝나면 저장소를 삭제한다:
-
-```bash
-rm -rf ~/dotfiles
-```
-
