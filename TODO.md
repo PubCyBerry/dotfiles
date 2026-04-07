@@ -27,8 +27,3 @@
 ### 기타
 - [ ] Gemini CLI + antigravity 설정 추가 (`agents/gemini/` 디렉토리, Claude 구독 소진 시 대안)
 
-### 장기 / 별도 저장소 검토
-- [ ] Claude Code harness 저장소 구성 검토
-  - 참고: `code-yeongyu/oh-my-openagent`, `Yeachan-Heo/oh-my-claudecode`
-  - dotfiles와 분리 권장 (변경 주기·공유 대상 다름)
-  - 개인용이면 dotfiles 통합, 공개 배포 목적이면 별도 repo

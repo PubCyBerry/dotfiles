@@ -20,7 +20,7 @@ PACKAGES=(
   unzip
   build-essential
   shellcheck
-  tmux         # omc team / rate-limit 감지에 필수
+  tmux
   # Modern CLI (apt 버전)
   bat          # syntax-highlighted cat (Ubuntu에서 binary명: batcat)
   fzf          # 퍼지 파인더

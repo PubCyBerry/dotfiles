@@ -39,7 +39,6 @@ brew "difftastic"   # AST 기반 diff
 brew "ast-grep"     # AST 기반 코드 검색/리팩터 (sg 명령어)
 brew "atuin"        # 히스토리 강화
 
-# tmux (omc team / rate-limit 감지에 필수)
 brew "tmux"
 
 # RTK (Rust Token Killer)
