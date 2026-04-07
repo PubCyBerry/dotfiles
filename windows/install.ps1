@@ -2,6 +2,7 @@
 # Run in PowerShell as Administrator
 
 $packages = @(
+    "Microsoft.PowerShell",       # PowerShell 7+ (pwsh)
     "Git.Git",
     "GitHub.cli",
     "Schniz.fnm",

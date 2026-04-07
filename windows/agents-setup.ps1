@@ -75,52 +75,49 @@ $rtkHookContent | Out-File -FilePath $hookScript -Encoding utf8 -NoNewline
 Write-Host "    Created RTK hook: $hookScript"
 
 # PowerShell $PROFILE 관리 (마커 방식 — 기존 내용 보존, 반복 실행 안전)
+# PS 5.1과 PS 7+ 프로파일 경로가 다르므로 양쪽 모두 업데이트
 Write-Host ""
-Write-Host "==> Updating PowerShell profile..."
+Write-Host "==> Updating PowerShell profiles..."
 $profileSrc = "$DotfilesDir\windows\profile.ps1"
 if (Test-Path $profileSrc) {
     $markerBegin = "# ===== dotfiles-begin ====="
     $markerEnd   = "# ===== dotfiles-end ====="
-    $newBlock    = "$markerBegin`n$(Get-Content $profileSrc -Raw)`n$markerEnd"
+    $profileContent = Get-Content $profileSrc -Raw
+    $claudeAlias = "`nfunction global:ccd { claude --dangerously-skip-permissions @args }"
+    $newBlock    = "$markerBegin`n$profileContent`n$claudeAlias`n$markerEnd"
 
-    # $PROFILE 디렉토리 생성
-    $profileDir = Split-Path $PROFILE
-    if (-not (Test-Path $profileDir)) {
-        New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-    }
-    # $PROFILE 파일이 없으면 빈 파일 생성
-    if (-not (Test-Path $PROFILE)) {
-        New-Item -ItemType File -Force -Path $PROFILE | Out-Null
-    }
+    # 현재 $PROFILE + PS 7+ 프로파일 경로 모두 수집
+    $profilePaths = @($PROFILE)
+    $ps7Profile = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+    $ps5Profile = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
+    if ($profilePaths -notcontains $ps7Profile) { $profilePaths += $ps7Profile }
+    if ($profilePaths -notcontains $ps5Profile) { $profilePaths += $ps5Profile }
 
-    $existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
-    if ($null -eq $existing) { $existing = "" }
+    foreach ($prof in $profilePaths) {
+        # 디렉토리 생성
+        $profileDir = Split-Path $prof
+        if (-not (Test-Path $profileDir)) {
+            New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+        }
+        # 파일이 없으면 빈 파일 생성
+        if (-not (Test-Path $prof)) {
+            New-Item -ItemType File -Force -Path $prof | Out-Null
+        }
 
-    if ($existing -match [regex]::Escape($markerBegin)) {
-        # 기존 마커 블록 교체
-        $updated = $existing -replace "(?s)$([regex]::Escape($markerBegin)).*?$([regex]::Escape($markerEnd))", $newBlock
-        $updated | Out-File -FilePath $PROFILE -Encoding utf8 -NoNewline
-        Write-Host "    Updated dotfiles block in $PROFILE"
-    } else {
-        # 마커 블록 추가 (기존 내용 뒤에 추가)
-        "`n$newBlock" | Add-Content -Path $PROFILE -Encoding utf8
-        Write-Host "    Appended dotfiles block to $PROFILE"
+        $existing = Get-Content $prof -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $existing) { $existing = "" }
+
+        if ($existing -match [regex]::Escape($markerBegin)) {
+            $updated = $existing -replace "(?s)$([regex]::Escape($markerBegin)).*?$([regex]::Escape($markerEnd))", $newBlock
+            $updated | Out-File -FilePath $prof -Encoding utf8 -NoNewline
+            Write-Host "    Updated dotfiles block in $prof"
+        } else {
+            "`n$newBlock" | Add-Content -Path $prof -Encoding utf8
+            Write-Host "    Appended dotfiles block to $prof"
+        }
     }
 } else {
     Write-Host "    [!] $profileSrc not found, skipping profile setup"
-}
-
-# Claude Code 별칭 등록 (ccd = claude --dangerously-skip-permissions)
-Write-Host ""
-Write-Host "==> Registering Claude Code aliases..."
-$claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
-$existing = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
-if ($null -eq $existing) { $existing = "" }
-if ($existing -notmatch [regex]::Escape("function global:ccd")) {
-    "`n$claudeAlias" | Add-Content -Path $PROFILE -Encoding utf8
-    Write-Host "    Registered: ccd -> claude --dangerously-skip-permissions"
-} else {
-    Write-Host "    ccd already registered, skipping"
 }
 
 Write-Host ""

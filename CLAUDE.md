@@ -69,8 +69,27 @@ bash agents/restore-skills.sh   # npx skills
 
 `agents/skills-manifest.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `restore-skills.sh`가 `npx skills add ... -g -y`로 일괄 설치한다. 새 skill 추가 시 manifest에만 추가하면 된다.
 
+### Windows 설치 (PowerShell 7+ 기준)
+
+Windows는 PowerShell 7+ (pwsh)을 기본 셸로 사용한다.
+
+```powershell
+# 1. PowerShell 7+ 설치 (관리자 권한)
+winget install --id Microsoft.PowerShell --source winget
+
+# 2. Windows Terminal → Settings → Default profile → PowerShell 7 선택
+
+# 3. 패키지 설치 (pwsh에서 관리자 권한으로 실행)
+pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\install.ps1
+
+# 4. Claude Code 설정 + 프로파일 적용
+pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\agents-setup.ps1
+```
+
+`agents-setup.ps1`은 PS 5.1(`Documents\WindowsPowerShell`)과 PS 7+(`Documents\PowerShell`) 프로파일 양쪽에 dotfiles 블록과 `ccd` 별칭을 삽입한다.
+
 ## 주의사항
 
 - `~/.gitconfig.local`은 머신별 user.name/email을 담으며 저장소에 포함되지 않는다. 신규 머신 설정 시 `.gitconfig.local.example`을 복사해 수동 수정 필요.
 - `linux/packages.sh`는 카카오 CDN 미러(`mirror.kakao.com`)를 사용한다.
-- Windows는 `windows/install.ps1` (winget)만 지원하며, bash 설정 링크는 지원하지 않는다.
+- Windows는 PowerShell 7+ (pwsh) 기준으로 설정한다. `install.ps1`이 pwsh를 포함한 도구를 설치하고, `agents-setup.ps1`이 PS 5.1/7+ 프로파일 양쪽에 설정을 적용한다.

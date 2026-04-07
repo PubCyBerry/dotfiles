@@ -1,6 +1,11 @@
 # windows/profile.ps1 — PowerShell $PROFILE에 추가할 dotfiles 설정
 # 직접 실행하지 않음. agents-setup.ps1이 $PROFILE에 마커 블록으로 삽입.
 
+# fnm (Node.js 버전 관리)
+if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
+}
+
 # zoxide (스마트 cd — z 명령어)
 if (Get-Command zoxide -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (zoxide init powershell | Out-String) })
