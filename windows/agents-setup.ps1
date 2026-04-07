@@ -43,6 +43,15 @@ if (Test-Path $src) {
     Write-Host "    [!] $src not found"
 }
 
+# .tmux.conf 복사
+$src = "$DotfilesDir\windows\.tmux.conf"
+if (Test-Path $src) {
+    Copy-Item $src "$env:USERPROFILE\.tmux.conf" -Force
+    Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)"
+} else {
+    Write-Host "    [!] $src not found, skipping .tmux.conf"
+}
+
 # .wslconfig 복사 (선택적)
 $src = "$DotfilesDir\windows\.wslconfig"
 if (Test-Path $src) {
