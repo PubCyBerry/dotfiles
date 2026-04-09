@@ -51,6 +51,12 @@ elif is_wsl || is_linux; then
   bash "$DOTFILES_DIR/linux/install-extras.sh"
 fi
 
+# TPM (tmux plugin manager)
+if [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
+  echo "==> Installing TPM..."
+  git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"
+fi
+
 # Tools
 echo "==> Installing tools..."
 bash "$DOTFILES_DIR/tools/fnm.sh"
