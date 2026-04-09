@@ -19,3 +19,6 @@ wshobson/agents@shellcheck-configuration
 
 # Windows
 sickn33/antigravity-awesome-skills@powershell-windows
+
+# Design
+pbakaus/impeccable@teach-impeccable
