@@ -110,6 +110,20 @@ if (-not (Test-Path $rtkExe) -and -not (Test-Path "$rtkDir\rtk")) {
     Write-Host "    RTK already installed: $rtkExe"
 }
 
+# rtk-wrapper: Git Bash에서 "Hook outdated" 경고 필터링
+Write-Host ""
+Write-Host "==> Installing rtk-wrapper for Git Bash..."
+$wrapperSrc = Join-Path $PSScriptRoot "..\tools\rtk-wrapper"
+$localBin = "$env:USERPROFILE\.local\bin"
+$wrapperDst = "$localBin\rtk"
+New-Item -ItemType Directory -Force -Path $localBin | Out-Null
+if (Test-Path $wrapperSrc) {
+    Copy-Item $wrapperSrc $wrapperDst -Force
+    Write-Host "    rtk wrapper installed → $wrapperDst"
+} else {
+    Write-Host "    [!] rtk-wrapper not found at $wrapperSrc"
+}
+
 # ast-grep / difftastic — winget 미지원, GitHub Releases에서 직접 다운로드
 $toolsDir = "$env:USERPROFILE\.local\bin"
 New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null

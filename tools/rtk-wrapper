@@ -12,4 +12,4 @@ else
   RTK_BIN="$(PATH="${PATH//$HOME\/.local\/bin:/}" command -v rtk 2>/dev/null)"
 fi
 
-"${RTK_BIN}" "$@" 2> >(grep -v "\[rtk\] Hook outdated" >&2)
+"${RTK_BIN}" "$@" 2> >(grep -v "\[rtk\].*Hook outdated" >&2)
