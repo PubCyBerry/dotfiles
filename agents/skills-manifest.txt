@@ -13,12 +13,5 @@ anthropics/skills@pptx
 anthropics/skills@docx
 anthropics/skills@xlsx
 
-# Shell / Bash
-wshobson/agents@bash-defensive-patterns
-wshobson/agents@shellcheck-configuration
-
-# Windows
-sickn33/antigravity-awesome-skills@powershell-windows
-
 # Design
-pbakaus/impeccable@teach-impeccable
+pbakaus/impeccable@impeccable
