@@ -21,20 +21,7 @@ Linux/macOS에서는 심볼릭 링크, Windows에서는 파일 복사로 설정�
 
 | 플러그인 | 설명 |
 |----------|------|
-| `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
 | `context7@claude-plugins-official` | 라이브러리 최신 문서 조회 MCP 서버 |
-
-## superpowers 주요 skills
-
-플러그인 설치 후 자동 제공, 별도 설치 불필요.
-
-| skill | 설명 |
-|-------|------|
-| `superpowers:subagent-driven-development` | 플랜을 서브에이전트로 병렬 실행 |
-| `superpowers:writing-plans` | 구현 전 상세 계획 수립 |
-| `superpowers:test-driven-development` | TDD 방식 구현 가이드 |
-| `superpowers:systematic-debugging` | 버그/실패 원인 체계적 분석 |
-| `superpowers:requesting-code-review` | 구현 완료 후 코드 리뷰 요청 |
 
 ## claude-hud
 

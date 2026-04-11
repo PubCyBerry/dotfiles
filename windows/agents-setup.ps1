@@ -118,5 +118,5 @@ if (Test-Path $profileSrc) {
 
 Write-Host ""
 Write-Host "==> Claude Code config setup complete."
-Write-Host "    Run 'claude' and install plugins with /plugin (superpowers, context7)"
+Write-Host "    Run 'claude' and install plugins with /plugin (context7)"
 Write-Host "    Restart PowerShell to apply profile changes."

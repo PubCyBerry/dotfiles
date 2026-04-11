@@ -51,14 +51,13 @@ bash agents/restore-skills.sh   # npx skills
 
 | 플러그인 | 설명 |
 |----------|------|
-| `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
 | `context7@claude-plugins-official` | 라이브러리 문서 조회 MCP 서버 제공 |
 
 플러그인 재설치:
 ```bash
 # Claude Code 내에서
 /plugin
-# 목록에서 superpowers, context7 선택
+# 목록에서 context7 선택
 ```
 
 ### skills 관리

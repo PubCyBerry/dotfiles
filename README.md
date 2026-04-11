@@ -76,7 +76,7 @@ pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\agents-setup.ps1
 
 git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
-# claude 실행 후 /plugin 명령으로 superpowers, context7 설치
+# claude 실행 후 /plugin 명령으로 context7 설치
 ```
 
 `agents-setup.ps1`은 PS 5.1(`Documents\WindowsPowerShell`)과 PS 7+(`Documents\PowerShell`) 프로파일 양쪽에 dotfiles 블록과 `ccd` 별칭을 삽입한다.
