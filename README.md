@@ -5,15 +5,20 @@ bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 
 ## 목차
 
-- [지원 환경](#지원-환경)
-- [새 머신 셋업](#새-머신-셋업)
-- [기존 머신 업데이트](#기존-머신-업데이트)
-- [git 설정](#git-설정)
-- [파일 구조](#파일-구조)
-- [도구 사용법](docs/tools.md)
-- [AI 에이전트 설정](docs/ai-agents.md)
-- [클린 언인스톨](docs/uninstall.md)
-- [References](#references)
+- [dotfiles](#dotfiles)
+  - [목차](#목차)
+  - [지원 환경](#지원-환경)
+  - [새 머신 셋업](#새-머신-셋업)
+    - [Windows 11](#windows-11)
+    - [macOS / Linux](#macos--linux)
+  - [기존 머신 업데이트](#기존-머신-업데이트)
+  - [git 설정](#git-설정)
+  - [파일 구조](#파일-구조)
+  - [References](#references)
+    - [Dotfiles](#dotfiles-1)
+    - [Harness](#harness)
+    - [Skills](#skills)
+    - [Tools](#tools)
 
 ## 지원 환경
 
@@ -165,13 +170,13 @@ dotfiles/
 |--------|------|
 | [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles) | dotfiles 구성 참고 |
 
-### Claude Code Harness
+### Harness
 
 | 저장소 | 설명 |
 |--------|------|
-| [yeachan-heo/oh-my-claudecode](https://github.com/yeachan-heo/oh-my-claudecode) | Claude Code Harness 구성 참고 |
-| [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) | OpenAgent Harness 구성 참고 |
-| [obra/superpowers](https://github.com/obra/superpowers) | Claude skills Harness 구성 참고 (원조) |
+| [yeachan-heo/oh-my-claudecode](https://github.com/yeachan-heo/oh-my-claudecode) | Harness 구성 참고 |
+| [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) | Harness 구성 참고 |
+| [obra/superpowers](https://github.com/obra/superpowers) | Harness 구성 참고 |
 
 ### Skills
 

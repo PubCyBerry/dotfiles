@@ -3,6 +3,4 @@
 # @anthropic-ai/claude-code 는 tools/node.sh 에서 설치
 
 @google/gemini-cli
-@musistudio/claude-code-router
 @openai/codex
-opencode-ai
