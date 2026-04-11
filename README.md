@@ -76,7 +76,7 @@ pwsh -ExecutionPolicy Bypass -File .\dotfiles\windows\agents-setup.ps1
 
 git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
-# claude 실행 후 /plugin 명령으로 superpowers, context7, claude-hud 설치
+# claude 실행 후 /plugin 명령으로 superpowers, context7 설치
 ```
 
 `agents-setup.ps1`은 PS 5.1(`Documents\WindowsPowerShell`)과 PS 7+(`Documents\PowerShell`) 프로파일 양쪽에 dotfiles 블록과 `ccd` 별칭을 삽입한다.
@@ -150,13 +150,11 @@ dotfiles/
     .wslconfig                # WSL2 전역 설정 템플릿
   agents/
     setup.sh                  # Claude 설정 링크 + 에이전트 설치
-    restore-agents.sh         # The Agency 재설치
     restore-skills.sh         # npx skills 재설치
     skills-manifest.txt       # 설치할 skills 목록
     claude/
       CLAUDE.md               # Claude 전역 행동 설정
       settings.json           # Claude Code 설정 (플러그인, hook, statusLine)
-      claude-hud-config.json  # claude-hud 표시 항목 설정
   docs/
     tools.md                  # CLI 도구 사용법 cheatsheet
     ai-agents.md              # Claude Code, 플러그인, skills 상세

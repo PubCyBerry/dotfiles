@@ -24,9 +24,7 @@ rm -f ~/.config/starship.toml
 
 ```bash
 rm -f ~/.claude/CLAUDE.md ~/.claude/settings.json
-rm -f ~/.claude/plugins/claude-hud/config.json
 rm -f ~/.claude/hooks/rtk-rewrite.sh
-rm -rf ~/.agency-agents
 
 # npx skills 제거
 npx skills list -g                     # 설치된 skills 확인
@@ -143,7 +141,6 @@ if (Test-Path $prof5) {
 
 ```powershell
 Remove-Item "$HOME\.claude\CLAUDE.md", "$HOME\.claude\settings.json" -Force -ErrorAction SilentlyContinue
-Remove-Item "$HOME\.claude\plugins\claude-hud\config.json" -Force -ErrorAction SilentlyContinue
 Remove-Item "$HOME\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
 ```
 

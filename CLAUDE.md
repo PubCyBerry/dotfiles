@@ -20,7 +20,6 @@ bash linux/packages.sh && bash linux/install-extras.sh   # WSL2/Linux
 bash macos/install.sh                                     # macOS
 
 # 에이전트/스킬만 재설치
-bash agents/restore-agents.sh   # The Agency 서브에이전트
 bash agents/restore-skills.sh   # npx skills
 ```
 
@@ -33,7 +32,7 @@ bash agents/restore-skills.sh   # npx skills
 2. OS 감지 후 패키지 설치 (`macos/install.sh` 또는 `linux/packages.sh` + `linux/install-extras.sh`)
 3. `tools/fnm.sh` → fnm 설치
 4. `tools/node.sh` → Node.js LTS + Claude Code 설치
-5. `agents/setup.sh` → Claude 설정 링크 + The Agency + npx skills 설치
+5. `agents/setup.sh` → Claude 설정 링크 + npx skills 설치
 
 ### bash 설정 로딩 체인
 
@@ -45,8 +44,6 @@ bash agents/restore-skills.sh   # npx skills
 `agents/claude/` 파일들이 심볼릭 링크된다:
 - `CLAUDE.md` → `~/.claude/CLAUDE.md` (전역 Claude 행동 설정)
 - `settings.json` → `~/.claude/settings.json` (플러그인, MCP, 언어, 권한 포함)
-- `claude-hud-config.json` → `~/.claude/plugins/claude-hud/config.json` (상태 표시줄 표시 항목)
-  - statusLine 명령어는 머신별로 `/claude-hud:setup`으로 별도 생성 필요
 
 ### 플러그인 & MCP 서버
 
@@ -56,7 +53,6 @@ bash agents/restore-skills.sh   # npx skills
 |----------|------|
 | `superpowers@claude-plugins-official` | Skills 시스템, 에이전트 워크플로우 |
 | `context7@claude-plugins-official` | 라이브러리 문서 조회 MCP 서버 제공 |
-| `claude-hud@claude-hud` | 터미널 상태 표시줄 (statusLine) |
 
 플러그인 재설치:
 ```bash
