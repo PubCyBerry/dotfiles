@@ -13,6 +13,7 @@ bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 - [도구 사용법](docs/tools.md)
 - [AI 에이전트 설정](docs/ai-agents.md)
 - [클린 언인스톨](docs/uninstall.md)
+- [References](docs/references.md)
 
 ## 지원 환경
 
