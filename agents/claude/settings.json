@@ -8,9 +8,6 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "language": "한국어",
-  "enabledPlugins": {
-    "context7@claude-plugins-official": true
-  },
   "permissions": {
     "allow": [
       "Bash(npx skills *)"

@@ -43,22 +43,7 @@ bash agents/restore-skills.sh   # npx skills
 
 `agents/claude/` 파일들이 심볼릭 링크된다:
 - `CLAUDE.md` → `~/.claude/CLAUDE.md` (전역 Claude 행동 설정)
-- `settings.json` → `~/.claude/settings.json` (플러그인, MCP, 언어, 권한 포함)
-
-### 플러그인 & MCP 서버
-
-`settings.json`의 `enabledPlugins`로 관리:
-
-| 플러그인 | 설명 |
-|----------|------|
-| `context7@claude-plugins-official` | 라이브러리 문서 조회 MCP 서버 제공 |
-
-플러그인 재설치:
-```bash
-# Claude Code 내에서
-/plugin
-# 목록에서 context7 선택
-```
+- `settings.json` → `~/.claude/settings.json` (언어, 권한 포함)
 
 ### skills 관리
 

@@ -7,21 +7,9 @@ Claude Code와 관련 에이전트/스킬 설정 상세.
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|
 | `agents/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (RTK 규칙, 도구 사용 규칙) |
-| `agents/claude/settings.json` | `~/.claude/settings.json` | 플러그인, MCP, 언어, 권한 설정 |
+| `agents/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
 
 Linux/macOS에서는 심볼릭 링크, Windows에서는 파일 복사로 설정된다.
-
-## 플러그인
-
-`settings.json`의 `enabledPlugins`로 관리. settings.json을 링크/복사하면 활성화 목록은 자동 복원되지만, **플러그인 파일 자체는 Claude Code 내에서 별도 설치 필요:**
-
-```
-/plugin   # 플러그인 마켓에서 검색 후 설치
-```
-
-| 플러그인 | 설명 |
-|----------|------|
-| `context7@claude-plugins-official` | 라이브러리 최신 문서 조회 MCP 서버 |
 
 ## claude-hud
 
