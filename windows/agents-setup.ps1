@@ -39,15 +39,6 @@ if (Test-Path $src) {
     Write-Host "    [!] $src not found, skipping .tmux.conf"
 }
 
-# .wslconfig 복사 (선택적)
-$src = "$DotfilesDir\windows\.wslconfig"
-if (Test-Path $src) {
-    Copy-Item $src "$env:USERPROFILE\.wslconfig" -Force
-    Write-Host "    Copied .wslconfig (run 'wsl --shutdown' to apply)"
-} else {
-    Write-Host "    [!] $src not found, skipping .wslconfig"
-}
-
 # RTK hook 스크립트 생성 (Windows용 수동 설치 — rtk init --global이 Windows 미지원)
 Write-Host ""
 Write-Host "==> Setting up RTK hook for Claude Code..."

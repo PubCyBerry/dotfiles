@@ -12,7 +12,7 @@ else
     # macOS: Homebrew (Brewfile에도 포함됨, 이미 설치됐을 수 있음)
     brew install rtk
   else
-    # Linux / WSL2: 공식 install.sh (pre-built 바이너리)
+    # Linux: 공식 install.sh (pre-built 바이너리)
     curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
   fi
 fi

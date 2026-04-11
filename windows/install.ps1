@@ -7,7 +7,7 @@ $packages = @(
     "GitHub.cli",
     "Schniz.fnm",
     "Microsoft.WindowsTerminal",
-    "psmux",                    # tmux 대체 (네이티브 Windows; WSL2 사용자는 WSL 내에서 apt install tmux)
+    "psmux",                    # tmux 대체 (네이티브 Windows)
     # Modern CLI (기존)
     "sharkdp.bat",
     "junegunn.fzf",
@@ -48,6 +48,22 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
 } else {
     Write-Host "    [!] fnm not found. Restart terminal and run:"
     Write-Host "        fnm install --lts && fnm default lts-latest"
+}
+
+# 전역 npm 패키지 설치 (tools/global-packages.txt)
+Write-Host ""
+Write-Host "==> Installing global npm packages..."
+$pkgsFile = Join-Path $PSScriptRoot "..\tools\global-packages.txt"
+if (Test-Path $pkgsFile) {
+    Get-Content $pkgsFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith('#')) {
+            Write-Host "    Installing $line..."
+            npm install -g $line
+        }
+    }
+} else {
+    Write-Host "    [!] global-packages.txt not found, skipping."
 }
 
 # Claude Code 설치 (네이티브 — npm 설치 시 'claude install' 마이그레이션 경고 발생)

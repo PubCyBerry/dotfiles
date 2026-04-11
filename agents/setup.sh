@@ -8,7 +8,7 @@ mkdir -p "$CLAUDE_CONFIG_DIR"
 
 # Claude settings.json
 if [[ -f "$DOTFILES_DIR/agents/claude/settings.json" ]]; then
-  if [[ "$OSTYPE" == "darwin"* ]] || grep -qi microsoft /proc/version 2>/dev/null || [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  if [[ "$OSTYPE" == "darwin"* ]] || [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # macOS/Linux: cmd /c npx 형식을 npx 형식으로 패치한 복사본 생성
     cp "$DOTFILES_DIR/agents/claude/settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
     python3 - "$CLAUDE_CONFIG_DIR/settings.json" <<'EOF'
@@ -40,7 +40,7 @@ fi
 
 # Claude global CLAUDE.md
 if [[ -f "$DOTFILES_DIR/agents/claude/CLAUDE.md" ]]; then
-  if [[ "$OSTYPE" == "darwin"* ]] || grep -qi microsoft /proc/version 2>/dev/null || [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  if [[ "$OSTYPE" == "darwin"* ]] || [[ "$OSTYPE" == "linux-gnu"* ]]; then
     ln -sf "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"
   else
     cp "$DOTFILES_DIR/agents/claude/CLAUDE.md" "$CLAUDE_CONFIG_DIR/CLAUDE.md"

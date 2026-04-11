@@ -4,7 +4,6 @@ set -Eeuo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # OS detection
-is_wsl()   { grep -qi microsoft /proc/version 2>/dev/null; }
 is_linux() { [[ "$OSTYPE" == "linux-gnu"* ]]; }
 is_macos() { [[ "$OSTYPE" == "darwin"* ]]; }
 
@@ -45,7 +44,7 @@ fi
 if is_macos; then
   echo "==> Running macOS setup..."
   bash "$DOTFILES_DIR/macos/install.sh"
-elif is_wsl || is_linux; then
+elif is_linux; then
   echo "==> Running Linux setup..."
   bash "$DOTFILES_DIR/linux/packages.sh"
   bash "$DOTFILES_DIR/linux/install-extras.sh"

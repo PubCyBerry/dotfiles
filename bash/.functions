@@ -37,24 +37,3 @@ extract() {
     echo "'$1' 은 유효한 파일이 아닙니다."
   fi
 }
-
-# WSL2 전용: Windows 클립보드 연동
-if grep -qi microsoft /proc/version 2>/dev/null; then
-  # 클립보드 복사 (echo "text" | clip)
-  alias clip="clip.exe"
-
-  # 클립보드 붙여넣기
-  paste() {
-    powershell.exe -command "Get-Clipboard" | sed 's/\r//'
-  }
-
-  # WSL 경로 → Windows 경로 변환
-  wpath() {
-    wslpath -w "${1:-.}"
-  }
-
-  # Windows 경로 → WSL 경로 변환
-  upath() {
-    wslpath -u "$1"
-  }
-fi

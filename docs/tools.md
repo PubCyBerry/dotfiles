@@ -148,7 +148,7 @@ tmux attach -t dev      # 세션 복원
 | OS | 설치 방법 |
 |----|-----------|
 | macOS | Brewfile 자동 |
-| Ubuntu/WSL2 | packages.sh 자동 |
+| Ubuntu | packages.sh 자동 |
 | Windows (네이티브) | `winget install psmux` (tmux 대체) |
 
 ## 데이터 처리
@@ -205,7 +205,7 @@ bun install        # npm install 대체 (빠름)
 | OS | 설치 방법 |
 |----|-----------|
 | macOS | Brewfile 자동 |
-| Linux/Ubuntu | install.sh 자동 (curl) |
+| Linux | install.sh 자동 (curl) |
 | Windows | `winget install Oven-sh.Bun` |
 
 ## 셸 설정
@@ -231,11 +231,3 @@ up 2                # 2단계 위 디렉토리로 이동 (기본값: 1)
 extract file.tar.gz # 확장자 자동 감지 후 압축 해제
 ```
 
-**WSL2 전용** (Windows 클립보드 연동):
-
-```bash
-echo "hello" | clip  # Windows 클립보드로 복사
-paste                 # 클립보드 내용 출력
-wpath ~/dotfiles      # WSL 경로 → Windows 경로
-upath "C:\Users\foo"  # Windows 경로 → WSL 경로
-```
