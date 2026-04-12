@@ -1,6 +1,6 @@
 # dotfiles
 
-Windows 11 + macOS 환경을 위한 개인 dotfiles.
+Windows 11 + Linux 환경을 위한 개인 dotfiles.
 bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 
 ## 목차
@@ -10,7 +10,7 @@ bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
   - [지원 환경](#지원-환경)
   - [새 머신 셋업](#새-머신-셋업)
     - [Windows 11](#windows-11)
-    - [macOS / Linux](#macos--linux)
+    - [Linux](#linux)
   - [기존 머신 업데이트](#기존-머신-업데이트)
   - [git 설정](#git-설정)
   - [파일 구조](#파일-구조)
@@ -25,8 +25,8 @@ bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 | 환경 | 지원 |
 |------|------|
 | Windows 11 (PowerShell 7+) | 완전 지원 (주 환경) |
-| macOS | 완전 지원 |
 | Ubuntu 22.04 | 완전 지원 |
+| macOS | 보류 (`macos/` 디렉토리에 코드 보관) |
 
 ## 새 머신 셋업
 
@@ -50,31 +50,28 @@ git config --global user.email "your@email.com"
 <details>
 <summary><code>install.ps1</code> 실행 순서</summary>
 
-**windows\install.ps1:**
-1. winget 패키지 설치 (Git, fnm, bat, fzf, eza, fd, delta, rg, bun, jq 등)
+1. `manifests/winget.txt` → winget 패키지 설치 (Git, fnm, bat, fzf, eza, fd, delta, rg, bun, jq 등)
 2. Node.js LTS 설치 (fnm)
-3. npm 전역 패키지 설치 (gemini-cli, codex, opencode 등)
+3. `manifests/npm-global.txt` → npm 전역 패키지 설치
 4. Claude Code 네이티브 설치
-5. RTK 바이너리 설치
+5. RTK 바이너리 설치 + rtk-wrapper
 6. ast-grep, difftastic 바이너리 설치
-
-**windows\agents-setup.ps1:**
-7. Claude Code 설정 복사 (`settings.json`, `CLAUDE.md`)
-8. `.tmux.conf` 복사 (pwsh 기본 셸)
-9. RTK hook 생성
-10. PowerShell 프로파일 설정 (PS 5.1 + PS 7+ 양쪽)
-11. npx skills 복원
+7. `config/claude/` → `~/.claude/` 복사 (`settings.json`, `CLAUDE.md`)
+8. RTK hook 생성 (`~/.claude/hooks/rtk-rewrite.sh`)
+9. PowerShell 프로파일 설정 (PS 5.1 + PS 7+ 양쪽, `config/windows/profile.ps1`)
+10. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
+11. `manifests/skills.txt` → npx skills 복원
 
 </details>
 
 > **설정 업데이트**: dotfiles 변경 사항 적용 시 `install.ps1`을 다시 실행.
 
-### macOS / Linux
+### Linux
 
 ```bash
 git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
 cd ~/dotfiles && bash install.sh
-cp ~/dotfiles/bash/.gitconfig.local.example ~/.gitconfig.local
+cp ~/dotfiles/config/bash/.gitconfig.local.example ~/.gitconfig.local
 # ~/.gitconfig.local 열어서 name/email 수정
 exec bash
 ```
@@ -88,10 +85,9 @@ pwsh -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 ```bash
-# macOS / Linux
+# Linux
 cd ~/dotfiles && git pull
-bash macos/install.sh   # macOS
-bash linux/packages.sh  # Linux
+bash install.sh
 ```
 
 ## git 설정
@@ -107,57 +103,44 @@ bash linux/packages.sh  # Linux
 | `git last` | `git log -1 HEAD` |
 | `git undo` | `git reset --soft HEAD~1` |
 
-**머신별 설정:** `~/.gitconfig.local`에 user.name/email을 설정한다. `.gitconfig.local.example`을 복사해 수정.
+**머신별 설정:** `~/.gitconfig.local`에 user.name/email을 설정한다. `config/bash/.gitconfig.local.example`을 복사해 수정.
 
 ## 파일 구조
 
 ```
 dotfiles/
-  install.ps1                 # Windows 진입점 (단일 명령으로 전체 설치)
-  install.sh                  # macOS/Linux 진입점
-  bash/
-    .bashrc                   # 셸 초기화 (starship/zoxide/fzf/atuin init)
-    .bash_profile             # 로그인 셸
-    .aliases                  # 명령어 단축키 (eza, bat, git, ccd 등)
-    .exports                  # 환경변수 (PATH, EDITOR, HISTSIZE 등)
-    .functions                # 유틸리티 함수 (mkcd, up, extract)
-    .inputrc                  # Readline 설정
-    .gitconfig                # git 전역 설정 (공유)
-    .gitconfig.local.example  # 머신별 설정 템플릿
-    .extra.example            # 머신별 개인 설정 템플릿 (git 제외)
-    .gitignore_global         # 전역 gitignore
+  install.ps1                      # Windows 설치 (all-in-one)
+  install.sh                       # Linux 설치 (all-in-one)
   config/
-    starship.toml             # Starship 프롬프트 설정 → ~/.config/
-  tools/
-    fnm.sh                    # fnm 설치
-    node.sh                   # Node LTS + Claude Code 설치
-    bun.sh                    # bun 설치 (OS별 분기)
-    global-packages.sh        # npm 전역 패키지 설치
-    global-packages.txt       # 전역 패키지 목록
-    rtk.sh                    # RTK 설치 및 hook 등록
-  linux/
-    packages.sh               # apt 패키지 (카카오 미러)
-    install-extras.sh         # apt 미지원 도구 바이너리 설치
-  macos/
-    install.sh                # Homebrew + Brewfile
-    Brewfile                  # macOS 패키지 목록
-    .macos                    # macOS 시스템 설정 자동화
-  windows/
-    install.ps1               # winget 패키지 + npm 전역 패키지 + RTK 바이너리
-    agents-setup.ps1          # Claude Code 설정 복사 + $PROFILE 관리 + skills 복원
-    profile.ps1               # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
-    .tmux.conf                # tmux 설정 (pwsh 기본 셸)
-  agents/
-    setup.sh                  # Claude 설정 링크 + 에이전트 설치
-    restore-skills.sh         # npx skills 재설치
-    skills-manifest.txt       # 설치할 skills 목록
+    bash/
+      .bashrc                      # 셸 초기화 (starship/zoxide/fzf/atuin init)
+      .bash_profile                # 로그인 셸
+      .aliases                     # 명령어 단축키 (eza, bat, git, ccd 등)
+      .exports                     # 환경변수 (PATH, EDITOR, HISTSIZE 등)
+      .functions                   # 유틸리티 함수 (mkcd, up, extract)
+      .inputrc                     # Readline 설정
+      .gitconfig                   # git 전역 설정 (공유)
+      .gitconfig.local.example     # 머신별 설정 템플릿
+      .extra.example               # 머신별 개인 설정 템플릿 (git 제외)
+      .gitignore_global            # 전역 gitignore
+      .tmux.conf                   # tmux 설정 (Linux용)
     claude/
-      CLAUDE.md               # Claude 전역 행동 설정
-      settings.json           # Claude Code 설정 (플러그인, hook, statusLine)
+      CLAUDE.md                    # Claude 전역 행동 설정
+      settings.json                # Claude Code 설정 (hook, env, permissions)
+    windows/
+      profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
+      tmux.conf                    # tmux 설정 (pwsh 기본 셸)
+    starship.toml                  # Starship 프롬프트 설정 → ~/.config/
+  manifests/
+    winget.txt                     # Windows winget 패키지 목록
+    apt.txt                        # Linux apt 패키지 목록
+    npm-global.txt                 # npm 전역 패키지 목록
+    skills.txt                     # Claude Code skills 목록
+  macos/                           # macOS 지원 (보류)
   docs/
-    tools.md                  # CLI 도구 사용법 cheatsheet
-    ai-agents.md              # Claude Code, 플러그인, skills 상세
-    uninstall.md              # 클린 언인스톨 가이드
+    tools.md                       # CLI 도구 사용법 cheatsheet
+    ai-agents.md                   # Claude Code, 플러그인, skills 상세
+    uninstall.md                   # 클린 언인스톨 가이드
 ```
 
 ## References
