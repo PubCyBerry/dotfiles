@@ -71,7 +71,7 @@ dotfiles/
 3. TPM (tmux plugin manager) 설치
 4. `manifests/apt.txt` → apt 패키지 (카카오 미러 적용)
 5. eza, delta, yq, zoxide, starship, ruff, atuin, lazygit, yazi, difftastic, ast-grep 바이너리 설치
-6. fnm → Node.js LTS
+6. fnm → Node.js 24
 7. `manifests/npm-global.txt` → npm 전역 패키지
 8. Claude Code native 설치
 9. RTK 설치 + hook 생성
