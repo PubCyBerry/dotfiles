@@ -1,0 +1,33 @@
+# Windows winget 패키지 목록
+# install.ps1이 읽어서 설치
+
+# 개발 환경 기초
+Microsoft.PowerShell
+Git.Git
+GitHub.cli
+Microsoft.WindowsTerminal
+
+# Node.js 버전 관리
+Schniz.fnm
+
+# 터미널 멀티플렉서
+psmux
+
+# Modern CLI
+sharkdp.bat
+junegunn.fzf
+eza-community.eza
+sharkdp.fd
+dandavison.delta
+BurntSushi.ripgrep.MSVC
+Oven-sh.Bun
+jqlang.jq
+
+# 추가 CLI 도구
+ajeetdsouza.zoxide
+mikefarah.yq
+JesseDuffield.lazygit
+sxyazi.yazi
+Starship.Starship
+astral-sh.ruff
+httpie.httpie

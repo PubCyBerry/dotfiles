@@ -1,4 +1,5 @@
-# npx skills 설치 목록 (agents/restore-skills.sh 에서 읽어 설치)
+# Claude Code skills 목록
+# install.ps1 / install.sh가 읽어서 설치
 # 형식: owner/repo@skill-name
 
 # Skills management

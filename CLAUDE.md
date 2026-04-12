@@ -1,10 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## 이 저장소
-
-Windows 11 + macOS 환경을 위한 개인 dotfiles. bash 설정, 패키지 설치 스크립트, Claude Code 에이전트 설정을 관리한다.
+Windows 11 + Linux 환경을 위한 개인 dotfiles. bash 설정, 패키지 설치 스크립트, Claude Code 에이전트 설정을 관리한다.
 
 ## 설치 명령
 
@@ -18,57 +14,82 @@ winget install --id Microsoft.PowerShell --source winget
 pwsh -ExecutionPolicy Bypass -File .\dotfiles\install.ps1
 ```
 
-`install.ps1`은 `windows\install.ps1` → `windows\agents-setup.ps1` 순으로 실행한다.
-
-### macOS / Linux
+### Linux
 
 ```bash
 # 전체 설치
 bash install.sh
 
 # bash 설정만 다시 링크
-for file in bash/.*; do [[ -f "$file" ]] && ln -sf "$(pwd)/$file" "$HOME/$(basename $file)"; done
+for file in config/bash/.*; do [[ -f "$file" ]] && ln -sf "$(pwd)/$file" "$HOME/$(basename $file)"; done
 
-# OS별 패키지만 설치
-bash macos/install.sh      # macOS
-bash linux/packages.sh && bash linux/install-extras.sh  # Linux
-
-# 에이전트/스킬만 재설치
-bash agents/restore-skills.sh
+# skills만 재설치
+while IFS= read -r line; do
+  [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
+  [[ "$line" =~ ^([^@]+)@(.+)$ ]] && npx skills add "${BASH_REMATCH[1]}" --skill "${BASH_REMATCH[2]}" -g -y
+done < manifests/skills.txt
 ```
 
 ## 아키텍처
 
-### Windows 진입점: `install.ps1` (루트)
+```
+dotfiles/
+├── install.ps1          # Windows 설치 (all-in-one)
+├── install.sh           # Linux 설치 (all-in-one)
+├── config/
+│   ├── bash/            # bash dotfiles (.bashrc, .aliases 등) — Linux용 심볼릭 링크 대상
+│   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
+│   ├── windows/         # Windows 전용 설정 (profile.ps1, tmux.conf)
+│   └── starship.toml
+├── manifests/           # 패키지/스킬 목록
+│   ├── winget.txt       # Windows winget 패키지 ID
+│   ├── apt.txt          # Linux apt 패키지
+│   ├── npm-global.txt   # npm 전역 패키지
+│   └── skills.txt       # Claude Code skills (owner/repo@skill-name)
+├── macos/               # macOS 지원 (보류)
+└── docs/
+```
 
-실행 순서:
-1. `windows\install.ps1` → winget 패키지, Node.js LTS, npm 전역 패키지, Claude Code, RTK, ast-grep, difftastic 설치
-2. `windows\agents-setup.ps1` → Claude 설정 복사, RTK hook 생성, PowerShell 프로파일 설정, npx skills 복원
+### Windows install.ps1 실행 순서
 
-### macOS/Linux 진입점: `install.sh`
+1. `manifests/winget.txt` → winget 패키지 설치
+2. fnm → Node.js LTS
+3. `manifests/npm-global.txt` → npm 전역 패키지
+4. Claude Code native 설치
+5. RTK 바이너리 설치 + rtk-wrapper
+6. ast-grep, difftastic 바이너리 설치
+7. `config/claude/` → `~/.claude/` 복사
+8. RTK hook 생성 (`~/.claude/hooks/rtk-rewrite.sh`)
+9. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
+10. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
+11. `manifests/skills.txt` → npx skills 설치
 
-실행 순서:
-1. `bash/.*` → `~/.*` 심볼릭 링크 생성 (`.gitconfig.local.example` 제외)
-2. OS 감지 후 패키지 설치 (`macos/install.sh` 또는 `linux/packages.sh` + `linux/install-extras.sh`)
-3. `tools/fnm.sh` → fnm 설치
-4. `tools/node.sh` → Node.js LTS + Claude Code 설치
-5. `agents/setup.sh` → Claude 설정 링크 + npx skills 설치
+### Linux install.sh 실행 순서
 
-### bash 설정 로딩 체인 (macOS/Linux)
+1. `config/bash/.*` → `~/.*` 심볼릭 링크 (`.gitconfig.local.example` 제외)
+2. `config/starship.toml` → `~/.config/starship.toml` 링크
+3. TPM (tmux plugin manager) 설치
+4. `manifests/apt.txt` → apt 패키지 (카카오 미러 적용)
+5. eza, delta, yq, zoxide, starship, ruff, atuin, lazygit, yazi, difftastic, ast-grep 바이너리 설치
+6. fnm → Node.js LTS
+7. `manifests/npm-global.txt` → npm 전역 패키지
+8. Claude Code native 설치
+9. RTK 설치 + hook 생성
+10. `config/claude/settings.json` → `~/.claude/` (MCP cmd /c 패치)
+11. `config/claude/CLAUDE.md` → `~/.claude/` 심볼릭 링크
+12. `manifests/skills.txt` → npx skills 설치
+
+### bash 설정 로딩 체인 (Linux)
 
 `.bash_profile` → `.bashrc` → `.exports`, `.aliases`, `.functions`, `.extra`(머신별 개인 설정, git 제외) 순으로 source.
 심볼릭 링크이므로 `git pull` 후 즉시 반영된다.
 
-### Claude Code 설정
-
-- **Windows**: `agents/claude/` 파일들이 `~/.claude/`로 복사된다.
-- **macOS/Linux**: `agents/claude/CLAUDE.md` → `~/.claude/CLAUDE.md` 심볼릭 링크, `settings.json` 복사 후 MCP 명령어 패치.
-
 ### skills 관리
 
-`agents/skills-manifest.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `restore-skills.sh`가 `npx skills add ... -g -y`로 일괄 설치한다. 새 skill 추가 시 manifest에만 추가하면 된다.
+`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지한다. 새 skill 추가 시 manifest에만 추가 후 install 스크립트를 다시 실행한다.
 
 ## 주의사항
 
-- `~/.gitconfig.local`은 머신별 user.name/email을 담으며 저장소에 포함되지 않는다. 신규 머신 설정 시 `.gitconfig.local.example`을 복사해 수동 수정 필요.
-- Windows는 PowerShell 7+ (pwsh) 기준으로 설정한다. `agents-setup.ps1`이 PS 5.1/7+ 프로파일 양쪽에 설정을 적용한다.
+- `~/.gitconfig.local`은 머신별 user.name/email을 담으며 저장소에 포함되지 않는다. 신규 머신 설정 시 `config/bash/.gitconfig.local.example`을 복사해 수동 수정 필요.
+- Windows는 PowerShell 7+ (pwsh) 기준. `install.ps1`이 PS 5.1/7+ 프로파일 양쪽에 설정을 적용한다.
+- macOS 지원은 `macos/` 디렉토리에 보류 중이며 현재 설치 스크립트에 포함되지 않는다.

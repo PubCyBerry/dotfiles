@@ -1,6 +1,0 @@
-# npm 전역 패키지 목록
-# tools/global-packages.sh 가 읽어서 설치
-# @anthropic-ai/claude-code 는 tools/node.sh 에서 설치
-
-@google/gemini-cli
-@openai/codex
