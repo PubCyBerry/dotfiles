@@ -58,7 +58,7 @@ git config --global user.email "your@email.com"
 6. ast-grep, difftastic 바이너리 설치
 7. `config/claude/` → `~/.claude/` 복사 (`settings.json`, `CLAUDE.md`)
 8. RTK hook 생성 (`~/.claude/hooks/rtk-rewrite.sh`)
-9. PowerShell 프로파일 설정 (PS 5.1 + PS 7+ 양쪽, `config/windows/profile.ps1`)
+9. PowerShell 프로파일 설정 (PS 7+, `config/windows/profile.ps1`)
 10. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
 11. `manifests/skills.txt` → npx skills 복원
 

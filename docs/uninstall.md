@@ -124,19 +124,10 @@ defaults delete NSGlobalDomain InitialKeyRepeat
 ### 1. PowerShell 프로파일 정리
 
 ```powershell
-# PS 7+ 프로파일에서 dotfiles 블록 제거
 $prof = "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
 $content = Get-Content $prof -Raw
 $cleaned = $content -replace '(?s)# ===== dotfiles-begin =====.*?# ===== dotfiles-end =====\r?\n?', ''
 $cleaned | Out-File $prof -Encoding utf8
-
-# PS 5.1 프로파일도 동일하게 처리
-$prof5 = "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-if (Test-Path $prof5) {
-    $content = Get-Content $prof5 -Raw
-    $cleaned = $content -replace '(?s)# ===== dotfiles-begin =====.*?# ===== dotfiles-end =====\r?\n?', ''
-    $cleaned | Out-File $prof5 -Encoding utf8
-}
 ```
 
 ### 2. Claude Code 설정 제거

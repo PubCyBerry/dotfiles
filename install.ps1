@@ -247,11 +247,7 @@ if (Test-Path $profileSrc) {
     $claudeAlias = "`nfunction global:ccd { claude --dangerously-skip-permissions @args }"
     $newBlock    = "$markerBegin`n$profileContent`n$claudeAlias`n$markerEnd"
 
-    $profilePaths = @($PROFILE)
-    $ps7Profile = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-    $ps5Profile = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-    if ($profilePaths -notcontains $ps7Profile) { $profilePaths += $ps7Profile }
-    if ($profilePaths -notcontains $ps5Profile) { $profilePaths += $ps5Profile }
+    $profilePaths = @("$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
 
     foreach ($prof in $profilePaths) {
         $profileDir = Split-Path $prof

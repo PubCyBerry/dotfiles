@@ -91,5 +91,5 @@ dotfiles/
 ## 주의사항
 
 - `~/.gitconfig.local`은 머신별 user.name/email을 담으며 저장소에 포함되지 않는다. 신규 머신 설정 시 `config/bash/.gitconfig.local.example`을 복사해 수동 수정 필요.
-- Windows는 PowerShell 7+ (pwsh) 기준. `install.ps1`이 PS 5.1/7+ 프로파일 양쪽에 설정을 적용한다.
+- Windows는 PowerShell 7+ (pwsh) 기준. `install.ps1`이 PS 7+ 프로파일에만 설정을 적용한다.
 - macOS 지원은 `macos/` 디렉토리에 보류 중이며 현재 설치 스크립트에 포함되지 않는다.
