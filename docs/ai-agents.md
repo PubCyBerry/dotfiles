@@ -6,10 +6,10 @@ Claude Code와 관련 에이전트/스킬 설정 상세.
 
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|
-| `agents/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (RTK 규칙, 도구 사용 규칙) |
-| `agents/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
+| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (RTK 규칙, 도구 사용 규칙) |
+| `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
 
-Linux/macOS에서는 심볼릭 링크, Windows에서는 파일 복사로 설정된다.
+Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패치 후 복사된다. Windows에서는 파일 복사로 설정된다.
 
 ## claude-hud
 
@@ -24,13 +24,11 @@ Linux/macOS에서는 심볼릭 링크, Windows에서는 파일 복사로 설정�
 
 ## npx skills
 
-`agents/skills-manifest.txt`에 목록을 유지하고, `restore-skills.sh`가 일괄 설치한다.
+`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `install.ps1` / `install.sh`가 일괄 설치한다.
 
 | 스킬 | 설명 |
 |------|------|
 | `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 |
-| `bash-defensive-patterns` | 프로덕션용 bash 스크립트 패턴 |
-| `shellcheck-configuration` | shell 스크립트 린팅 |
-| `powershell-windows` | PowerShell 패턴 |
 | `skill-creator` | 새 skill 생성 |
 | `find-skills` | skill 검색/설치 |
+| `impeccable` | 디자인 관련 스킬 |

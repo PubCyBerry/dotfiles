@@ -147,8 +147,7 @@ tmux attach -t dev      # 세션 복원
 
 | OS | 설치 방법 |
 |----|-----------|
-| macOS | Brewfile 자동 |
-| Ubuntu | packages.sh 자동 |
+| Ubuntu | apt 자동 (`manifests/apt.txt`) |
 | Windows (네이티브) | `winget install psmux` (tmux 대체) |
 
 ## 데이터 처리
@@ -204,7 +203,6 @@ bun install        # npm install 대체 (빠름)
 
 | OS | 설치 방법 |
 |----|-----------|
-| macOS | Brewfile 자동 |
 | Linux | install.sh 자동 (curl) |
 | Windows | `winget install Oven-sh.Bun` |
 

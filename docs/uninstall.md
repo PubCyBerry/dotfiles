@@ -8,7 +8,7 @@ dotfiles가 설치한 모든 항목을 제거하는 방법. 필요한 항목만 
 
 ```bash
 # dotfiles가 생성한 심볼릭 링크 제거
-for file in ~/dotfiles/bash/.*; do
+for file in ~/dotfiles/config/bash/.*; do
   [[ -f "$file" ]] || continue
   name="$(basename "$file")"
   [[ "$name" == ".gitconfig.local.example" ]] && continue
@@ -44,7 +44,7 @@ rm -f ~/.local/bin/{yq,starship,lazygit,yazi,difft,sg,bat,fd,rtk}
 ### 4. npm 전역 패키지 제거
 
 ```bash
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
+npm uninstall -g @google/gemini-cli @openai/codex
 ```
 
 ### 5. apt 패키지 제거 (선택)
@@ -66,7 +66,9 @@ sudo apt update
 
 `.bashrc`에서 fnm, zoxide, atuin, starship의 `eval` / `source` 라인은 심볼릭 링크 제거(1단계)와 함께 사라진다. 수동으로 `.bashrc`를 작성한 경우, 해당 도구의 init 라인을 직접 제거한다.
 
-## macOS
+## macOS (보류)
+
+> macOS 지원은 현재 보류 상태. `macos/` 디렉토리에 코드 보관 중이며 활성 설치 경로에서 제외됨.
 
 ### 1. 심볼릭 링크 제거
 
@@ -169,7 +171,7 @@ foreach ($pkg in $packages) { winget uninstall --id $pkg }
 
 ```powershell
 claude uninstall
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
+npm uninstall -g @google/gemini-cli @openai/codex
 ```
 
 ## dotfiles 저장소 자체 제거
