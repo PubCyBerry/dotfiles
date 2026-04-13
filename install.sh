@@ -328,7 +328,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     repo="${BASH_REMATCH[1]}"
     skill="${BASH_REMATCH[2]}"
     echo "    Adding skill: $skill from $repo..."
-    npx skills add "$repo" --skill "$skill" -g -y 2>/dev/null || true
+    npx --yes skills add "$repo" --skill "$skill" -g -y 2>/dev/null || true
   fi
 done < "$DOTFILES/manifests/skills.txt"
 echo "    Skills restored."
