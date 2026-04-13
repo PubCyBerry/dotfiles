@@ -50,17 +50,15 @@ git config --global user.email "your@email.com"
 <details>
 <summary><code>install.ps1</code> 실행 순서</summary>
 
-1. `manifests/winget.txt` → winget 패키지 설치 (Git, fnm, bat, fzf, eza, fd, delta, rg, bun, jq 등)
-2. Node.js LTS 설치 (fnm)
-3. `manifests/npm-global.txt` → npm 전역 패키지 설치
-4. Claude Code 네이티브 설치
-5. RTK 바이너리 설치 + rtk-wrapper
-6. ast-grep, difftastic 바이너리 설치
-7. `config/claude/` → `~/.claude/` 복사 (`settings.json`, `CLAUDE.md`)
-8. RTK hook 생성 (`~/.claude/hooks/rtk-rewrite.sh`)
-9. PowerShell 프로파일 설정 (PS 7+, `config/windows/profile.ps1`)
-10. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
-11. `manifests/skills.txt` → npx skills 복원
+1. `manifests/winget.txt` → winget 패키지 설치
+2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
+3. Node.js LTS 설치 (fnm)
+4. `manifests/npm-global.txt` → npm 전역 패키지 설치
+5. Claude Code 네이티브 설치
+6. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
+7. RTK 바이너리 설치 + hook 등록 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
+8. PowerShell 프로파일 설정 (PS 7+, `config/windows/profile.ps1`)
+9. `manifests/skills.txt` → npx skills 복원
 
 </details>
 

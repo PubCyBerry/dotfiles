@@ -137,11 +137,10 @@ Remove-Item "$HOME\.claude\CLAUDE.md", "$HOME\.claude\settings.json" -Force -Err
 Remove-Item "$HOME\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
 ```
 
-### 3. RTK + 수동 설치 바이너리 제거
+### 3. RTK 제거
 
 ```powershell
-Remove-Item "$HOME\rtk" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "$HOME\.local\bin\sg.exe", "$HOME\.local\bin\difft.exe" -Force -ErrorAction SilentlyContinue
+Remove-Item "$HOME\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
 ```
 
 ### 4. winget 패키지 제거 (선택)

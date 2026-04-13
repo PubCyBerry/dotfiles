@@ -6,10 +6,10 @@ Claude Code와 관련 에이전트/스킬 설정 상세.
 
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|
-| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (RTK 규칙, 도구 사용 규칙) |
+| `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (도구 사용 규칙) |
 | `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
 
-Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패치 후 복사된다. Windows에서는 파일 복사로 설정된다.
+Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패치 후 복사된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로, CLAUDE.md는 단순 복사로 설정된다.
 
 ## claude-hud
 
