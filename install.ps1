@@ -96,14 +96,33 @@ Write-Host ""
 Write-Host "==> Deploying Claude Code config..."
 New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
 
-foreach ($file in @("settings.json", "CLAUDE.md")) {
-    $src = Join-Path $ROOT "config\claude\$file"
-    if (Test-Path $src) {
-        Copy-Item $src "$claudeDir\$file" -Force
-        Write-Host "    Copied $file"
+# settings.json: 병합 (기존에 없는 키 보존 — claude-hud의 statusLine 등)
+$settingsSrc = Join-Path $ROOT "config\claude\settings.json"
+$settingsDst = "$claudeDir\settings.json"
+if (Test-Path $settingsSrc) {
+    $newSettings = Get-Content $settingsSrc -Raw | ConvertFrom-Json
+    if (Test-Path $settingsDst) {
+        $existing = Get-Content $settingsDst -Raw | ConvertFrom-Json
+        foreach ($prop in $newSettings.PSObject.Properties) {
+            $existing | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
+        }
+        $existing | ConvertTo-Json -Depth 10 | Out-File $settingsDst -Encoding utf8 -NoNewline
+        Write-Host "    Merged settings.json"
     } else {
-        Write-Host "    [!] $src not found"
+        Copy-Item $settingsSrc $settingsDst -Force
+        Write-Host "    Copied settings.json"
     }
+} else {
+    Write-Host "    [!] config\claude\settings.json not found"
+}
+
+# CLAUDE.md: 단순 복사
+$claudeMdSrc = Join-Path $ROOT "config\claude\CLAUDE.md"
+if (Test-Path $claudeMdSrc) {
+    Copy-Item $claudeMdSrc "$claudeDir\CLAUDE.md" -Force
+    Write-Host "    Copied CLAUDE.md"
+} else {
+    Write-Host "    [!] config\claude\CLAUDE.md not found"
 }
 
 # =============================================
