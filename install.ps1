@@ -107,7 +107,56 @@ foreach ($file in @("settings.json", "CLAUDE.md")) {
 }
 
 # =============================================
-# 7. PowerShell 프로파일 설정 (마커 방식)
+# 7. RTK (Rust Token Killer) 설치
+# =============================================
+Write-Host ""
+Write-Host "==> Installing RTK (Rust Token Killer)..."
+$localBin = "$env:USERPROFILE\.local\bin"
+if (-not (Test-Path $localBin)) {
+    New-Item -ItemType Directory -Force -Path $localBin | Out-Null
+}
+
+# User PATH에 ~/.local/bin 추가 (영구)
+$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+if ($userPath -notlike "*$localBin*") {
+    [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$localBin", "User")
+    Write-Host "    Added $localBin to User PATH"
+}
+$env:PATH = "$env:PATH;$localBin"
+
+if (Get-Command rtk -ErrorAction SilentlyContinue) {
+    Write-Host "    RTK already installed."
+} else {
+    try {
+        $release = Invoke-RestMethod "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
+        $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "\.zip$" } | Select-Object -First 1
+        if ($asset) {
+            $tmpZip = "$env:TEMP\rtk-windows.zip"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
+            Expand-Archive -Path $tmpZip -DestinationPath $localBin -Force
+            Remove-Item $tmpZip -Force
+            Write-Host "    RTK installed."
+        } else {
+            Write-Host "    [!] RTK Windows 바이너리를 찾을 수 없음. 수동 설치: cargo install rtk"
+        }
+    } catch {
+        Write-Host "    [!] RTK 설치 실패: $_"
+    }
+}
+
+# RTK hook 등록 (~/.claude/hooks/rtk-rewrite.sh 생성)
+if (Get-Command rtk -ErrorAction SilentlyContinue) {
+    New-Item -ItemType Directory -Force -Path "$claudeDir\hooks" | Out-Null
+    & rtk init --global --hook-only 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "    RTK hook installed"
+    } else {
+        Write-Host "    [!] RTK hook install failed (수동: rtk init --global --hook-only)"
+    }
+}
+
+# =============================================
+# 8. PowerShell 프로파일 설정 (마커 방식)
 # =============================================
 Write-Host ""
 Write-Host "==> Updating PowerShell profiles..."
@@ -149,7 +198,7 @@ if (Test-Path $profileSrc) {
 }
 
 # =============================================
-# 8. Claude skills 설치 (manifests/skills.txt)
+# 9. Claude skills 설치 (manifests/skills.txt)
 # =============================================
 Write-Host ""
 Write-Host "==> Restoring Claude Code skills..."

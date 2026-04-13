@@ -58,8 +58,9 @@ dotfiles/
 4. `manifests/npm-global.txt` → npm 전역 패키지
 5. Claude Code native 설치
 6. `config/claude/` → `~/.claude/` 복사
-7. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
-8. `manifests/skills.txt` → npx skills 설치
+7. RTK 바이너리 설치 + hook 생성 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
+8. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
+9. `manifests/skills.txt` → npx skills 설치
 
 ### Linux install.sh 실행 순서
 
