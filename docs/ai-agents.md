@@ -13,14 +13,9 @@ Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패
 
 ## claude-hud
 
-터미널 상태 표시줄에 Claude Code 세션 정보(모델, 컨텍스트, 토큰, git 상태 등)를 표시하는 플러그인.
-
-**설치 절차** (모든 OS 공통):
-
-1. bun 또는 node가 설치되어 있어야 함
-2. Claude Code에서 `/plugin install claude-hud` 실행
-3. `/claude-hud:setup` 실행하여 statusLine 명령어 생성
-4. Claude Code 재시작
+터미널 상태 표시줄에 Claude Code 세션 정보(모델, 컨텍스트, 토큰, git 상태 등)를 표시하는 플러그인.  
+→ 상세 설치/설정 가이드: [docs/claude-hud.md](claude-hud.md)  
+→ 기본 설정 파일: `config/claude/claude-hud.json`
 
 ## npx skills
 
