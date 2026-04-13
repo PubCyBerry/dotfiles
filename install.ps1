@@ -144,15 +144,16 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
     }
 }
 
-# RTK hook 등록 (~/.claude/hooks/rtk-rewrite.sh 생성)
-if (Get-Command rtk -ErrorAction SilentlyContinue) {
-    New-Item -ItemType Directory -Force -Path "$claudeDir\hooks" | Out-Null
-    & rtk init --global --hook-only 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "    RTK hook installed"
-    } else {
-        Write-Host "    [!] RTK hook install failed (수동: rtk init --global --hook-only)"
-    }
+# RTK hook 등록 (~/.claude/hooks/rtk-rewrite.sh 다운로드)
+# rtk init --hook-only는 Windows 미지원 → GitHub에서 직접 다운로드
+New-Item -ItemType Directory -Force -Path "$claudeDir\hooks" | Out-Null
+$hookUrl  = "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh"
+$hookPath = "$claudeDir\hooks\rtk-rewrite.sh"
+try {
+    Invoke-WebRequest -Uri $hookUrl -OutFile $hookPath -UseBasicParsing
+    Write-Host "    RTK hook installed"
+} catch {
+    Write-Host "    [!] RTK hook download failed: $_"
 }
 
 # =============================================
