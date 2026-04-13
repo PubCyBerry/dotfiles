@@ -53,16 +53,13 @@ dotfiles/
 ### Windows install.ps1 실행 순서
 
 1. `manifests/winget.txt` → winget 패키지 설치
-2. fnm → Node.js LTS
-3. `manifests/npm-global.txt` → npm 전역 패키지
-4. Claude Code native 설치
-5. RTK 바이너리 설치 + rtk-wrapper
-6. ast-grep, difftastic 바이너리 설치
-7. `config/claude/` → `~/.claude/` 복사
-8. RTK hook 생성 (`~/.claude/hooks/rtk-rewrite.sh`)
-9. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
-10. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
-11. `manifests/skills.txt` → npx skills 설치
+2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
+3. fnm → Node.js LTS
+4. `manifests/npm-global.txt` → npm 전역 패키지
+5. Claude Code native 설치
+6. `config/claude/` → `~/.claude/` 복사
+7. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
+8. `manifests/skills.txt` → npx skills 설치
 
 ### Linux install.sh 실행 순서
 
