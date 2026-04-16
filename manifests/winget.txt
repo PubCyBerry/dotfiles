@@ -2,7 +2,6 @@
 # install.ps1이 읽어서 설치
 
 # 개발 환경 기초
-Microsoft.PowerShell
 Git.Git
 GitHub.cli
 Microsoft.WindowsTerminal

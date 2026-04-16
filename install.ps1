@@ -53,6 +53,8 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";
             [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
             $env:PATH
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    # 현재 세션에서 fnm 환경 변수 초기화 (Node.js/npm 경로 활성화)
+    fnm env --shell powershell | Out-String | Invoke-Expression
     fnm install --lts
     fnm default lts-latest
     fnm use lts-latest
