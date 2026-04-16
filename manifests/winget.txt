@@ -2,9 +2,7 @@
 # install.ps1이 읽어서 설치
 
 # 개발 환경 기초
-Git.Git
 GitHub.cli
-Microsoft.WindowsTerminal
 
 # Node.js 버전 관리
 Schniz.fnm
