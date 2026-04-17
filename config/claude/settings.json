@@ -5,14 +5,14 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
     "MAX_THINKING_TOKENS": "10000",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "ENABLE_PROMPT_CACHING_1H": "1",
+    "FORCE_PROMPT_CACHING_5M": "0",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "CLAUDE_CODE_EFFORT_LEVEL": "high"
   },
   "language": "한국어",
-  "permissions": {
-    "allow": [
-      "Bash(npx skills *)"
-    ]
-  },
+  "permissions": {},
   "hooks": {
     "PreToolUse": [
       {
