@@ -2,5 +2,5 @@
 # install.ps1 / install.sh가 읽어서 설치
 # @anthropic-ai/claude-code 는 native installer로 별도 설치
 
-@google/gemini-cli
-@openai/codex
+# @google/gemini-cli
+# @openai/codex

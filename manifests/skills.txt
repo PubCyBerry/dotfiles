@@ -2,9 +2,6 @@
 # install.ps1 / install.sh가 읽어서 설치
 # 형식: owner/repo@skill-name
 
-# Skills management
-vercel-labs/skills@find-skills
-
 # Example / Creator
 anthropics/skills@skill-creator
 
@@ -15,4 +12,4 @@ anthropics/skills@docx
 anthropics/skills@xlsx
 
 # Design
-pbakaus/impeccable@impeccable
+# pbakaus/impeccable@impeccable
