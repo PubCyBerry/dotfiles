@@ -26,10 +26,10 @@ Write-Host ""
 Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
-    Get-ManifestLines $wingetFile | ForEach-Object {
-        Write-Host "    Installing $_..."
-        winget install --id $_ --silent --accept-package-agreements --accept-source-agreements
-    }
+    Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
+        winget install --id $_ --silent --accept-package-agreements --accept-source-agreements | Out-Null
+        Write-Host "    Installed $_"
+    } -ThrottleLimit 4
 } else {
     Write-Host "    [!] manifests\winget.txt not found, skipping."
 }
@@ -41,6 +41,10 @@ Write-Host ""
 Write-Host "==> Merging delta git config..."
 $deltaGitConfig = Join-Path $ROOT "config\git\delta.gitconfig"
 if (Test-Path $deltaGitConfig) {
+    $existingConfig = @{}
+    git config --global --list 2>$null | ForEach-Object {
+        if ($_ -match '^([^=]+)=(.*)$') { $existingConfig[$Matches[1]] = $Matches[2] }
+    }
     $currentSection = $null
     foreach ($line in (Get-Content $deltaGitConfig)) {
         $trimmed = $line.Trim()
@@ -50,8 +54,7 @@ if (Test-Path $deltaGitConfig) {
             if ($trimmed -match '^(\S+)\s*=\s*(.*)$') {
                 $key   = $Matches[1]
                 $value = $Matches[2].Trim()
-                $existing = git config --global --get "$currentSection.$key" 2>$null
-                if (-not $existing) {
+                if (-not $existingConfig.ContainsKey("$currentSection.$key")) {
                     git config --global "$currentSection.$key" $value
                     Write-Host "    Added [$currentSection] $key = $value"
                 } else {
@@ -102,10 +105,10 @@ Write-Host ""
 Write-Host "==> Installing global npm packages..."
 $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if (Test-Path $npmFile) {
-    Get-ManifestLines $npmFile | ForEach-Object {
-        Write-Host "    Installing $_..."
-        npm install -g $_
-    }
+    Get-ManifestLines $npmFile | ForEach-Object -Parallel {
+        npm install -g $_ 2>&1 | Out-Null
+        Write-Host "    Installed $_"
+    } -ThrottleLimit 4
 } else {
     Write-Host "    [!] manifests\npm-global.txt not found, skipping."
 }
@@ -164,9 +167,7 @@ if (Test-Path $claudeMdSrc) {
 Write-Host ""
 Write-Host "==> Installing RTK (Rust Token Killer)..."
 $localBin = "$env:USERPROFILE\.local\bin"
-if (-not (Test-Path $localBin)) {
-    New-Item -ItemType Directory -Force -Path $localBin | Out-Null
-}
+New-Item -ItemType Directory -Force -Path $localBin | Out-Null
 
 # User PATH에 ~/.local/bin 추가 (영구)
 $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
@@ -224,22 +225,17 @@ if (Test-Path $profileSrc) {
     $profilePaths = @("$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
 
     foreach ($prof in $profilePaths) {
-        $profileDir = Split-Path $prof
-        if (-not (Test-Path $profileDir)) {
-            New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-        }
-        if (-not (Test-Path $prof)) {
-            New-Item -ItemType File -Force -Path $prof | Out-Null
-        }
+        New-Item -ItemType Directory -Force -Path (Split-Path $prof) | Out-Null
+        New-Item -ItemType File -Force -Path $prof | Out-Null
 
         $existing = Get-Content $prof -Raw -ErrorAction SilentlyContinue
         if ($null -eq $existing) { $existing = "" }
 
-        if ($existing -match [regex]::Escape($markerBegin)) {
-            $beforeMarker = ($existing -split [regex]::Escape($markerBegin))[0]
+        $escaped = [regex]::Escape($markerBegin)
+        if ($existing -match $escaped) {
+            $beforeMarker = ($existing -split $escaped)[0]
             $afterMarker  = ($existing -split [regex]::Escape($markerEnd))[-1]
-            $updated = "$beforeMarker$newBlock$afterMarker"
-            $updated | Out-File -FilePath $prof -Encoding utf8 -NoNewline
+            "$beforeMarker$newBlock$afterMarker" | Out-File -FilePath $prof -Encoding utf8 -NoNewline
             Write-Host "    Updated dotfiles block in $prof"
         } else {
             "`n$newBlock" | Add-Content -Path $prof -Encoding utf8
