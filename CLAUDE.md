@@ -21,7 +21,7 @@ dotfiles/
 ├── install.ps1          # Windows 설치 (all-in-one)
 ├── install.sh           # Linux 설치 (all-in-one)
 ├── config/
-│   ├── bash/            # bash dotfiles (.bashrc, .aliases 등) — Linux용 심볼릭 링크 대상
+│   ├── bash/            # bash dotfiles (bashrc) — Git Bash(Windows) 마커 방식 삽입
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
 │   ├── windows/         # Windows 전용 설정 (profile.ps1, tmux.conf)
 │   └── starship.toml
@@ -44,7 +44,8 @@ dotfiles/
 6. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
 7. RTK 바이너리 설치 + hook 생성 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
 8. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
-9. `manifests/skills.txt` → npx skills 설치
+9. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
+10. `manifests/skills.txt` → npx skills 설치
 
 ### skills 관리
 
@@ -53,4 +54,5 @@ dotfiles/
 ## 주의사항
 
 - Windows는 PowerShell 7+ (pwsh) 기준. `install.ps1`이 PS 7+ 프로파일에만 설정을 적용한다.
+- Git Bash 지원: `install.ps1`이 `~/.bashrc`에 마커 방식으로 설정을 삽입한다. Git for Windows가 설치되어 있어야 한다.
 - macOS 지원은 `macos/` 디렉토리에 보류 중이며 현재 설치 스크립트에 포함되지 않는다.

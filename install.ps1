@@ -264,6 +264,56 @@ if (Test-Path $profileSrc) {
 }
 
 # =============================================
+# 10. Git Bash 프로파일 설정 (마커 방식)
+# =============================================
+Write-Host ""
+Write-Host "==> Updating Git Bash profile..."
+$bashrcSrc = Join-Path $ROOT "config\bash\bashrc"
+if (Test-Path $bashrcSrc) {
+    $gitBashPaths = @(
+        "C:\Program Files\Git\bin\bash.exe",
+        "C:\Program Files (x86)\Git\bin\bash.exe"
+    )
+    $gitBashFound = $gitBashPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    if (-not $gitBashFound) {
+        Write-Host "    [!] Git Bash not found. Install Git for Windows first."
+        Write-Host "        winget install --id Git.Git"
+    } else {
+        $markerBegin = "# ===== dotfiles-begin ====="
+        $markerEnd   = "# ===== dotfiles-end ====="
+        $bashrcContent = Get-Content $bashrcSrc -Raw
+        $newBlock    = "$markerBegin`n$bashrcContent`n$markerEnd"
+
+        $bashrcPath = "$env:USERPROFILE\.bashrc"
+        New-Item -ItemType File -Force -Path $bashrcPath | Out-Null
+
+        $existing = Get-Content $bashrcPath -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $existing) { $existing = "" }
+
+        $escaped = [regex]::Escape($markerBegin)
+        if ($existing -match $escaped) {
+            $beforeMarker = ($existing -split $escaped)[0]
+            $afterMarker  = ($existing -split [regex]::Escape($markerEnd))[-1]
+            "$beforeMarker$newBlock$afterMarker" | Out-File -FilePath $bashrcPath -Encoding utf8 -NoNewline
+            Write-Host "    Updated dotfiles block in $bashrcPath"
+        } else {
+            "`n$newBlock" | Add-Content -Path $bashrcPath -Encoding utf8
+            Write-Host "    Appended dotfiles block to $bashrcPath"
+        }
+
+        # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
+        $bashProfilePath = "$env:USERPROFILE\.bash_profile"
+        if (-not (Test-Path $bashProfilePath)) {
+            Set-Content $bashProfilePath "[[ -f ~/.bashrc ]] && . ~/.bashrc" -Encoding utf8
+            Write-Host "    Created $bashProfilePath"
+        }
+    }
+} else {
+    Write-Host "    [!] config\bash\bashrc not found, skipping Git Bash setup."
+}
+
+# =============================================
 # 9. Claude skills 설치 (manifests/skills.txt)
 # =============================================
 Write-Host ""

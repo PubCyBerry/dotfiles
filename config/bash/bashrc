@@ -1,0 +1,45 @@
+# bash/bashrc — Git Bash $HOME/.bashrc에 추가할 dotfiles 설정
+# 직접 실행하지 않음. install.ps1이 $HOME/.bashrc에 마커 블록으로 삽입.
+
+# fnm (Node.js 버전 관리)
+if command -v fnm &> /dev/null; then
+    eval "$(fnm env --use-on-cd --shell bash)"
+fi
+
+# zoxide
+# _ZO_DOCTOR=0: Git Bash의 cd 래퍼와 충돌로 인한 오탐 경고 억제
+if command -v zoxide &> /dev/null; then
+    export _ZO_DOCTOR=0
+    eval "$(zoxide init bash)"
+fi
+
+# starship 프롬프트
+if command -v starship &> /dev/null; then
+    eval "$(starship init bash)"
+fi
+
+# fzf 키 바인딩 (fzf 0.48+: Ctrl+t, Ctrl+r, Alt+c 자동 설정)
+if command -v fzf &> /dev/null; then
+    eval "$(fzf --bash)"
+fi
+
+# eza 별칭
+if command -v eza &> /dev/null; then
+    alias ls='eza'
+    alias ll='eza -la'
+    alias lt='eza --tree'
+fi
+
+# bat 별칭
+if command -v bat &> /dev/null; then
+    alias cat='bat'
+fi
+
+# RTK PATH
+RTK_PATH="$HOME/.local/bin"
+if [[ -d "$RTK_PATH" ]] && [[ ":$PATH:" != *":$RTK_PATH:"* ]]; then
+    export PATH="$RTK_PATH:$PATH"
+fi
+
+# Claude Code
+alias ccd='claude --dangerously-skip-permissions'
