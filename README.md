@@ -5,17 +5,6 @@ Windows 11 환경을 위한 개인 dotfiles.
 
 ## 목차
 
-- [dotfiles](#dotfiles)
-  - [목차](#목차)
-  - [지원 환경](#지원-환경)
-  - [Quickstart](#quickstart)
-    - [Windows 11](#windows-11)
-  - [파일 구조](#파일-구조)
-  - [References](#references)
-    - [Dotfiles](#dotfiles-1)
-    - [Harness](#harness)
-    - [Skills](#skills)
-    - [Tools](#tools)
 
 ## 지원 환경
 
