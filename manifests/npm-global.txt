@@ -1,5 +1,5 @@
 # npm 전역 패키지 목록
-# install.ps1 / install.sh가 읽어서 설치
+# install.ps1가 읽어서 설치
 # @anthropic-ai/claude-code 는 native installer로 별도 설치
 
 # @google/gemini-cli

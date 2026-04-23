@@ -1,18 +1,15 @@
 # dotfiles
 
-Windows 11 + Linux 환경을 위한 개인 dotfiles.
-bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
+Windows 11 환경을 위한 개인 dotfiles.
+터미널 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 
 ## 목차
 
 - [dotfiles](#dotfiles)
   - [목차](#목차)
   - [지원 환경](#지원-환경)
-  - [새 머신 셋업](#새-머신-셋업)
+  - [Quickstart](#quickstart)
     - [Windows 11](#windows-11)
-    - [Linux](#linux)
-  - [기존 머신 업데이트](#기존-머신-업데이트)
-  - [git 설정](#git-설정)
   - [파일 구조](#파일-구조)
   - [References](#references)
     - [Dotfiles](#dotfiles-1)
@@ -25,10 +22,9 @@ bash 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 | 환경 | 지원 |
 |------|------|
 | Windows 11 (PowerShell 7+) | 완전 지원 (주 환경) |
-| Ubuntu 22.04 | 완전 지원 |
 | macOS | 보류 (`macos/` 디렉토리에 코드 보관) |
 
-## 새 머신 셋업
+## Quickstart
 
 ### Windows 11
 
@@ -47,34 +43,7 @@ git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
 ```
 
-<details>
-<summary><code>install.ps1</code> 실행 순서</summary>
-
-1. `manifests/winget.txt` → winget 패키지 설치
-2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
-3. Node.js LTS 설치 (fnm)
-4. `manifests/npm-global.txt` → npm 전역 패키지 설치
-5. Claude Code 네이티브 설치
-6. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
-7. RTK 바이너리 설치 + hook 등록 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
-8. PowerShell 프로파일 설정 (PS 7+, `config/windows/profile.ps1`)
-9. `manifests/skills.txt` → npx skills 복원
-
-</details>
-
-> **설정 업데이트**: dotfiles 변경 사항 적용 시 `install.ps1`을 다시 실행.
-
-### Linux
-
-```bash
-git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
-cd ~/dotfiles && bash install.sh
-cp ~/dotfiles/config/bash/.gitconfig.local.example ~/.gitconfig.local
-# ~/.gitconfig.local 열어서 name/email 수정
-exec bash
-```
-
-## 기존 머신 업데이트
+기존 머신 업데이트:
 
 ```powershell
 # Windows
@@ -82,53 +51,20 @@ cd $env:USERPROFILE\dotfiles && git pull
 pwsh -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-```bash
-# Linux
-cd ~/dotfiles && git pull
-bash install.sh
-```
-
-## git 설정
-
-**전역 alias:**
-
-| alias | 원래 명령 |
-|-------|-----------|
-| `git st` | `git status -sb` |
-| `git co` | `git checkout` |
-| `git br` | `git branch` |
-| `git lg` | `git log --oneline --graph --decorate --all` |
-| `git last` | `git log -1 HEAD` |
-| `git undo` | `git reset --soft HEAD~1` |
-
-**머신별 설정:** `~/.gitconfig.local`에 user.name/email을 설정한다. `config/bash/.gitconfig.local.example`을 복사해 수정.
-
 ## 파일 구조
 
-```
+```text
 dotfiles/
-  install.ps1                      # Windows 설치 (all-in-one)
-  install.sh                       # Linux 설치 (all-in-one)
+  install.ps1                      # 설치 스크립트(Windows 11)
   config/
-    bash/
-      .bashrc                      # 셸 초기화 (starship/zoxide/fzf/atuin init)
-      .bash_profile                # 로그인 셸
-      .aliases                     # 명령어 단축키 (eza, bat, git, ccd 등)
-      .exports                     # 환경변수 (PATH, EDITOR, HISTSIZE 등)
-      .functions                   # 유틸리티 함수 (mkcd, up, extract)
-      .inputrc                     # Readline 설정
-      .gitconfig                   # git 전역 설정 (공유)
-      .gitconfig.local.example     # 머신별 설정 템플릿
-      .extra.example               # 머신별 개인 설정 템플릿 (git 제외)
-      .gitignore_global            # 전역 gitignore
-      .tmux.conf                   # tmux 설정 (Linux용)
     claude/
-      CLAUDE.md                    # Claude 전역 행동 설정
+      claude-hud.json              # claude-hud 설정
+      CLAUDE.md                    # Claude 전역 지침 설정
       settings.json                # Claude Code 설정 (hook, env, permissions)
     windows/
       profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
-      tmux.conf                    # tmux 설정 (pwsh 기본 셸)
-    starship.toml                  # Starship 프롬프트 설정 → ~/.config/
+      tmux.conf                    # tmux 설정
+    starship.toml                  # Starship 프롬프트 설정
   manifests/
     winget.txt                     # Windows winget 패키지 목록
     apt.txt                        # Linux apt 패키지 목록
