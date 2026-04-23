@@ -35,7 +35,38 @@ if (Test-Path $wingetFile) {
 }
 
 # =============================================
-# 2. tmux 설정 복사
+# 1-1. delta gitconfig 설정 병합 (config/git/delta.gitconfig)
+# =============================================
+Write-Host ""
+Write-Host "==> Merging delta git config..."
+$deltaGitConfig = Join-Path $ROOT "config\git\delta.gitconfig"
+if (Test-Path $deltaGitConfig) {
+    $currentSection = $null
+    foreach ($line in (Get-Content $deltaGitConfig)) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match '^\[(.+)\]$') {
+            $currentSection = $Matches[1]
+        } elseif ($trimmed -and -not $trimmed.StartsWith('#') -and $currentSection) {
+            if ($trimmed -match '^(\S+)\s*=\s*(.*)$') {
+                $key   = $Matches[1]
+                $value = $Matches[2].Trim()
+                $existing = git config --global --get "$currentSection.$key" 2>$null
+                if (-not $existing) {
+                    git config --global "$currentSection.$key" $value
+                    Write-Host "    Added [$currentSection] $key = $value"
+                } else {
+                    Write-Host "    Skip  [$currentSection] $key (already set)"
+                }
+            }
+        }
+    }
+    Write-Host "    delta gitconfig merged."
+} else {
+    Write-Host "    [!] config\git\delta.gitconfig not found, skipping."
+}
+
+# =============================================
+# 1-2. tmux 설정 복사
 # =============================================
 Write-Host ""
 $tmuxSrc = Join-Path $ROOT "config\windows\tmux.conf"
@@ -45,7 +76,7 @@ if (Test-Path $tmuxSrc) {
 }
 
 # =============================================
-# 3. Node.js LTS 설치 (fnm)
+# 2. Node.js LTS 설치 (fnm)
 # =============================================
 Write-Host ""
 Write-Host "==> Installing Node.js LTS..."
@@ -65,7 +96,7 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
 }
 
 # =============================================
-# 4. npm 전역 패키지 설치 (manifests/npm-global.txt)
+# 2-1. npm 전역 패키지 설치 (manifests/npm-global.txt)
 # =============================================
 Write-Host ""
 Write-Host "==> Installing global npm packages..."
@@ -80,7 +111,7 @@ if (Test-Path $npmFile) {
 }
 
 # =============================================
-# 5. Claude Code 설치 (native)
+# 3. Claude Code 설치 (native)
 # =============================================
 Write-Host ""
 Write-Host "==> Installing Claude Code (native)..."
@@ -92,7 +123,7 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 }
 
 # =============================================
-# 6. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
+# 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
 # =============================================
 Write-Host ""
 Write-Host "==> Deploying Claude Code config..."
@@ -128,7 +159,7 @@ if (Test-Path $claudeMdSrc) {
 }
 
 # =============================================
-# 7. RTK (Rust Token Killer) 설치
+# 3-2. RTK (Rust Token Killer) 설치
 # =============================================
 Write-Host ""
 Write-Host "==> Installing RTK (Rust Token Killer)..."
@@ -178,7 +209,7 @@ try {
 }
 
 # =============================================
-# 8. PowerShell 프로파일 설정 (마커 방식)
+# 4. PowerShell 프로파일 설정 (마커 방식)
 # =============================================
 Write-Host ""
 Write-Host "==> Updating PowerShell profiles..."
