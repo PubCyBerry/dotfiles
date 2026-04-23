@@ -2,14 +2,14 @@
 # install.ps1이 읽어서 설치
 
 # 개발 환경 기초
-GitHub.cli                     # Github CLI
+GitHub.cli                      # Github CLI
 
 # 자바스크립트 런타임
-Schniz.fnm                     # Node.js 버전관리
+Schniz.fnm                      # Node.js 버전관리
 Oven-sh.Bun                    
 
 # 터미널 멀티플렉서
-psmux                          # tmux on Windows Powershell
+psmux                           # tmux on Windows Powershell
 
 # 현대적인 터미널 도구
 sharkdp.bat                     # 'cat' with syntax highlighting and Git intergration

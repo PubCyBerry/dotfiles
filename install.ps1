@@ -27,7 +27,7 @@ Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
     Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
-        winget install --id $_ --silent --accept-package-agreements --accept-source-agreements | Out-Null
+        winget install --id $_ --silent --accept-package-agreements --accept-source-agreements
         Write-Host "    Installed $_"
     } -ThrottleLimit 4
 } else {
