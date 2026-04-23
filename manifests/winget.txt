@@ -9,7 +9,7 @@ Schniz.fnm                      # Node.js 버전관리
 Oven-sh.Bun                    
 
 # 터미널 멀티플렉서
-psmux                           # tmux on Windows Powershell
+marlocarlo.psmux                # tmux on Windows Powershell
 
 # 현대적인 터미널 도구
 sharkdp.bat                     # 'cat' with syntax highlighting and Git intergration

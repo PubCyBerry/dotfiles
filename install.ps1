@@ -13,7 +13,10 @@ $claudeDir = "$env:USERPROFILE\.claude"
 function Get-ManifestLines([string]$Path) {
     Get-Content $Path |
         Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') } |
-        ForEach-Object { $_.Trim() }
+        ForEach-Object {
+            $line = $_.Trim()
+            if ($line -match '^([^#]+)#') { $Matches[1].Trim() } else { $line }
+        }
 }
 
 Write-Host "==> Windows dotfiles setup starting..."
@@ -27,8 +30,16 @@ Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
     Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
-        winget install --id $_ --silent --accept-package-agreements --accept-source-agreements
-        Write-Host "    Installed $_"
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $package = $_
+        winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Installed $package"
+        } elseif ($LASTEXITCODE -eq 0x8A150015 -or $LASTEXITCODE -eq 43 -or $LASTEXITCODE -eq -1978335189) {
+            Write-Host "    Already installed $package"
+        } else {
+            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+        }
     } -ThrottleLimit 4
 } else {
     Write-Host "    [!] manifests\winget.txt not found, skipping."
@@ -106,8 +117,14 @@ Write-Host "==> Installing global npm packages..."
 $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if (Test-Path $npmFile) {
     Get-ManifestLines $npmFile | ForEach-Object -Parallel {
-        npm install -g $_ 2>&1 | Out-Null
-        Write-Host "    Installed $_"
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $package = $_
+        npm install -g $package 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Installed $package"
+        } else {
+            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+        }
     } -ThrottleLimit 4
 } else {
     Write-Host "    [!] manifests\npm-global.txt not found, skipping."
