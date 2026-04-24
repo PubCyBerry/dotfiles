@@ -2,172 +2,345 @@
 
 dotfiles가 설치한 모든 항목을 제거하는 방법. 필요한 항목만 선택적으로 제거 가능.
 
-## Linux
-
-### 1. 심볼릭 링크 제거 (bash 설정)
-
-```bash
-# dotfiles가 생성한 심볼릭 링크 제거
-for file in ~/dotfiles/config/bash/.*; do
-  [[ -f "$file" ]] || continue
-  name="$(basename "$file")"
-  [[ "$name" == ".gitconfig.local.example" ]] && continue
-  target="$HOME/$name"
-  [[ -L "$target" ]] && rm "$target" && echo "removed $target"
-done
-
-# XDG config 심볼릭 링크 제거
-rm -f ~/.config/starship.toml
-```
-
-### 2. Claude Code 설정 제거
-
-```bash
-rm -f ~/.claude/CLAUDE.md ~/.claude/settings.json
-rm -f ~/.claude/hooks/rtk-rewrite.sh
-
-# npx skills 제거
-npx skills list -g                     # 설치된 skills 확인
-npx skills remove <skill-name> -g      # 개별 제거
-```
-
-### 3. 런타임 & 도구 제거
-
-```bash
-rm -rf ~/.local/share/fnm              # fnm + Node.js
-rm -rf ~/.bun                          # bun (curl 설치)
-rm -rf ~/.rtk                          # RTK (curl 설치)
-claude uninstall                       # Claude Code
-rm -f ~/.local/bin/{yq,starship,lazygit,yazi,difft,sg,bat,fd,rtk}
-```
-
-### 4. npm 전역 패키지 제거
-
-```bash
-npm uninstall -g @google/gemini-cli @openai/codex
-```
-
-### 5. apt 패키지 제거 (선택)
-
-```bash
-sudo apt remove --purge bat fzf fd-find ripgrep jq httpie tmux eza delta shellcheck
-sudo rm -f /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-sudo apt update
-```
-
-### 6. apt 미러 복원 (선택)
-
-```bash
-sudo sed -i 's|mirror.kakao.com|archive.ubuntu.com|g' /etc/apt/sources.list
-sudo apt update
-```
-
-### 7. 셸 초기화 잔여물 정리
-
-`.bashrc`에서 fnm, zoxide, atuin, starship의 `eval` / `source` 라인은 심볼릭 링크 제거(1단계)와 함께 사라진다. 수동으로 `.bashrc`를 작성한 경우, 해당 도구의 init 라인을 직접 제거한다.
-
-## macOS (보류)
-
-> macOS 지원은 현재 보류 상태. `macos/` 디렉토리에 코드 보관 중이며 활성 설치 경로에서 제외됨.
-
-### 1. 심볼릭 링크 제거
-
-Linux와 동일 (위 1단계).
-
-### 2. Claude Code 설정 제거
-
-Linux와 동일 (위 2단계).
-
-### 3. Homebrew 패키지 제거
-
-```bash
-# Brewfile에 정의된 패키지 일괄 제거
-cd ~/dotfiles && brew bundle cleanup --force
-
-# 또는 개별 제거
-brew uninstall bat fzf eza fd delta ripgrep zoxide yq lazygit yazi \
-  starship ruff httpie difftastic ast-grep atuin tmux rtk oven-sh/bun/bun fnm gh
-```
-
-### 4. Claude Code + npm 전역 패키지 제거
-
-```bash
-claude uninstall
-npm uninstall -g @google/gemini-cli @musistudio/claude-code-router @openai/codex opencode-ai
-```
-
-### 5. macOS 시스템 설정 복원 (선택)
-
-`.macos`로 변경한 설정은 수동 복원 필요:
-
-```bash
-# Dock
-defaults delete com.apple.dock autohide
-defaults write com.apple.dock show-recents -bool true
-defaults write com.apple.dock tilesize -int 64
-killall Dock
-
-# Finder
-defaults write com.apple.finder AppleShowAllFiles -bool false
-defaults delete com.apple.finder _FXShowPosixPathInTitle
-killall Finder
-
-# 키보드
-defaults delete NSGlobalDomain KeyRepeat
-defaults delete NSGlobalDomain InitialKeyRepeat
-```
-
-전체 복원은 **시스템 설정 > 일반 > 전송 또는 재설정**에서 가능.
-
 ## Windows
 
-### 1. PowerShell 프로파일 정리
+`install.ps1`의 실행 순서와 동일한 번호로 구성. PowerShell 7+ (pwsh)에서 실행.
+
+> **주의**: `>` 표시 항목은 사용자 데이터까지 삭제될 수 있으므로 주의해서 실행할 것.
+
+---
+
+### 1. winget 패키지 제거
+
+개별 제거:
 
 ```powershell
-$prof = "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-$content = Get-Content $prof -Raw
-$cleaned = $content -replace '(?s)# ===== dotfiles-begin =====.*?# ===== dotfiles-end =====\r?\n?', ''
-$cleaned | Out-File $prof -Encoding utf8
+winget uninstall --id <패키지ID>
 ```
 
-### 2. Claude Code 설정 제거
+manifests/winget.txt 기반 일괄 제거:
 
 ```powershell
-Remove-Item "$HOME\.claude\CLAUDE.md", "$HOME\.claude\settings.json" -Force -ErrorAction SilentlyContinue
-Remove-Item "$HOME\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
+Get-Content .\manifests\winget.txt |
+    Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') } |
+    ForEach-Object { ($_ -split '#')[0].Trim() } |
+    Where-Object { $_ } |
+    ForEach-Object { winget uninstall --id $_ --silent }
 ```
 
-### 3. RTK 제거
+패키지 목록:
+
+| ID | 용도 |
+|----|------|
+| `Git.Git` | Git for Windows (Git Bash 포함) |
+| `GitHub.cli` | GitHub CLI (`gh`) |
+| `Neovim.Neovim` | 텍스트 에디터 |
+| `Schniz.fnm` | Node.js 버전 관리 |
+| `Oven-sh.Bun` | JavaScript 런타임 |
+| `marlocarlo.psmux` | tmux on Windows PowerShell |
+| `sharkdp.bat` | 구문 강조 `cat` |
+| `junegunn.fzf` | 퍼지 파인더 |
+| `eza-community.eza` | 현대적 `ls` |
+| `sharkdp.fd` | 현대적 `find` |
+| `dandavison.delta` | git diff pager |
+| `BurntSushi.ripgrep.MSVC` | 고속 grep (`rg`) |
+| `jqlang.jq` | JSON 처리 |
+| `mikefarah.yq` | YAML/TOML/JSON 처리 |
+| `ajeetdsouza.zoxide` | 스마트 cd (`z`) |
+| `Starship.Starship` | 셸 프롬프트 |
+| `sxyazi.yazi` | 터미널 파일 매니저 |
+| `Gyan.FFmpeg` | 동영상 처리 |
+| `oschwartz10612.Poppler` | PDF 처리 |
+| `ImageMagick.ImageMagick` | 이미지 처리 |
+
+---
+
+### 1-1. Git 전역 설정 제거
+
+dotfiles가 병합한 항목만 선택적 제거:
 
 ```powershell
-Remove-Item "$HOME\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
+git config --global --unset core.pager
+git config --global --unset core.editor
+git config --global --unset core.fileMode
+git config --global --unset core.autocrlf
+git config --global --unset core.eol
+git config --global --unset interactive.diffFilter
+git config --global --unset delta.navigate
+git config --global --unset delta.dark
+git config --global --unset delta.side-by-side
+git config --global --unset delta.line-numbers
+git config --global --unset merge.conflictStyle
 ```
 
-### 4. winget 패키지 제거 (선택)
+> **전체 삭제** (사용자 커스텀 설정도 함께 삭제됨):
+> ```powershell
+> Remove-Item "$env:USERPROFILE\.gitconfig" -Force
+> ```
+
+---
+
+### 1-2. tmux 설정 제거
 
 ```powershell
-$packages = @(
-    "Microsoft.PowerShell", "Git.Git", "GitHub.cli", "Schniz.fnm",
-    "Microsoft.WindowsTerminal", "psmux",
-    "sharkdp.bat", "junegunn.fzf", "eza-community.eza", "sharkdp.fd",
-    "dandavison.delta", "BurntSushi.ripgrep.MSVC", "Oven-sh.Bun", "jqlang.jq",
-    "ajeetdsouza.zoxide", "mikefarah.yq", "JesseDuffield.lazygit",
-    "sxyazi.yazi", "Starship.Starship", "astral-sh.ruff", "httpie.httpie"
-)
-foreach ($pkg in $packages) { winget uninstall --id $pkg }
+Remove-Item "$env:USERPROFILE\.tmux.conf" -Force
 ```
 
-### 5. Claude Code 제거
+---
+
+### 1-3. YAZI_FILE_ONE 환경 변수 제거
 
 ```powershell
-claude uninstall
-npm uninstall -g @google/gemini-cli @openai/codex
+[System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $null, "User")
 ```
 
-## dotfiles 저장소 자체 제거
+확인:
 
-모든 OS 공통으로, 위 정리가 끝나면 저장소를 삭제한다:
+```powershell
+[System.Environment]::GetEnvironmentVariable("YAZI_FILE_ONE", "User")  # 아무것도 출력 안 되면 성공
+```
+
+---
+
+### 1-4. Yazi 설정 제거
+
+> **사용자가 추가한 yazi 설정도 함께 삭제됨.**
+
+```powershell
+Remove-Item "$env:APPDATA\yazi\config" -Recurse -Force
+```
+
+---
+
+### 1-5. Neovim PATH 제거
+
+User PATH에서 Neovim bin 경로 제거:
+
+```powershell
+$nvimBin  = "C:\Program Files\Neovim\bin"
+$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+$newPath  = ($userPath -split ';' | Where-Object { $_ -ne $nvimBin }) -join ';'
+[System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+```
+
+---
+
+### 1-6. Neovim 설정 제거
+
+> **lazy.nvim으로 설치된 모든 플러그인과 사용자 추가 설정까지 삭제됨.**
+
+```powershell
+# 설정 파일 (init.lua, lua/)
+Remove-Item "$env:LOCALAPPDATA\nvim" -Recurse -Force
+
+# 플러그인 캐시 및 데이터
+Remove-Item "$env:LOCALAPPDATA\nvim-data" -Recurse -Force
+```
+
+---
+
+### 2. Node.js LTS (fnm) 제거
+
+특정 버전만 제거:
+
+```powershell
+fnm uninstall lts-latest
+```
+
+fnm 자체 제거 (winget):
+
+```powershell
+winget uninstall --id Schniz.fnm
+```
+
+fnm 데이터 디렉토리 제거:
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\fnm" -Recurse -Force
+```
+
+---
+
+### 3. Claude Code 제거
+
+Windows 설정 > 앱에서 "Claude Code" 검색 후 제거, 또는:
+
+```powershell
+Remove-Item -Path "$env:USERPROFILE\.local\bin\claude.exe" -Force
+Remove-Item -Path "$env:USERPROFILE\.local\share\claude" -Recurse -Force
+```
+
+> Claude Code 설정(`~/.claude/`)은 아래 3-1에서 별도로 제거.
+
+---
+
+### 3-1. Claude Code 설정 제거
+
+선택적 제거 (권장):
+
+```powershell
+# dotfiles가 복사한 CLAUDE.md만 제거
+Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force
+
+# RTK hook만 제거
+Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force
+```
+
+settings.json에서 dotfiles가 추가한 키 제거:
+
+```powershell
+$settingsPath = "$env:USERPROFILE\.claude\settings.json"
+$settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+# 필요한 키만 제거 (예: hooks)
+$settings.PSObject.Properties.Remove("hooks")
+$settings.PSObject.Properties.Remove("env")
+$settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
+```
+
+> **전체 삭제** (대화 기록, 메모리, 모든 설정 포함):
+> ```powershell
+> Remove-Item "$env:USERPROFILE\.claude" -Recurse -Force
+> Remove-Item -Path "$env:USERPROFILE\.claude.json" -Force
+> ```
+
+---
+
+### 3-2. RTK (Rust Token Killer) 제거
+
+```powershell
+# 바이너리 제거
+Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
+
+# Claude hook 제거
+Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
+
+# .local\bin에 다른 도구가 없을 경우 PATH에서도 제거
+$localBin = "$env:USERPROFILE\.local\bin"
+$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+$newPath  = ($userPath -split ';' | Where-Object { $_ -ne $localBin }) -join ';'
+[System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+```
+
+---
+
+### 4. PowerShell 프로파일 정리
+
+dotfiles 마커 블록(`# ===== dotfiles-begin =====` ~ `# ===== dotfiles-end =====`) 제거:
+
+```powershell
+$prof = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+if (Test-Path $prof) {
+    $content = Get-Content $prof -Raw
+    $content = $content -replace '(?s)\r?\n?# ===== dotfiles-begin =====(.*?)# ===== dotfiles-end =====\r?\n?', ''
+    $content | Out-File $prof -Encoding utf8 -NoNewline
+    Write-Host "dotfiles 블록 제거 완료: $prof"
+}
+```
+
+---
+
+### 5. Git Bash 프로파일 정리
+
+`.bashrc`와 `.inputrc`에서 마커 블록 제거 (Git Bash에서 실행):
 
 ```bash
-rm -rf ~/dotfiles
+for file in ~/.bashrc ~/.inputrc; do
+    if [ -f "$file" ]; then
+        sed -i '/# ===== dotfiles-begin =====/,/# ===== dotfiles-end =====/d' "$file"
+        echo "dotfiles 블록 제거 완료: $file"
+    fi
+done
+```
+
+install.ps1이 생성한 `.bash_profile` 제거:
+
+```powershell
+# 내용이 dotfiles 생성본인지 확인 후 삭제
+Get-Content "$env:USERPROFILE\.bash_profile"
+# 확인 후:
+Remove-Item "$env:USERPROFILE\.bash_profile" -Force
+```
+
+---
+
+### 6. Claude Code Skills 제거
+
+개별 제거:
+
+```powershell
+npx skills remove anthropics/skills --skill skill-creator -g
+npx skills remove anthropics/skills --skill pdf -g
+npx skills remove anthropics/skills --skill pptx -g
+npx skills remove anthropics/skills --skill docx -g
+npx skills remove anthropics/skills --skill xlsx -g
+```
+
+설치된 전체 skills 확인:
+
+```powershell
+npx skills list -g
+```
+
+---
+
+## 완전 초기화 순서
+
+모든 항목을 한 번에 제거할 경우 아래 순서를 권장:
+
+1. **6** — Claude Code Skills 제거 (npx skills 명령어 사용 가능할 때 먼저)
+2. **3-2** — RTK 제거
+3. **3-1** — Claude Code 설정 제거
+4. **3** — Claude Code 제거
+5. **4** — PowerShell 프로파일 정리
+6. **5** — Git Bash 프로파일 정리
+7. **1-6** — Neovim 설정 제거
+8. **1-5** — Neovim PATH 제거
+9. **1-4** — Yazi 설정 제거
+10. **1-3** — YAZI_FILE_ONE 환경 변수 제거
+11. **1-2** — tmux 설정 제거
+12. **1-1** — Git 전역 설정 제거
+13. **2** — Node.js (fnm) 제거
+14. **1** — winget 패키지 제거
+
+---
+
+## 선택적 제거 가이드
+
+### Claude 관련만 제거
+
+```powershell
+# Skills → RTK → 설정 → 앱 순서
+npx skills remove anthropics/skills --skill skill-creator -g
+npx skills remove anthropics/skills --skill pdf -g
+npx skills remove anthropics/skills --skill pptx -g
+npx skills remove anthropics/skills --skill docx -g
+npx skills remove anthropics/skills --skill xlsx -g
+Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force -ErrorAction SilentlyContinue
+winget uninstall --id Anthropic.Claude
+```
+
+### 설정 파일만 제거 (패키지는 유지)
+
+```powershell
+# 마커 블록 제거
+$prof = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+(Get-Content $prof -Raw) -replace '(?s)\r?\n?# ===== dotfiles-begin =====(.*?)# ===== dotfiles-end =====\r?\n?', '' |
+    Out-File $prof -Encoding utf8 -NoNewline
+
+# Git 설정 제거
+git config --global --unset core.pager
+git config --global --unset core.editor
+git config --global --unset delta.navigate
+git config --global --unset delta.dark
+git config --global --unset delta.side-by-side
+git config --global --unset delta.line-numbers
+git config --global --unset interactive.diffFilter
+git config --global --unset merge.conflictStyle
+
+# 기타 설정 파일
+Remove-Item "$env:USERPROFILE\.tmux.conf" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\yazi\config" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\nvim" -Recurse -Force -ErrorAction SilentlyContinue
 ```
