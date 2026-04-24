@@ -12,6 +12,7 @@ Windows 11 환경을 위한 개인 dotfiles.
     - [Windows 11](#windows-11)
   - [파일 구조](#파일-구조)
   - [Neovim 키맵](#neovim-키맵)
+    - [yazi.nvim](#yazinvim)
   - [References](#references)
     - [Dotfiles](#dotfiles-1)
     - [Harness](#harness)
@@ -20,6 +21,10 @@ Windows 11 환경을 위한 개인 dotfiles.
     - [Vim](#vim)
     - [Tmux](#tmux)
     - [CLI Tools](#cli-tools)
+  - [Troubleshooting](#troubleshooting)
+    - [SSH 터미널을 powershell 7+로 설정](#ssh-터미널을-powershell-7로-설정)
+    - [SSH 세션에서 fnm / zoxide 오류](#ssh-세션에서-fnm--zoxide-오류)
+    - [SSH 세션에서 Starship이 Administrator 표시](#ssh-세션에서-starship이-administrator-표시)
 
 ## 지원 환경
 
@@ -177,3 +182,30 @@ dotfiles/
 | [ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) | smarter `cd` command | <img src="https://img.shields.io/github/stars/ajeetdsouza/zoxide?style=flat&label=%E2%AD%90" alt="stars"> |
 | [starship/starship](https://github.com/starship/starship) | customizable prompt for any shell | <img src="https://img.shields.io/github/stars/starship/starship?style=flat&label=%E2%AD%90" alt="stars"> |
 | [microsoft/winget-cli](https://github.com/microsoft/winget-cli) | Windows 패키지 매니저 | <img src="https://img.shields.io/github/stars/microsoft/winget-cli?style=flat&label=%E2%AD%90" alt="stars"> |
+
+## Troubleshooting
+
+### SSH 터미널을 powershell 7+로 설정
+
+관리자 권한으로 powershell 실행 후 다음 명령어를 실행:
+
+```powershell
+New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Program Files\PowerShell\7\pwsh.exe" -PropertyType String -Force
+```
+
+### SSH 세션에서 fnm / zoxide 오류
+
+WinGet으로 설치한 도구(`fnm`, `zoxide` 등)는 `%LOCALAPPDATA%\Microsoft\WinGet\Links\`의 심볼릭 링크로 노출된다. Windows OpenSSH 서버는 보안상 이 링크를 통한 프로세스 실행을 차단하므로 SSH 세션의 프로파일 로딩 시 `ResourceUnavailable` 오류가 발생한다.
+
+`profile.ps1`의 `Resolve-ExePath` 헬퍼가 심볼릭 링크를 실제 실행 파일 경로로 해석해 우회하므로 별도 조치 불필요.
+
+### SSH 세션에서 Starship이 Administrator 표시
+
+Windows OpenSSH 서버는 Administrators 그룹 계정으로 접속 시 UAC 필터를 거치지 않고 **전체 관리자 토큰**으로 셸을 실행한다. 일반 데스크탑 로그인은 제한된 토큰으로 시작하는 것과 달리, SSH 세션은 처음부터 관리자 컨텍스트로 동작한다. Starship의 `username` 모듈이 SSH 세션에서 이를 반영해 표시하는 것이다.
+
+표시를 끄려면 `config/starship.toml`에 추가:
+
+```toml
+[username]
+show_always = false
+```
