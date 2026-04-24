@@ -109,6 +109,25 @@ if ($gitFileExe) {
 }
 
 # =============================================
+# 1-4. Neovim PATH 환경변수 설정
+# =============================================
+Write-Host ""
+Write-Host "==> Adding Neovim to PATH..."
+$nvimBin = "C:\Program Files\Neovim\bin"
+if (Test-Path $nvimBin) {
+    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$nvimBin*") {
+        [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$nvimBin", "User")
+        $env:PATH = "$env:PATH;$nvimBin"
+        Write-Host "    Added Neovim to PATH: $nvimBin"
+    } else {
+        Write-Host "    Neovim already in PATH."
+    }
+} else {
+    Write-Host "    [!] Neovim not found at $nvimBin. Install via winget: Neovim.Neovim"
+}
+
+# =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
 Write-Host ""

@@ -4,6 +4,7 @@
 # 개발 환경 기초
 Git.Git                         # Git for Windows (Git Bash 포함)
 GitHub.cli                      # Github CLI
+Neovim.Neovim                   # NeoVim
 
 # 자바스크립트 런타임
 Schniz.fnm                      # Node.js 버전관리
