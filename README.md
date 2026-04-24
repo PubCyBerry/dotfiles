@@ -50,12 +50,16 @@ dotfiles/
       claude-hud.json              # claude-hud 설정
       CLAUDE.md                    # Claude 전역 지침 설정
       settings.json                # Claude Code 설정 (hook, env, permissions)
+    git/
+      delta.gitconfig              # delta pager git 설정
     windows/
       profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
       tmux.conf                    # tmux 설정
+    bash/
+      bashrc                       # Git Bash 설정
     starship.toml                  # Starship 프롬프트 설정
   manifests/
-    winget.txt                     # Windows winget 패키지 목록
+    winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
     apt.txt                        # Linux apt 패키지 목록
     npm-global.txt                 # npm 전역 패키지 목록
     skills.txt                     # Claude Code skills 목록
