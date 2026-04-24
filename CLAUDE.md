@@ -37,7 +37,7 @@ dotfiles/
 ### Windows install.ps1 실행 순서
 
 1. `manifests/winget.txt` → winget 패키지 설치
-   1-1. `config/git/delta.gitconfig` → git config 병합
+   1-1. `config/git/gitconfig` → git config 병합
    1-2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
    1-3. `YAZI_FILE_ONE` 환경변수 설정 (Git file.exe 경로)
    1-4. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)

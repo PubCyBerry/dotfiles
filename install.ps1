@@ -77,25 +77,29 @@ if (Test-Path $wingetFile) {
 }
 
 # =============================================
-# 1-1. delta gitconfig 설정 병합 (config/git/delta.gitconfig)
+# 1-1. gitconfig 설정 병합 (config/git/gitconfig)
 # =============================================
 Write-Host ""
-Write-Host "==> Merging delta git config..."
-$deltaGitConfig = Join-Path $ROOT "config\git\delta.gitconfig"
-if (Test-Path $deltaGitConfig) {
+Write-Host "==> Merging git config..."
+$gitConfig = Join-Path $ROOT "config\git\gitconfig"
+if (Test-Path $gitConfig) {
+    # 기존 global git 설정을 해시테이블로 로드 (중복 방지용)
     $existingConfig = @{}
     git config --global --list 2>$null | ForEach-Object {
         if ($_ -match '^([^=]+)=(.*)$') { $existingConfig[$Matches[1]] = $Matches[2] }
     }
     $currentSection = $null
-    foreach ($line in (Get-Content $deltaGitConfig)) {
+    foreach ($line in (Get-Content $gitConfig)) {
         $trimmed = $line.Trim()
+        # [section] 헤더 감지
         if ($trimmed -match '^\[(.+)\]$') {
             $currentSection = $Matches[1]
+        # 주석·빈 줄 제외, key = value 항목만 처리
         } elseif ($trimmed -and -not $trimmed.StartsWith('#') -and $currentSection) {
             if ($trimmed -match '^(\S+)\s*=\s*(.*)$') {
                 $key   = $Matches[1]
                 $value = $Matches[2].Trim()
+                # 이미 설정된 항목은 건너뜀 (사용자 커스텀 설정 보존)
                 if (-not $existingConfig.ContainsKey("$currentSection.$key")) {
                     git config --global "$currentSection.$key" $value
                     Write-Host "    Added [$currentSection] $key = $value"
@@ -105,9 +109,9 @@ if (Test-Path $deltaGitConfig) {
             }
         }
     }
-    Write-Host "    delta gitconfig merged."
+    Write-Host "    gitconfig merged."
 } else {
-    Write-Host "    [!] config\git\delta.gitconfig not found, skipping."
+    Write-Host "    [!] config\git\gitconfig not found, skipping."
 }
 
 # =============================================
