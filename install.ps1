@@ -90,6 +90,25 @@ if (Test-Path $tmuxSrc) {
 }
 
 # =============================================
+# 1-3. YAZI_FILE_ONE 환경 변수 설정 (Git file.exe)
+# =============================================
+Write-Host ""
+Write-Host "==> Setting YAZI_FILE_ONE environment variable..."
+$gitFileExePaths = @(
+    "C:\Program Files\Git\usr\bin\file.exe",
+    "C:\Program Files (x86)\Git\usr\bin\file.exe"
+)
+$gitFileExe = $gitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($gitFileExe) {
+    [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
+    $env:YAZI_FILE_ONE = $gitFileExe
+    Write-Host "    YAZI_FILE_ONE = $gitFileExe"
+} else {
+    Write-Host "    [!] Git file.exe not found. Install Git for Windows first."
+    Write-Host "        winget install --id Git.Git"
+}
+
+# =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
 Write-Host ""
