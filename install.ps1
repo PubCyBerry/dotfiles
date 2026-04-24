@@ -163,19 +163,15 @@ Write-Host ""
 Write-Host "==> Setting up lazy.nvim (Structured Setup)..."
 $nvimConfigDir = "$env:LOCALAPPDATA\nvim"
 $nvimInitDst   = "$nvimConfigDir\init.lua"
-$nvimInitSrc   = Join-Path $ROOT "config\nvim\init.lua"
-$nvimLazySrc   = Join-Path $ROOT "config\nvim\lua\config\lazy.lua"
-$nvimLazyDst   = "$nvimConfigDir\lua\config\lazy.lua"
+$nvimSrc       = Join-Path $ROOT "config\nvim"
 
 if (Test-Path $nvimInitDst) {
     Write-Host "    Neovim config already exists, skipping."
-} elseif (-not (Test-Path $nvimInitSrc)) {
+} elseif (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
     Write-Host "    [!] config\nvim\init.lua not found, skipping."
 } else {
-    New-Item -ItemType Directory -Force -Path "$nvimConfigDir\lua\config" | Out-Null
-    New-Item -ItemType Directory -Force -Path "$nvimConfigDir\lua\plugins" | Out-Null
-    Copy-Item $nvimInitSrc $nvimInitDst -Force
-    Copy-Item $nvimLazySrc $nvimLazyDst -Force
+    New-Item -ItemType Directory -Force -Path $nvimConfigDir | Out-Null
+    Copy-Item "$nvimSrc\*" $nvimConfigDir -Recurse -Force
     Write-Host "    lazy.nvim config deployed to $nvimConfigDir"
     Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
 }
