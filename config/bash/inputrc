@@ -1,0 +1,11 @@
+# ~/.inputrc
+
+# prevent Git bash screen blinking and bell ringing
+set bell-style none
+
+# colored-autocompletion
+set colored-stats on
+set colored-completion-prefix on
+
+# List directories with a trailing slash
+set mark-directories on

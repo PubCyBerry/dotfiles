@@ -327,6 +327,14 @@ if (Test-Path $bashrcSrc) {
         $bashrcPath = "$env:USERPROFILE\.bashrc"
         Set-ProfileBlock $bashrcPath $bashrcContent
 
+        # .inputrc 배포 (마커 방식)
+        $inputrcSrc = Join-Path $ROOT "config\bash\inputrc"
+        if (Test-Path $inputrcSrc) {
+            $inputrcContent = Get-Content $inputrcSrc -Raw
+            $inputrcPath = "$env:USERPROFILE\.inputrc"
+            Set-ProfileBlock $inputrcPath $inputrcContent
+        }
+
         # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
         $bashProfilePath = "$env:USERPROFILE\.bash_profile"
         if (-not (Test-Path $bashProfilePath)) {
