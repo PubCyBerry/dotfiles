@@ -1,7 +1,14 @@
 # ~/.inputrc
 
+# 자동완성 대소문자 무시
+set completion-ignore-case on
+
 # prevent Git bash screen blinking and bell ringing
 set bell-style none
+
+# 히스토리 검색: 현재 입력을 prefix로 사용
+"\e[A": history-search-backward
+"\e[B": history-search-forward
 
 # colored-autocompletion
 set colored-stats on

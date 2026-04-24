@@ -25,5 +25,3 @@ Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패
 |------|------|
 | `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 |
 | `skill-creator` | 새 skill 생성 |
-| `find-skills` | skill 검색/설치 |
-| `impeccable` | 디자인 관련 스킬 |

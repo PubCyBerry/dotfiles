@@ -5,6 +5,13 @@ Windows 11 환경을 위한 개인 dotfiles.
 
 ## 목차
 
+- [dotfiles](#dotfiles)
+  - [목차](#목차)
+  - [지원 환경](#지원-환경)
+  - [Quickstart](#quickstart)
+    - [Windows 11](#windows-11)
+  - [파일 구조](#파일-구조)
+  - [References](#references)
 
 ## 지원 환경
 
@@ -51,12 +58,13 @@ dotfiles/
       CLAUDE.md                    # Claude 전역 지침 설정
       settings.json                # Claude Code 설정 (hook, env, permissions)
     git/
-      delta.gitconfig              # delta pager git 설정
+      gitconfig                    # git 설정 (delta pager 포함)
     windows/
       profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
       tmux.conf                    # tmux 설정
     bash/
       bashrc                       # Git Bash 설정
+      inputrc                      # Git Bash readline 설정
     starship.toml                  # Starship 프롬프트 설정
   manifests/
     winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
@@ -67,6 +75,7 @@ dotfiles/
   docs/
     tools.md                       # CLI 도구 사용법 cheatsheet
     ai-agents.md                   # Claude Code, 플러그인, skills 상세
+    claude-hud.md                  # Claude HUD 설정 가이드
     uninstall.md                   # 클린 언인스톨 가이드
 ```
 

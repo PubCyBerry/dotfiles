@@ -216,16 +216,4 @@ bun install        # npm install 대체 (빠름)
 |------|------|
 | 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
 | 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
-| Tab 한 번에 목록 표시 | 두 번 누를 필요 없음 |
 | 컬러 자동완성 | 파일 타입별 색상 표시 |
-
-### shell functions
-
-`~/.functions`에 정의된 유틸리티 함수 모음.
-
-```bash
-mkcd my-project     # mkdir + cd 한번에
-up 2                # 2단계 위 디렉토리로 이동 (기본값: 1)
-extract file.tar.gz # 확장자 자동 감지 후 압축 해제
-```
-
