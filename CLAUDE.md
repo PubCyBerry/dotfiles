@@ -23,7 +23,7 @@ dotfiles/
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc) — Git Bash(Windows) 마커 방식 삽입
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
-│   ├── nvim/            # Neovim 설정 (lazy.nvim Structured Setup)
+│   ├── nvim/            # Neovim 설정 (lazy.nvim + yazi.nvim)
 │   ├── windows/         # Windows 전용 설정 (profile.ps1, tmux.conf)
 │   └── starship.toml
 ├── manifests/           # 패키지/스킬 목록
