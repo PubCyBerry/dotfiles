@@ -10,20 +10,13 @@
 - `cat` → **`bat`**
 - `ls` → **`eza`**
 - `cd` → **`z`** (zoxide)
-- 코드 구조 검색/리팩터 → **`sg`** (ast-grep)
 
 ### 데이터 처리
 - JSON → **`jq`** 파이프라인
 - YAML/TOML → **`yq`**
-- HTTP 요청 → **`httpie`** (`http`/`https` 명령어)
-
-### 코드 품질
-- Python 린팅/포매팅 → **`ruff`** (flake8+black+isort 대체)
-- AST diff → **`difft`** (difftastic)
 
 ### GitHub 작업
 - 모든 GitHub 작업 → **`gh`**
-- 비대화형 플래그 명시: `--json`, `--yes`, `--quiet`
 
 ### 범용 규칙
 - 외부 CLI는 비대화형 모드 (`--yes`, `--quiet`, `--no-interactive`)
