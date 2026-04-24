@@ -144,7 +144,22 @@ if ($gitFileExe) {
 }
 
 # =============================================
-# 1-4. Neovim PATH 환경변수 설정
+# 1-4. yazi 설정 파일 배포
+# =============================================
+Write-Host ""
+Write-Host "==> Deploying yazi config..."
+$yaziConfigSrc = Join-Path $ROOT "config\yazi"
+$yaziConfigDst = "$env:APPDATA\yazi\config"
+if (Test-Path $yaziConfigSrc) {
+    New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
+    Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
+    Write-Host "    yazi config deployed to $yaziConfigDst"
+} else {
+    Write-Host "    [!] config\yazi not found, skipping."
+}
+
+# =============================================
+# 1-5. Neovim PATH 환경변수 설정
 # =============================================
 Write-Host ""
 Write-Host "==> Adding Neovim to PATH..."
@@ -157,10 +172,10 @@ if (Test-Path $nvimBin) {
 }
 
 # =============================================
-# 1-5. lazy.nvim Structured Setup
+# 1-6. lazy.nvim Structured Setup
 # =============================================
 Write-Host ""
-Write-Host "==> Setting up lazy.nvim (Structured Setup)..."
+Write-Host "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
 $nvimConfigDir = "$env:LOCALAPPDATA\nvim"
 $nvimInitDst   = "$nvimConfigDir\init.lua"
 $nvimSrc       = Join-Path $ROOT "config\nvim"
@@ -174,21 +189,6 @@ if (Test-Path $nvimInitDst) {
     Copy-Item "$nvimSrc\*" $nvimConfigDir -Recurse -Force
     Write-Host "    lazy.nvim config deployed to $nvimConfigDir"
     Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
-}
-
-# =============================================
-# 1-6. yazi 설정 파일 배포
-# =============================================
-Write-Host ""
-Write-Host "==> Deploying yazi config..."
-$yaziConfigSrc = Join-Path $ROOT "config\yazi"
-$yaziConfigDst = "$env:APPDATA\yazi\config"
-if (Test-Path $yaziConfigSrc) {
-    New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
-    Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
-    Write-Host "    yazi config deployed to $yaziConfigDst"
-} else {
-    Write-Host "    [!] config\yazi not found, skipping."
 }
 
 # =============================================
