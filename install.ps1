@@ -302,7 +302,7 @@ if (Test-Path $profileSrc) {
 }
 
 # =============================================
-# 10. Git Bash 프로파일 설정 (마커 방식)
+# 5. Git Bash 프로파일 설정 (마커 방식)
 # =============================================
 Write-Host ""
 Write-Host "==> Updating Git Bash profile..."
@@ -352,7 +352,7 @@ if (Test-Path $bashrcSrc) {
 }
 
 # =============================================
-# 9. Claude skills 설치 (manifests/skills.txt)
+# 6. Claude skills 설치 (manifests/skills.txt)
 # =============================================
 Write-Host ""
 Write-Host "==> Restoring Claude Code skills..."
