@@ -157,6 +157,30 @@ if (Test-Path $nvimBin) {
 }
 
 # =============================================
+# 1-5. lazy.nvim Structured Setup
+# =============================================
+Write-Host ""
+Write-Host "==> Setting up lazy.nvim (Structured Setup)..."
+$nvimConfigDir = "$env:LOCALAPPDATA\nvim"
+$nvimInitDst   = "$nvimConfigDir\init.lua"
+$nvimInitSrc   = Join-Path $ROOT "config\nvim\init.lua"
+$nvimLazySrc   = Join-Path $ROOT "config\nvim\lua\config\lazy.lua"
+$nvimLazyDst   = "$nvimConfigDir\lua\config\lazy.lua"
+
+if (Test-Path $nvimInitDst) {
+    Write-Host "    Neovim config already exists, skipping."
+} elseif (-not (Test-Path $nvimInitSrc)) {
+    Write-Host "    [!] config\nvim\init.lua not found, skipping."
+} else {
+    New-Item -ItemType Directory -Force -Path "$nvimConfigDir\lua\config" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$nvimConfigDir\lua\plugins" | Out-Null
+    Copy-Item $nvimInitSrc $nvimInitDst -Force
+    Copy-Item $nvimLazySrc $nvimLazyDst -Force
+    Write-Host "    lazy.nvim config deployed to $nvimConfigDir"
+    Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
+}
+
+# =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
 Write-Host ""

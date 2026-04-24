@@ -23,6 +23,7 @@ dotfiles/
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc) — Git Bash(Windows) 마커 방식 삽입
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
+│   ├── nvim/            # Neovim 설정 (lazy.nvim Structured Setup)
 │   ├── windows/         # Windows 전용 설정 (profile.ps1, tmux.conf)
 │   └── starship.toml
 ├── manifests/           # 패키지/스킬 목록
@@ -41,6 +42,7 @@ dotfiles/
    1-2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
    1-3. `YAZI_FILE_ONE` 환경변수 설정 (Git file.exe 경로)
    1-4. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
+   1-5. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치

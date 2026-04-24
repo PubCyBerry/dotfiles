@@ -65,6 +65,9 @@ dotfiles/
     bash/
       bashrc                       # Git Bash 설정
       inputrc                      # Git Bash readline 설정
+    nvim/
+      init.lua                     # Neovim 진입점 (lazy.nvim 로드)
+      lua/config/lazy.lua          # lazy.nvim 부트스트랩 및 설정
     starship.toml                  # Starship 프롬프트 설정
   manifests/
     winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
