@@ -19,6 +19,37 @@ function Get-ManifestLines([string]$Path) {
         }
 }
 
+function Add-ToUserPath([string]$Dir) {
+    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($userPath -notlike "*$Dir*") {
+        [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$Dir", "User")
+        $env:PATH = "$env:PATH;$Dir"
+        return $true
+    }
+    return $false
+}
+
+function Set-ProfileBlock([string]$FilePath, [string]$Content) {
+    $begin = "# ===== dotfiles-begin ====="
+    $end   = "# ===== dotfiles-end ====="
+    $block = "$begin`n$Content`n$end"
+    New-Item -ItemType File -Force -Path $FilePath | Out-Null
+    $existing = Get-Content $FilePath -Raw -ErrorAction SilentlyContinue
+    if (-not $existing) { $existing = "" }
+    $escaped = [regex]::Escape($begin)
+    if ($existing -match $escaped) {
+        $before = ($existing -split $escaped)[0]
+        $after  = ($existing -split [regex]::Escape($end))[-1]
+        "$before$block$after" | Out-File -FilePath $FilePath -Encoding utf8 -NoNewline
+        Write-Host "    Updated dotfiles block in $FilePath"
+    } else {
+        "`n$block" | Add-Content -Path $FilePath -Encoding utf8
+        Write-Host "    Appended dotfiles block to $FilePath"
+    }
+}
+
+$WINGET_ALREADY_INSTALLED = @(0x8A150015, 43, -1978335189)
+
 Write-Host "==> Windows dotfiles setup starting..."
 Write-Host "    Source: $ROOT"
 
@@ -35,7 +66,7 @@ if (Test-Path $wingetFile) {
         winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Host "    Installed $package"
-        } elseif ($LASTEXITCODE -eq 0x8A150015 -or $LASTEXITCODE -eq 43 -or $LASTEXITCODE -eq -1978335189) {
+        } elseif ($using:WINGET_ALREADY_INSTALLED -contains $LASTEXITCODE) {
             Write-Host "    Already installed $package"
         } else {
             Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
@@ -115,14 +146,8 @@ Write-Host ""
 Write-Host "==> Adding Neovim to PATH..."
 $nvimBin = "C:\Program Files\Neovim\bin"
 if (Test-Path $nvimBin) {
-    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    if ($userPath -notlike "*$nvimBin*") {
-        [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$nvimBin", "User")
-        $env:PATH = "$env:PATH;$nvimBin"
-        Write-Host "    Added Neovim to PATH: $nvimBin"
-    } else {
-        Write-Host "    Neovim already in PATH."
-    }
+    if (Add-ToUserPath $nvimBin) { Write-Host "    Added Neovim to PATH: $nvimBin" }
+    else { Write-Host "    Neovim already in PATH." }
 } else {
     Write-Host "    [!] Neovim not found at $nvimBin. Install via winget: Neovim.Neovim"
 }
@@ -136,7 +161,6 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";
             [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
             $env:PATH
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
-    # 현재 세션에서 fnm 환경 변수 초기화 (Node.js/npm 경로 활성화)
     fnm env --shell powershell | Out-String | Invoke-Expression
     fnm install --lts
     fnm default lts-latest
@@ -224,12 +248,7 @@ Write-Host "==> Installing RTK (Rust Token Killer)..."
 $localBin = "$env:USERPROFILE\.local\bin"
 New-Item -ItemType Directory -Force -Path $localBin | Out-Null
 
-# User PATH에 ~/.local/bin 추가 (영구)
-$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-if ($userPath -notlike "*$localBin*") {
-    [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$localBin", "User")
-    Write-Host "    Added $localBin to User PATH"
-}
+if (Add-ToUserPath $localBin) { Write-Host "    Added $localBin to User PATH" }
 $env:PATH = "$env:PATH;$localBin"
 
 if (Get-Command rtk -ErrorAction SilentlyContinue) {
@@ -252,7 +271,6 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
     }
 }
 
-# RTK hook 등록 (~/.claude/hooks/rtk-rewrite.sh 다운로드)
 # rtk init --hook-only는 Windows 미지원 → GitHub에서 직접 다운로드
 New-Item -ItemType Directory -Force -Path "$claudeDir\hooks" | Out-Null
 $hookUrl  = "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh"
@@ -271,31 +289,14 @@ Write-Host ""
 Write-Host "==> Updating PowerShell profiles..."
 $profileSrc = Join-Path $ROOT "config\windows\profile.ps1"
 if (Test-Path $profileSrc) {
-    $markerBegin = "# ===== dotfiles-begin ====="
-    $markerEnd   = "# ===== dotfiles-end ====="
     $profileContent = Get-Content $profileSrc -Raw
-    $claudeAlias = "`nfunction global:ccd { claude --dangerously-skip-permissions @args }"
-    $newBlock    = "$markerBegin`n$profileContent`n$claudeAlias`n$markerEnd"
+    $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
+    $block = "$profileContent`n$claudeAlias"
 
     $profilePaths = @("$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
-
     foreach ($prof in $profilePaths) {
         New-Item -ItemType Directory -Force -Path (Split-Path $prof) | Out-Null
-        New-Item -ItemType File -Force -Path $prof | Out-Null
-
-        $existing = Get-Content $prof -Raw -ErrorAction SilentlyContinue
-        if ($null -eq $existing) { $existing = "" }
-
-        $escaped = [regex]::Escape($markerBegin)
-        if ($existing -match $escaped) {
-            $beforeMarker = ($existing -split $escaped)[0]
-            $afterMarker  = ($existing -split [regex]::Escape($markerEnd))[-1]
-            "$beforeMarker$newBlock$afterMarker" | Out-File -FilePath $prof -Encoding utf8 -NoNewline
-            Write-Host "    Updated dotfiles block in $prof"
-        } else {
-            "`n$newBlock" | Add-Content -Path $prof -Encoding utf8
-            Write-Host "    Appended dotfiles block to $prof"
-        }
+        Set-ProfileBlock $prof $block
     }
 } else {
     Write-Host "    [!] config\windows\profile.ps1 not found, skipping profile setup."
@@ -318,27 +319,9 @@ if (Test-Path $bashrcSrc) {
         Write-Host "    [!] Git Bash not found. Install Git for Windows first."
         Write-Host "        winget install --id Git.Git"
     } else {
-        $markerBegin = "# ===== dotfiles-begin ====="
-        $markerEnd   = "# ===== dotfiles-end ====="
         $bashrcContent = Get-Content $bashrcSrc -Raw
-        $newBlock    = "$markerBegin`n$bashrcContent`n$markerEnd"
-
         $bashrcPath = "$env:USERPROFILE\.bashrc"
-        New-Item -ItemType File -Force -Path $bashrcPath | Out-Null
-
-        $existing = Get-Content $bashrcPath -Raw -ErrorAction SilentlyContinue
-        if ($null -eq $existing) { $existing = "" }
-
-        $escaped = [regex]::Escape($markerBegin)
-        if ($existing -match $escaped) {
-            $beforeMarker = ($existing -split $escaped)[0]
-            $afterMarker  = ($existing -split [regex]::Escape($markerEnd))[-1]
-            "$beforeMarker$newBlock$afterMarker" | Out-File -FilePath $bashrcPath -Encoding utf8 -NoNewline
-            Write-Host "    Updated dotfiles block in $bashrcPath"
-        } else {
-            "`n$newBlock" | Add-Content -Path $bashrcPath -Encoding utf8
-            Write-Host "    Appended dotfiles block to $bashrcPath"
-        }
+        Set-ProfileBlock $bashrcPath $bashrcContent
 
         # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
         $bashProfilePath = "$env:USERPROFILE\.bash_profile"
