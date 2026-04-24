@@ -25,6 +25,7 @@ dotfiles/
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
 │   ├── nvim/            # Neovim 설정 (lazy.nvim + yazi.nvim)
 │   ├── windows/         # Windows 전용 설정 (profile.ps1, tmux.conf)
+│   ├── yazi/            # yazi 설정 (yazi.toml — nvim opener)
 │   └── starship.toml
 ├── manifests/           # 패키지/스킬 목록
 │   ├── winget.txt       # Windows winget 패키지 ID
@@ -43,6 +44,7 @@ dotfiles/
    1-3. `YAZI_FILE_ONE` 환경변수 설정 (Git file.exe 경로)
    1-4. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-5. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
+   1-6. `config/yazi/` → `%APPDATA%\yazi\config\` 배포 (nvim opener 설정)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치

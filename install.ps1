@@ -177,6 +177,21 @@ if (Test-Path $nvimInitDst) {
 }
 
 # =============================================
+# 1-6. yazi 설정 파일 배포
+# =============================================
+Write-Host ""
+Write-Host "==> Deploying yazi config..."
+$yaziConfigSrc = Join-Path $ROOT "config\yazi"
+$yaziConfigDst = "$env:APPDATA\yazi\config"
+if (Test-Path $yaziConfigSrc) {
+    New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
+    Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
+    Write-Host "    yazi config deployed to $yaziConfigDst"
+} else {
+    Write-Host "    [!] config\yazi not found, skipping."
+}
+
+# =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
 Write-Host ""
