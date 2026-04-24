@@ -11,6 +11,7 @@ Windows 11 환경을 위한 개인 dotfiles.
   - [Quickstart](#quickstart)
     - [Windows 11](#windows-11)
   - [파일 구조](#파일-구조)
+  - [Neovim 키맵](#neovim-키맵)
   - [References](#references)
     - [Dotfiles](#dotfiles-1)
     - [Harness](#harness)
@@ -89,6 +90,18 @@ dotfiles/
     claude-hud.md                  # Claude HUD 설정 가이드
     uninstall.md                   # 클린 언인스톨 가이드
 ```
+
+## Neovim 키맵
+
+`<leader>` = **Space**
+
+### yazi.nvim
+
+| 키 | 동작 |
+|----|------|
+| `Space` + `-` | 현재 파일 위치에서 yazi 열기 |
+| `Space` + `c` + `w` | nvim 작업 디렉토리에서 yazi 열기 |
+| `Ctrl` + `↑` | 마지막 yazi 세션 토글 |
 
 ## References
 
