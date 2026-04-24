@@ -77,6 +77,8 @@ dotfiles/
       init.lua                     # Neovim 진입점 (lazy.nvim 로드)
       lua/config/lazy.lua          # lazy.nvim 부트스트랩 및 설정
       lua/plugins/yazi.lua         # yazi.nvim 플러그인 설정
+    yazi/
+      yazi.toml                    # yazi 설정 (nvim 기본 에디터 설정)
     starship.toml                  # Starship 프롬프트 설정
   manifests/
     winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
