@@ -15,6 +15,7 @@ Windows 11 환경을 위한 개인 dotfiles.
     - [yazi.nvim](#yazinvim)
   - [References](#references)
     - [Dotfiles](#dotfiles-1)
+    - [Agent](#agent)
     - [Harness](#harness)
     - [Skills](#skills)
     - [Tools](#tools)
@@ -122,14 +123,25 @@ dotfiles/
 | 저장소 | 설명 | Stars |
 |--------|------|-------|
 | [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles) | dotfiles 구성 참고 | <img src="https://img.shields.io/github/stars/mathiasbynens/dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
+| [gpakosz/.tmux](https://github.com/gpakosz/.tmux) | tmux 설정 레퍼런스 | <img src="https://img.shields.io/github/stars/gpakosz/.tmux?style=flat&label=%E2%AD%90" alt="stars"> |
+
+### Agent
+
+| 저장소 | 설명 | Stars |
+|--------|------|-------|
+| [anthropics/claude-code](https://github.com/anthropics/claude-code) | Anthropic Claude Code CLI | <img src="https://img.shields.io/github/stars/anthropics/claude-code?style=flat&label=%E2%AD%90" alt="stars"> |
+| [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) | Google Gemini CLI | <img src="https://img.shields.io/github/stars/google-gemini/gemini-cli?style=flat&label=%E2%AD%90" alt="stars"> |
+| [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | Nous Research Hermes 에이전트 | <img src="https://img.shields.io/github/stars/nousresearch/hermes-agent?style=flat&label=%E2%AD%90" alt="stars"> |
+| [openclaw/openclaw](https://github.com/openclaw/openclaw) | 자율 에이전트 오픈 소스 프로젝트 | <img src="https://img.shields.io/github/stars/openclaw/openclaw?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Harness
 
 | 저장소 | 설명 | Stars |
 |--------|------|-------|
-| [yeachan-heo/oh-my-claudecode](https://github.com/yeachan-heo/oh-my-claudecode) | Harness 구성 참고 | <img src="https://img.shields.io/github/stars/yeachan-heo/oh-my-claudecode?style=flat&label=%E2%AD%90" alt="stars"> |
-| [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) | Harness 구성 참고 | <img src="https://img.shields.io/github/stars/code-yeongyu/oh-my-openagent?style=flat&label=%E2%AD%90" alt="stars"> |
+| [yeachan-heo/oh-my-claudecode](https://github.com/yeachan-heo/oh-my-claudecode) | Codex 기반 멀티 에이전트 오케스트레이전 | <img src="https://img.shields.io/github/stars/yeachan-heo/oh-my-claudecode?style=flat&label=%E2%AD%90" alt="stars"> |
+| [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) | OpenCode 기반 멀티 에이전트 오케스트레이션 | <img src="https://img.shields.io/github/stars/code-yeongyu/oh-my-openagent?style=flat&label=%E2%AD%90" alt="stars"> |
 | [obra/superpowers](https://github.com/obra/superpowers) | Harness 구성 참고 | <img src="https://img.shields.io/github/stars/obra/superpowers?style=flat&label=%E2%AD%90" alt="stars"> |
+| [Yeachan-Heo/oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex) | Codex 기반 멀티 에이전트 오케스트레이션 | <img src="https://img.shields.io/github/stars/Yeachan-Heo/oh-my-codex?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Skills
 
@@ -139,12 +151,14 @@ dotfiles/
 | [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents) | 에이전트 모음 | <img src="https://img.shields.io/github/stars/msitarzewski/agency-agents?style=flat&label=%E2%AD%90" alt="stars"> |
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 디자인 관련 스킬 | <img src="https://img.shields.io/github/stars/pbakaus/impeccable?style=flat&label=%E2%AD%90" alt="stars"> |
 | [safishamsi/graphify](https://github.com/safishamsi/graphify) | 코드·문서를 queryable knowledge graph로 변환하는 AI 어시스턴트 스킬 | <img src="https://img.shields.io/github/stars/safishamsi/graphify?style=flat&label=%E2%AD%90" alt="stars"> |
+| [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) | Obsidian 노트 작성을 위한 Skills 모음 | <img src="https://img.shields.io/github/stars/kepano/obsidian-skills?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tools
 
 | 저장소 | 설명 | Stars |
 |--------|------|-------|
 | [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | Claude HUD statusline | <img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud?style=flat&label=%E2%AD%90" alt="stars"> |
+| [sirmalloc/ccstatusline](https://github.com/sirmalloc/ccstatusline) | Claude Code 상태줄 표시 도구 | <img src="https://img.shields.io/github/stars/sirmalloc/ccstatusline?style=flat&label=%E2%AD%90" alt="stars"> |
 | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | RTK 토큰 최적화 도구 | <img src="https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Vim
@@ -188,6 +202,8 @@ dotfiles/
 | [starship/starship](https://github.com/starship/starship) | customizable prompt for any shell | <img src="https://img.shields.io/github/stars/starship/starship?style=flat&label=%E2%AD%90" alt="stars"> |
 | [microsoft/winget-cli](https://github.com/microsoft/winget-cli) | Windows 패키지 매니저 | <img src="https://img.shields.io/github/stars/microsoft/winget-cli?style=flat&label=%E2%AD%90" alt="stars"> |
 | [mixedbread-ai/mgrep](https://github.com/mixedbread-ai/mgrep) | 코드·이미지·PDF를 시맨틱 검색하는 CLI | <img src="https://img.shields.io/github/stars/mixedbread-ai/mgrep?style=flat&label=%E2%AD%90" alt="stars"> |
+| [sharkdp/hyperfine](https://github.com/sharkdp/hyperfine) | 커맨드라인 벤치마킹 도구 | <img src="https://img.shields.io/github/stars/sharkdp/hyperfine?style=flat&label=%E2%AD%90" alt="stars"> |
+| [denisidoro/navi](https://github.com/denisidoro/navi) | 대화형 cheatsheet CLI 도구 | <img src="https://img.shields.io/github/stars/denisidoro/navi?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tips
 
