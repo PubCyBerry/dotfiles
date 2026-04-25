@@ -21,6 +21,7 @@ Windows 11 환경을 위한 개인 dotfiles.
     - [Vim](#vim)
     - [Tmux](#tmux)
     - [CLI Tools](#cli-tools)
+    - [Tips](#tips)
   - [Troubleshooting](#troubleshooting)
     - [SSH 터미널을 powershell 7+로 설정](#ssh-터미널을-powershell-7로-설정)
     - [SSH 세션에서 fnm / zoxide 오류](#ssh-세션에서-fnm--zoxide-오류)
@@ -187,6 +188,12 @@ dotfiles/
 | [starship/starship](https://github.com/starship/starship) | customizable prompt for any shell | <img src="https://img.shields.io/github/stars/starship/starship?style=flat&label=%E2%AD%90" alt="stars"> |
 | [microsoft/winget-cli](https://github.com/microsoft/winget-cli) | Windows 패키지 매니저 | <img src="https://img.shields.io/github/stars/microsoft/winget-cli?style=flat&label=%E2%AD%90" alt="stars"> |
 | [mixedbread-ai/mgrep](https://github.com/mixedbread-ai/mgrep) | 코드·이미지·PDF를 시맨틱 검색하는 CLI | <img src="https://img.shields.io/github/stars/mixedbread-ai/mgrep?style=flat&label=%E2%AD%90" alt="stars"> |
+
+### Tips
+
+| 저장소 | 설명 | Stars |
+|--------|------|-------|
+| [ykdojo/claude-code-tips](https://github.com/ykdojo/claude-code-tips#tip-0-customize-your-status-line) | Claude Code 활용 팁 모음 | <img src="https://img.shields.io/github/stars/ykdojo/claude-code-tips?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ## Troubleshooting
 
