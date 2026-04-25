@@ -11,6 +11,10 @@
   },
   "language": "한국어",
   "permissions": {},
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "hooks": {
     "PreToolUse": [
       {
