@@ -398,7 +398,7 @@ if (Test-Path $skillsFile) {
             $repoSlug  = $Matches[1]
             $skillName = $Matches[2]
             Write-Host "    Adding skill: $skillName from $repoSlug..."
-            npx --yes skills add $repoSlug --skill $skillName -g -y 2>&1 | Out-Null
+            npx skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
         }
     }
     Write-Host "    Skills restored."
