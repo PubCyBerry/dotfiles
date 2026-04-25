@@ -96,6 +96,8 @@ dotfiles/
     ai-agents.md                   # Claude Code, 플러그인, skills 상세
     claude-hud.md                  # Claude HUD 설정 가이드
     uninstall.md                   # 클린 언인스톨 가이드
+    git-commit-convention.md       # Git Commit Convention (Conventional Commits)
+    worktree-git-workflows.md      # Worktree 커밋 히스토리 관리 전략
 ```
 
 ## Neovim 키맵

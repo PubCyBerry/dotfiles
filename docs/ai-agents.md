@@ -19,7 +19,7 @@ Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패
 
 ## npx skills
 
-`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `install.ps1` / `install.sh`가 일괄 설치한다.
+`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `install.ps1`이 일괄 설치한다.
 
 | 스킬 | 설명 |
 |------|------|

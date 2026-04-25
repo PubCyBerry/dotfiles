@@ -19,7 +19,6 @@ pwsh -ExecutionPolicy Bypass -File .\dotfiles\install.ps1
 ```text
 dotfiles/
 ├── install.ps1          # Windows 설치 (all-in-one)
-├── install.sh           # Linux 설치 (all-in-one)
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc) — Git Bash(Windows) 마커 방식 삽입
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)

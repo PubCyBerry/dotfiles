@@ -66,7 +66,9 @@ rg -i "검색어"         # 대소문자 무시
 rg --no-ignore "검색어" # .gitignore 무시하고 검색
 ```
 
-### ast-grep — AST 기반 코드 검색/리팩터
+### ast-grep — AST 기반 코드 검색/리팩터 (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 필요 시 직접 설치: `winget install ast-grep.ast-grep`
 
 문자열이 아닌 코드 구조로 검색. `sg` 명령어로 실행.
 
@@ -97,7 +99,9 @@ lazygit        # 현재 저장소에서 실행
 
 `space`로 스테이징, `c`로 커밋, `P`로 푸시. `?`로 단축키 목록.
 
-### difftastic — AST 기반 diff
+### difftastic — AST 기반 diff (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 필요 시 직접 설치: `winget install Wilfred.difftastic`
 
 ```bash
 difft file1.js file2.js   # AST 기반 비교 (공백/포매팅 무시)
@@ -123,7 +127,9 @@ starship preset --list          # 프리셋 목록
 starship preset pastel-powerline -o ~/.config/starship.toml  # 프리셋 적용
 ```
 
-### atuin — 히스토리 강화
+### atuin — 히스토리 강화 (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 필요 시 직접 설치: `winget install atuinsh.atuin`
 
 셸 히스토리를 SQLite DB로 관리. 검색 속도와 컨텍스트(작업 디렉토리, 종료 코드 등)가 향상됨.
 
@@ -160,7 +166,9 @@ cat config.yaml | yq '.database.host' # YAML 필드 추출
 yq -o=json config.yaml                # YAML → JSON 변환
 ```
 
-### httpie — HTTP 클라이언트
+### httpie — HTTP 클라이언트 (선택적 설치)
+
+> winget.txt에 주석 처리되어 있다. 필요 시 주석 해제 후 `install.ps1` 재실행.
 
 ```bash
 http GET https://api.example.com/users        # GET 요청
@@ -171,7 +179,9 @@ https example.com                             # HTTPS 단축 명령
 
 ## 코드 품질
 
-### ruff — Python 린터/포매터
+### ruff — Python 린터/포매터 (선택적 설치)
+
+> winget.txt에 주석 처리되어 있다. 필요 시 주석 해제 후 `install.ps1` 재실행.
 
 ```bash
 ruff check .         # 린팅
@@ -203,7 +213,7 @@ bun install        # npm install 대체 (빠름)
 
 | OS | 설치 방법 |
 |----|-----------|
-| Linux | install.sh 자동 (curl) |
+| Linux | 수동 설치 (`curl -fsSL https://bun.sh/install | bash`) |
 | Windows | `winget install Oven-sh.Bun` |
 
 ## 셸 설정
