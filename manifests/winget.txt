@@ -25,6 +25,7 @@ mikefarah.yq                    # Command-line YAML, JSON, XML, CSV, TOML, HCL p
 ajeetdsouza.zoxide              # Smarter cd command
 Starship.Starship               # Customizable prompt for any shell
 sxyazi.yazi                     # Terminal file manager, based on async I/O
+JesseDuffield.lazygit           # Terminal UI for git commands
 
 # 동영상 / 미디어 / 문서
 Gyan.FFmpeg                     # 동영상
@@ -32,6 +33,5 @@ oschwartz10612.Poppler          # PDF
 ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
 
 # 추가 CLI 도구
-# JesseDuffield.lazygit
 # astral-sh.ruff
 # httpie.httpie
