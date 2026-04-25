@@ -4,8 +4,23 @@
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
-$ROOT      = $PSScriptRoot
-$claudeDir = "$env:USERPROFILE\.claude"
+$ROOT = $PSScriptRoot
+
+# =============================================
+# 경로 상수
+# =============================================
+$ClaudeDir     = Join-Path $env:USERPROFILE ".claude"
+$LocalBin      = Join-Path $env:USERPROFILE ".local\bin"
+$NvimConfigDir = Join-Path $env:LOCALAPPDATA "nvim"
+$NvimBin       = "C:\Program Files\Neovim\bin"
+$GitBashPaths  = @(
+    "C:\Program Files\Git\bin\bash.exe",
+    "C:\Program Files (x86)\Git\bin\bash.exe"
+)
+$GitFileExePaths = @(
+    "C:\Program Files\Git\usr\bin\file.exe",
+    "C:\Program Files (x86)\Git\usr\bin\file.exe"
+)
 
 # =============================================
 # 헬퍼 함수
@@ -34,62 +49,36 @@ function Set-ProfileBlock([string]$FilePath, [string]$Content) {
     $end   = "# ===== dotfiles-end ====="
     $block = "$begin`n$Content`n$end"
     New-Item -ItemType File -Force -Path $FilePath | Out-Null
+
     $existing = Get-Content $FilePath -Raw -ErrorAction SilentlyContinue
     if (-not $existing) { $existing = "" }
-    $escaped = [regex]::Escape($begin)
-    if ($existing -match $escaped) {
-        $before = ($existing -split $escaped)[0]
-        $after  = ($existing -split [regex]::Escape($end))[-1]
-        "$before$block$after" | Out-File -FilePath $FilePath -Encoding utf8 -NoNewline
-        Write-Host "    Updated dotfiles block in $FilePath"
-    } else {
-        "`n$block" | Add-Content -Path $FilePath -Encoding utf8
+
+    # 기존 마커 블록을 정규식으로 완전 교체 (Singleline으로 개행 포함 매칭)
+    $pattern    = [regex]::Escape($begin) + ".*?" + [regex]::Escape($end)
+    $newContent = [regex]::Replace($existing, $pattern, $block,
+                      [System.Text.RegexOptions]::Singleline)
+
+    if ($newContent -eq $existing) {
+        $newContent = "$existing`n$block"
         Write-Host "    Appended dotfiles block to $FilePath"
+    } else {
+        Write-Host "    Updated dotfiles block in $FilePath"
     }
+    $newContent | Out-File -FilePath $FilePath -Encoding utf8 -NoNewline
 }
 
-$WINGET_ALREADY_INSTALLED = @(0x8A150015, 43, -1978335189)
-
-Write-Host "==> Windows dotfiles setup starting..."
-Write-Host "    Source: $ROOT"
-
-# =============================================
-# 1. winget 패키지 설치 (manifests/winget.txt)
-# =============================================
-Write-Host ""
-Write-Host "==> Installing packages via winget..."
-$wingetFile = Join-Path $ROOT "manifests\winget.txt"
-if (Test-Path $wingetFile) {
-    Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $package = $_
-        winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    Installed $package"
-        } elseif ($using:WINGET_ALREADY_INSTALLED -contains $LASTEXITCODE) {
-            Write-Host "    Already installed $package"
-        } else {
-            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
-        }
-    } -ThrottleLimit 4
-} else {
-    Write-Host "    [!] manifests\winget.txt not found, skipping."
-}
-
-# =============================================
-# 1-1. gitconfig 설정 병합 (config/git/gitconfig)
-# =============================================
-Write-Host ""
-Write-Host "==> Merging git config..."
-$gitConfig = Join-Path $ROOT "config\git\gitconfig"
-if (Test-Path $gitConfig) {
+function Merge-GitConfig([string]$FilePath) {
+    if (-not (Test-Path $FilePath)) {
+        Write-Host "    [!] $FilePath not found, skipping."
+        return
+    }
     # 기존 global git 설정을 해시테이블로 로드 (중복 방지용)
     $existingConfig = @{}
     git config --global --list 2>$null | ForEach-Object {
         if ($_ -match '^([^=]+)=(.*)$') { $existingConfig[$Matches[1]] = $Matches[2] }
     }
     $currentSection = $null
-    foreach ($line in (Get-Content $gitConfig)) {
+    foreach ($line in (Get-Content $FilePath)) {
         $trimmed = $line.Trim()
         # [section] 헤더 감지
         if ($trimmed -match '^\[(.+)\]$') {
@@ -110,9 +99,41 @@ if (Test-Path $gitConfig) {
         }
     }
     Write-Host "    gitconfig merged."
-} else {
-    Write-Host "    [!] config\git\gitconfig not found, skipping."
 }
+
+Write-Host "==> Windows dotfiles setup starting..."
+Write-Host "    Source: $ROOT"
+
+# =============================================
+# 1. winget 패키지 설치 (manifests/winget.txt)
+# =============================================
+Write-Host ""
+Write-Host "==> Installing packages via winget..."
+$wingetFile = Join-Path $ROOT "manifests\winget.txt"
+if (Test-Path $wingetFile) {
+    Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $package = $_
+        $alreadyInstalled = @(0x8A150015, 43, -1978335189)
+        winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Installed $package"
+        } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
+            Write-Host "    Already installed $package"
+        } else {
+            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+        }
+    } -ThrottleLimit 4
+} else {
+    Write-Host "    [!] manifests\winget.txt not found, skipping."
+}
+
+# =============================================
+# 1-1. gitconfig 설정 병합 (config/git/gitconfig)
+# =============================================
+Write-Host ""
+Write-Host "==> Merging git config..."
+Merge-GitConfig (Join-Path $ROOT "config\git\gitconfig")
 
 # =============================================
 # 1-2. tmux 설정 복사
@@ -120,7 +141,7 @@ if (Test-Path $gitConfig) {
 Write-Host ""
 $tmuxSrc = Join-Path $ROOT "config\windows\tmux.conf"
 if (Test-Path $tmuxSrc) {
-    Copy-Item $tmuxSrc "$env:USERPROFILE\.tmux.conf" -Force
+    Copy-Item $tmuxSrc (Join-Path $env:USERPROFILE ".tmux.conf") -Force
     Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)"
 }
 
@@ -129,11 +150,7 @@ if (Test-Path $tmuxSrc) {
 # =============================================
 Write-Host ""
 Write-Host "==> Setting YAZI_FILE_ONE environment variable..."
-$gitFileExePaths = @(
-    "C:\Program Files\Git\usr\bin\file.exe",
-    "C:\Program Files (x86)\Git\usr\bin\file.exe"
-)
-$gitFileExe = $gitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+$gitFileExe = $GitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($gitFileExe) {
     [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
     $env:YAZI_FILE_ONE = $gitFileExe
@@ -149,7 +166,7 @@ if ($gitFileExe) {
 Write-Host ""
 Write-Host "==> Deploying yazi config..."
 $yaziConfigSrc = Join-Path $ROOT "config\yazi"
-$yaziConfigDst = "$env:APPDATA\yazi\config"
+$yaziConfigDst = Join-Path $env:APPDATA "yazi\config"
 if (Test-Path $yaziConfigSrc) {
     New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
     Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
@@ -163,12 +180,11 @@ if (Test-Path $yaziConfigSrc) {
 # =============================================
 Write-Host ""
 Write-Host "==> Adding Neovim to PATH..."
-$nvimBin = "C:\Program Files\Neovim\bin"
-if (Test-Path $nvimBin) {
-    if (Add-ToUserPath $nvimBin) { Write-Host "    Added Neovim to PATH: $nvimBin" }
+if (Test-Path $NvimBin) {
+    if (Add-ToUserPath $NvimBin) { Write-Host "    Added Neovim to PATH: $NvimBin" }
     else { Write-Host "    Neovim already in PATH." }
 } else {
-    Write-Host "    [!] Neovim not found at $nvimBin. Install via winget: Neovim.Neovim"
+    Write-Host "    [!] Neovim not found at $NvimBin. Install via winget: Neovim.Neovim"
 }
 
 # =============================================
@@ -176,18 +192,17 @@ if (Test-Path $nvimBin) {
 # =============================================
 Write-Host ""
 Write-Host "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
-$nvimConfigDir = "$env:LOCALAPPDATA\nvim"
-$nvimInitDst   = "$nvimConfigDir\init.lua"
-$nvimSrc       = Join-Path $ROOT "config\nvim"
+$nvimInitDst = Join-Path $NvimConfigDir "init.lua"
+$nvimSrc     = Join-Path $ROOT "config\nvim"
 
 if (Test-Path $nvimInitDst) {
     Write-Host "    Neovim config already exists, skipping."
 } elseif (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
     Write-Host "    [!] config\nvim\init.lua not found, skipping."
 } else {
-    New-Item -ItemType Directory -Force -Path $nvimConfigDir | Out-Null
-    Copy-Item "$nvimSrc\*" $nvimConfigDir -Recurse -Force
-    Write-Host "    lazy.nvim config deployed to $nvimConfigDir"
+    New-Item -ItemType Directory -Force -Path $NvimConfigDir | Out-Null
+    Copy-Item "$nvimSrc\*" $NvimConfigDir -Recurse -Force
+    Write-Host "    lazy.nvim config deployed to $NvimConfigDir"
     Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
 }
 
@@ -196,9 +211,6 @@ if (Test-Path $nvimInitDst) {
 # =============================================
 Write-Host ""
 Write-Host "==> Installing Node.js LTS..."
-$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
-            [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
-            $env:PATH
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
     fnm env --shell powershell | Out-String | Invoke-Expression
     fnm install --lts
@@ -248,11 +260,11 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 # =============================================
 Write-Host ""
 Write-Host "==> Deploying Claude Code config..."
-New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
 
 # settings.json: 병합 (기존에 없는 키 보존 — claude-hud의 statusLine 등)
 $settingsSrc = Join-Path $ROOT "config\claude\settings.json"
-$settingsDst = "$claudeDir\settings.json"
+$settingsDst = Join-Path $ClaudeDir "settings.json"
 if (Test-Path $settingsSrc) {
     $newSettings = Get-Content $settingsSrc -Raw | ConvertFrom-Json
     if (Test-Path $settingsDst) {
@@ -273,7 +285,7 @@ if (Test-Path $settingsSrc) {
 # CLAUDE.md: 단순 복사
 $claudeMdSrc = Join-Path $ROOT "config\claude\CLAUDE.md"
 if (Test-Path $claudeMdSrc) {
-    Copy-Item $claudeMdSrc "$claudeDir\CLAUDE.md" -Force
+    Copy-Item $claudeMdSrc (Join-Path $ClaudeDir "CLAUDE.md") -Force
     Write-Host "    Copied CLAUDE.md"
 } else {
     Write-Host "    [!] config\claude\CLAUDE.md not found"
@@ -284,11 +296,9 @@ if (Test-Path $claudeMdSrc) {
 # =============================================
 Write-Host ""
 Write-Host "==> Installing RTK (Rust Token Killer)..."
-$localBin = "$env:USERPROFILE\.local\bin"
-New-Item -ItemType Directory -Force -Path $localBin | Out-Null
+New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
 
-if (Add-ToUserPath $localBin) { Write-Host "    Added $localBin to User PATH" }
-$env:PATH = "$env:PATH;$localBin"
+if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
 
 if (Get-Command rtk -ErrorAction SilentlyContinue) {
     Write-Host "    RTK already installed."
@@ -299,7 +309,7 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
         if ($asset) {
             $tmpZip = "$env:TEMP\rtk-windows.zip"
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
-            Expand-Archive -Path $tmpZip -DestinationPath $localBin -Force
+            Expand-Archive -Path $tmpZip -DestinationPath $LocalBin -Force
             Remove-Item $tmpZip -Force
             Write-Host "    RTK installed."
         } else {
@@ -311,11 +321,10 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
 }
 
 # rtk init --hook-only는 Windows 미지원 → GitHub에서 직접 다운로드
-New-Item -ItemType Directory -Force -Path "$claudeDir\hooks" | Out-Null
-$hookUrl  = "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh"
-$hookPath = "$claudeDir\hooks\rtk-rewrite.sh"
+New-Item -ItemType Directory -Force -Path (Join-Path $ClaudeDir "hooks") | Out-Null
+$hookPath = Join-Path $ClaudeDir "hooks\rtk-rewrite.sh"
 try {
-    Invoke-WebRequest -Uri $hookUrl -OutFile $hookPath -UseBasicParsing
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -OutFile $hookPath -UseBasicParsing
     Write-Host "    RTK hook installed"
 } catch {
     Write-Host "    [!] RTK hook download failed: $_"
@@ -348,30 +357,26 @@ Write-Host ""
 Write-Host "==> Updating Git Bash profile..."
 $bashrcSrc = Join-Path $ROOT "config\bash\bashrc"
 if (Test-Path $bashrcSrc) {
-    $gitBashPaths = @(
-        "C:\Program Files\Git\bin\bash.exe",
-        "C:\Program Files (x86)\Git\bin\bash.exe"
-    )
-    $gitBashFound = $gitBashPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    $gitBashFound = $GitBashPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
     if (-not $gitBashFound) {
         Write-Host "    [!] Git Bash not found. Install Git for Windows first."
         Write-Host "        winget install --id Git.Git"
     } else {
         $bashrcContent = Get-Content $bashrcSrc -Raw
-        $bashrcPath = "$env:USERPROFILE\.bashrc"
+        $bashrcPath = Join-Path $env:USERPROFILE ".bashrc"
         Set-ProfileBlock $bashrcPath $bashrcContent
 
         # .inputrc 배포 (마커 방식)
         $inputrcSrc = Join-Path $ROOT "config\bash\inputrc"
         if (Test-Path $inputrcSrc) {
             $inputrcContent = Get-Content $inputrcSrc -Raw
-            $inputrcPath = "$env:USERPROFILE\.inputrc"
+            $inputrcPath = Join-Path $env:USERPROFILE ".inputrc"
             Set-ProfileBlock $inputrcPath $inputrcContent
         }
 
         # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
-        $bashProfilePath = "$env:USERPROFILE\.bash_profile"
+        $bashProfilePath = Join-Path $env:USERPROFILE ".bash_profile"
         if (-not (Test-Path $bashProfilePath)) {
             Set-Content $bashProfilePath "[[ -f ~/.bashrc ]] && . ~/.bashrc" -Encoding utf8
             Write-Host "    Created $bashProfilePath"
