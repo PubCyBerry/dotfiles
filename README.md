@@ -153,6 +153,7 @@ dotfiles/
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 디자인 관련 스킬 | <img src="https://img.shields.io/github/stars/pbakaus/impeccable?style=flat&label=%E2%AD%90" alt="stars"> |
 | [safishamsi/graphify](https://github.com/safishamsi/graphify) | 코드·문서를 queryable knowledge graph로 변환하는 AI 어시스턴트 스킬 | <img src="https://img.shields.io/github/stars/safishamsi/graphify?style=flat&label=%E2%AD%90" alt="stars"> |
 | [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) | Obsidian 노트 작성을 위한 Skills 모음 | <img src="https://img.shields.io/github/stars/kepano/obsidian-skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [garrytan/gstack](https://github.com/garrytan/gstack) | CEO·Designer·EM·QA 등 23개 전문가 페르소나 Claude Code Skills | <img src="https://img.shields.io/github/stars/garrytan/gstack?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tools
 
