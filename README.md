@@ -129,6 +129,7 @@ dotfiles/
 
 | 저장소 | 설명 | Stars |
 |--------|------|-------|
+| [openai/codex](https://github.com/openai/codex) | OpenAI Codex CLI | <img src="https://img.shields.io/github/stars/openai/codex?style=flat&label=%E2%AD%90" alt="stars"> |
 | [anthropics/claude-code](https://github.com/anthropics/claude-code) | Anthropic Claude Code CLI | <img src="https://img.shields.io/github/stars/anthropics/claude-code?style=flat&label=%E2%AD%90" alt="stars"> |
 | [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) | Google Gemini CLI | <img src="https://img.shields.io/github/stars/google-gemini/gemini-cli?style=flat&label=%E2%AD%90" alt="stars"> |
 | [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | Nous Research Hermes 에이전트 | <img src="https://img.shields.io/github/stars/nousresearch/hermes-agent?style=flat&label=%E2%AD%90" alt="stars"> |
