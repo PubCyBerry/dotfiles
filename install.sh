@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Linux(Ubuntu) dotfiles 설치 진입점 (all-in-one)
 # 실행: bash install.sh
-# 지원: Ubuntu 22.04 / 24.04 / 26.04 (apt 기반)
+# 지원: Ubuntu 22.04+ (apt 기반)
 
 set -Eeuo pipefail
 

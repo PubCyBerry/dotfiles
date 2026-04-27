@@ -38,7 +38,7 @@ cd $env:USERPROFILE\dotfiles && git pull
 pwsh -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-### Ubuntu (24.04)
+### Ubuntu (22.04+)
 
 bash + apt 기반. sudo 권한이 필요하다.
 
