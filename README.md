@@ -252,6 +252,54 @@ Windows OpenSSH 서버는 Administrators 그룹 계정으로 접속 시 UAC 필�
 show_always = false
 ```
 
+### Windows OpenSSH 서버에 공개키 등록 (authorized_keys)
+
+Windows OpenSSH는 계정 유형에 따라 authorized_keys 파일 위치가 다르다.
+
+| 계정 유형 | authorized_keys 경로 |
+|-----------|----------------------|
+| 일반 사용자 | `C:\Users\<username>\.ssh\authorized_keys` |
+| Administrators 그룹 | `C:\ProgramData\ssh\administrators_authorized_keys` |
+
+**관리자 계정 공개키 등록** (관리자 권한 PowerShell):
+
+```powershell
+# administrators_authorized_keys에 공개키 추가
+$pubkey = Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+Add-Content "C:\ProgramData\ssh\administrators_authorized_keys" $pubkey
+
+# 권한 설정: SYSTEM과 Administrators 그룹만 접근 허용
+icacls "C:\ProgramData\ssh\administrators_authorized_keys" /inheritance:r /grant "SYSTEM:(F)" /grant "BUILTIN\Administrators:(F)"
+
+Restart-Service sshd
+```
+
+**일반 사용자 공개키 등록** (관리자 권한 PowerShell):
+
+기본 `sshd_config`에는 Administrators 그룹 멤버에게 `administrators_authorized_keys`를 강제하는 블록이 있어 사용자별 경로가 무시된다. 해당 블록을 주석 처리해야 한다.
+
+```powershell
+# sshd_config에서 Match Group administrators 블록 주석 처리
+$sshd_config = "C:\ProgramData\ssh\sshd_config"
+(Get-Content $sshd_config) `
+    -replace '^(Match Group administrators)', '#$1' `
+    -replace '^(\s+AuthorizedKeysFile __PROGRAMDATA__.*)', '#$1' |
+    Set-Content $sshd_config
+
+# authorized_keys 파일 생성 및 공개키 추가
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.ssh" | Out-Null
+$pubkey = Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+Add-Content "$env:USERPROFILE\.ssh\authorized_keys" $pubkey
+
+# 권한 설정
+icacls "$env:USERPROFILE\.ssh" /inheritance:r /grant "$env:USERNAME:(OI)(CI)F"
+icacls "$env:USERPROFILE\.ssh\authorized_keys" /inheritance:r /grant "$env:USERNAME:(F)"
+
+Restart-Service sshd
+```
+
+진단 단서: `Get-Content C:\ProgramData\ssh\sshd_config | Select-String "Match Group"` 으로 블록 활성화 여부 확인.
+
 ### SSH 세션에서 GitHub HTTPS 인증 실패
 
 SSH로 접속한 비대화형 세션에서 `git fetch`/`git push` 시 다음 오류가 발생한다.
