@@ -4,13 +4,6 @@
 
 ## 도구 사용 규칙
 
-### 파일 시스템
-- `find` → **`fd`**
-- `grep` → **`rg`** (ripgrep)
-- `cat` → **`bat`**
-- `ls` → **`eza`**
-- `cd` → **`z`** (zoxide)
-
 ### 데이터 처리
 - JSON → **`jq`** 파이프라인
 - YAML/TOML → **`yq`**
