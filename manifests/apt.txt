@@ -1,7 +1,7 @@
 # Ubuntu/Debian apt 패키지 목록
 # install.sh가 읽어서 설치
 # apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
-#   (fnm, bun, delta, starship, yazi, lazygit, ruffm httpie, atuin, rtk)
+#   (fnm, bun, delta, starship, yazi, lazygit, neovim, ruff, httpie, atuin, rtk)
 
 # 빌드/기본
 build-essential
@@ -17,7 +17,7 @@ unzip
 git                             # Git
 gh                              # Github CLI
 vim
-neovim                          # 26.04+: 0.11+. 22.04/24.04는 PPA 권장 (docs)
+# neovim # X, GitHub releases로 설치 (apt는 22.04/24.04에서 0.9.x 제공)
 
 # 자바스크립트 런타임
 # fnm  # X, apt로 설치 안됨                    # Node.js 버전관리

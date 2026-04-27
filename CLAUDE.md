@@ -68,14 +68,13 @@ dotfiles/
 ### Linux install.sh 실행 순서
 
 1. `manifests/apt.txt` → apt 패키지 설치 
-   1-1. GitHub CLI + eza 공식 apt repo 추가 후 `gh`, `eza` 설치
-   1-2. `config/git/gitconfig` → git config 병합 + Linux override (`autocrlf=input`, `fileMode=true`)
-   1-3. `config/linux/tmux.conf` → `~/.tmux.conf` 복사
-   1-4. `config/yazi/` → `~/.config/yazi/` 배포
-   1-5. `config/nvim/` → `~/.config/nvim/` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
-   1-6. `config/starship.toml` → `~/.config/starship.toml` 배포
-   1-7. 공식 install 스크립트: zoxide, starship, atuin, fnm(--skip-shell), bun
-   1-8. GitHub releases 바이너리: yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf-latest(0.48+)
+   1-1. `config/git/gitconfig` → git config 병합 + Linux override (`autocrlf=input`, `fileMode=true`)
+   1-2. `config/linux/tmux.conf` → `~/.tmux.conf` 복사
+   1-3. `config/yazi/` → `~/.config/yazi/` 배포
+   1-4. `config/nvim/` → `~/.config/nvim/` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
+   1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
+   1-6. 공식 install 스크립트: zoxide, starship, atuin, fnm(--skip-shell), bun
+   1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)

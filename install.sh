@@ -254,7 +254,7 @@ add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
 # =============================================
-# 1-7. GitHub releases 바이너리 (yazi, lazygit, delta)
+# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta)
 # =============================================
 echo
 echo "==> Installing yazi from GitHub releases..."
@@ -301,6 +301,30 @@ if ! command -v lazygit >/dev/null 2>&1; then
     fi
 else
     echo "    lazygit already installed."
+fi
+
+echo
+echo "==> Installing neovim from GitHub releases..."
+if ! command -v nvim >/dev/null 2>&1; then
+    case "$ARCH" in
+        amd64) NVIM_ARCH="x86_64" ;;
+        arm64) NVIM_ARCH="aarch64" ;;
+        *)     NVIM_ARCH="" ;;
+    esac
+    if [[ -n "$NVIM_ARCH" ]]; then
+        TMP_DIR="$(mktemp -d)"
+        curl -fsSL -o "$TMP_DIR/nvim.tar.gz" \
+            "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
+        tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
+        NVIM_DIR="$(ls -d "$TMP_DIR"/nvim-linux-*/ 2>/dev/null | head -1)"
+        run_privileged cp -r "${NVIM_DIR}." /usr/local/
+        rm -rf "$TMP_DIR"
+        echo "    neovim installed: $(nvim --version | head -1)"
+    else
+        echo "    [!] Unsupported arch for neovim: $ARCH (skipping)"
+    fi
+else
+    echo "    neovim already installed: $(nvim --version | head -1)"
 fi
 
 echo
