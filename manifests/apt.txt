@@ -1,7 +1,7 @@
 # Ubuntu/Debian apt 패키지 목록
 # install.sh가 읽어서 설치
 # apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
-#   (fnm, bun, starship, yazi, lazygit, ruffm httpie, atuin, rtk)
+#   (fnm, bun, delta, starship, yazi, lazygit, ruffm httpie, atuin, rtk)
 
 # 빌드/기본
 build-essential
