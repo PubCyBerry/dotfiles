@@ -215,12 +215,15 @@ dotfiles/
 
 ## Troubleshooting
 
-### SSH 터미널을 powershell 7+로 설정
+### SSH 터미널을 powershell 7+ / Git Bash로 설정
 
 관리자 권한으로 powershell 실행 후 다음 명령어를 실행:
 
 ```powershell
+# Powershell
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Program Files\PowerShell\7\pwsh.exe" -PropertyType String -Force
+# Git Bash
+New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Program Files\Git\bin\bash.exe" -PropertyType String -Force
 ```
 
 ### SSH 세션에서 fnm / zoxide 오류
