@@ -101,6 +101,15 @@ add_to_path_runtime() {
     esac
 }
 
+run_privileged() {
+    # root면 직접 실행, 일반 유저면 sudo 경유
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 gh_release_tag() {
     # 최신 release tag (v 접두사 포함)
     curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
@@ -118,9 +127,9 @@ echo
 echo "==> Installing packages via apt..."
 APT_FILE="$ROOT/manifests/apt.txt"
 if [[ -f "$APT_FILE" ]]; then
-    sudo apt-get update -y
+    run_privileged apt-get update -y
     # shellcheck disable=SC2046
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $(manifest_lines "$APT_FILE")
+    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y $(manifest_lines "$APT_FILE")
 else
     echo "    [!] manifests/apt.txt not found, skipping."
 fi
@@ -136,33 +145,7 @@ if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
 fi
 
 # =============================================
-# 1-1. GitHub CLI + eza 공식 apt repo 추가
-# =============================================
-echo
-echo "==> Adding GitHub CLI apt repo (cli.github.com)..."
-sudo mkdir -p -m 755 /etc/apt/keyrings
-if [[ ! -s /etc/apt/keyrings/githubcli-archive-keyring.gpg ]]; then
-    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-    sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-fi
-echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-
-echo "==> Adding eza apt repo (deb.gierens.de)..."
-if [[ ! -s /etc/apt/keyrings/gierens.gpg ]]; then
-    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-        | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-fi
-echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-    | sudo tee /etc/apt/sources.list.d/gierens.list > /dev/null
-sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-
-sudo apt-get update -y
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y gh eza
-
-# =============================================
-# 1-2. gitconfig 병합 + Linux 전용 override
+# 1-1. gitconfig 병합 + Linux 전용 override
 # =============================================
 echo
 echo "==> Merging git config..."
@@ -172,7 +155,7 @@ git config --global core.fileMode true
 echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
 
 # =============================================
-# 1-3. tmux 설정 복사 (config/linux/tmux.conf → ~/.tmux.conf)
+# 1-2. tmux 설정 복사 (config/linux/tmux.conf → ~/.tmux.conf)
 # =============================================
 echo
 TMUX_SRC="$ROOT/config/linux/tmux.conf"
@@ -182,7 +165,7 @@ if [[ -f "$TMUX_SRC" ]]; then
 fi
 
 # =============================================
-# 1-4. yazi 설정 배포 (config/yazi/ → ~/.config/yazi/)
+# 1-3. yazi 설정 배포 (config/yazi/ → ~/.config/yazi/)
 # =============================================
 echo
 echo "==> Deploying yazi config..."
@@ -195,7 +178,7 @@ else
 fi
 
 # =============================================
-# 1-5. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/, 기존 있으면 skip)
+# 1-4. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/, 기존 있으면 skip)
 # =============================================
 echo
 echo "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
@@ -211,7 +194,7 @@ else
 fi
 
 # =============================================
-# 1-6. starship 설정 배포 (config/starship.toml → ~/.config/starship.toml)
+# 1-5. starship 설정 배포 (config/starship.toml → ~/.config/starship.toml)
 # =============================================
 echo
 if [[ -f "$ROOT/config/starship.toml" ]]; then
@@ -220,7 +203,7 @@ if [[ -f "$ROOT/config/starship.toml" ]]; then
 fi
 
 # =============================================
-# 1-7. apt에 없거나 오래된 도구 — 공식 install one-liner
+# 1-6. apt에 없거나 오래된 도구 — 공식 install one-liner
 # =============================================
 echo
 echo "==> Installing zoxide (official script)..."
@@ -270,7 +253,7 @@ add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
 # =============================================
-# 1-8. GitHub releases 바이너리 (yazi, lazygit, delta, fzf-latest)
+# 1-7. GitHub releases 바이너리 (yazi, lazygit, delta)
 # =============================================
 echo
 echo "==> Installing yazi from GitHub releases..."
@@ -284,7 +267,7 @@ if ! command -v yazi >/dev/null 2>&1; then
         TMP_DEB="$(mktemp --suffix=.deb)"
         curl -fsSL -o "$TMP_DEB" \
             "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP_DEB"
+        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
         rm -f "$TMP_DEB"
         echo "    yazi installed."
     else
@@ -309,7 +292,7 @@ if ! command -v lazygit >/dev/null 2>&1; then
         curl -fsSL -o "$TMP_DIR/lazygit.tar.gz" \
             "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
         tar -xzf "$TMP_DIR/lazygit.tar.gz" -C "$TMP_DIR" lazygit
-        sudo install -m 755 "$TMP_DIR/lazygit" /usr/local/bin/lazygit
+        run_privileged install -m 755 "$TMP_DIR/lazygit" /usr/local/bin/lazygit
         rm -rf "$TMP_DIR"
         echo "    lazygit installed."
     else
@@ -333,7 +316,7 @@ if ! command -v delta >/dev/null 2>&1; then
         TMP_DEB="$(mktemp --suffix=.deb)"
         curl -fsSL -o "$TMP_DEB" \
             "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP_DEB"
+        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
         rm -f "$TMP_DEB"
         echo "    git-delta installed."
     else
@@ -341,39 +324,6 @@ if ! command -v delta >/dev/null 2>&1; then
     fi
 else
     echo "    delta already installed."
-fi
-
-echo
-echo "==> Ensuring fzf >= 0.48 (bashrc \$(fzf --bash) 요구사항)..."
-need_fzf_upgrade=true
-if command -v fzf >/dev/null 2>&1; then
-    FZF_VER="$(fzf --version 2>/dev/null | awk '{print $1}')"
-    # 0.48 이상이면 skip
-    if [[ -n "$FZF_VER" ]] && \
-       awk -v v="$FZF_VER" 'BEGIN{ split(v,a,"."); if ((a[1]+0) > 0 || (a[2]+0) >= 48) exit 0; exit 1 }'; then
-        need_fzf_upgrade=false
-        echo "    fzf $FZF_VER OK."
-    fi
-fi
-if $need_fzf_upgrade; then
-    case "$ARCH" in
-        amd64) FZF_ARCH="linux_amd64" ;;
-        arm64) FZF_ARCH="linux_arm64" ;;
-        *)     FZF_ARCH="" ;;
-    esac
-    if [[ -n "$FZF_ARCH" ]]; then
-        FZF_TAG="$(gh_release_tag junegunn/fzf)"          # vX.Y.Z
-        FZF_VER="${FZF_TAG#v}"
-        TMP_DIR="$(mktemp -d)"
-        curl -fsSL -o "$TMP_DIR/fzf.tar.gz" \
-            "https://github.com/junegunn/fzf/releases/download/${FZF_TAG}/fzf-${FZF_VER}-${FZF_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
-        sudo install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
-        rm -rf "$TMP_DIR"
-        echo "    fzf $FZF_VER installed to /usr/local/bin/fzf"
-    else
-        echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
-    fi
 fi
 
 # =============================================
@@ -474,14 +424,15 @@ else
 fi
 
 # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-mkdir -p "$CLAUDE_DIR/hooks"
-HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
-if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
-    chmod +x "$HOOK_PATH"
-    echo "    RTK hook installed at $HOOK_PATH"
-else
-    echo "    [!] RTK hook download failed."
-fi
+rtk init -g --hook-only     # Hook only, no RTK.md
+# mkdir -p "$CLAUDE_DIR/hooks"
+# HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
+# if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
+#     chmod +x "$HOOK_PATH"
+#     echo "    RTK hook installed at $HOOK_PATH"
+# else
+#     echo "    [!] RTK hook download failed."
+# fi
 
 # =============================================
 # 4. bash 프로파일 설정 (~/.bashrc, ~/.inputrc, 마커 방식)
