@@ -10,15 +10,24 @@ fi
 
 # === Windows: WinGet Links 우회 (SSH/NETWORK 토큰에서 reparse symlink 거부 회피) ===
 # Windows OpenSSH 세션은 NETWORK logon이라 WinGet Links의 reparse symlink 평가가
-# 거부되어 fnm/zoxide/fzf/eza/bat이 "Permission denied"를 낸다.
-# 실제 Packages 경로를 PATH 앞에 추가해서 symlink 평가 자체를 회피한다.
+# 거부된다. git pager처럼 자동 spawn되면 ENOSYS("Function not implemented")가,
+# 사용자가 직접 호출하면 "Permission denied"가 발생한다.
+# 실제 Packages 경로를 PATH 앞에 추가해 symlink 평가 자체를 회피한다.
+# 디렉토리 케이스는 매니페스트가 아니라 실제 폴더명을 따라야 한다 (bash glob은 case-sensitive).
 # Linux 환경에선 디렉토리 존재 체크가 false라 무동작.
 _winget_pkgs="$HOME/AppData/Local/Microsoft/WinGet/Packages"
 if [[ -d "$_winget_pkgs" ]]; then
-    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza}_Microsoft.Winget.Source_*; do
+    # 그룹 A: exe가 패키지 디렉토리 직속
+    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza,jqlang.jq,MikeFarah.yq,JesseDuffield.lazygit}_Microsoft.Winget.Source_*; do
         [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
     done
-    for _d in "$_winget_pkgs"/sharkdp.bat_Microsoft.Winget.Source_*/bat-v*; do
+    # 그룹 B: exe가 버전/아키텍처 서브 디렉토리 안
+    for _d in "$_winget_pkgs"/sharkdp.bat_Microsoft.Winget.Source_*/bat-v* \
+              "$_winget_pkgs"/sharkdp.fd_Microsoft.Winget.Source_*/fd-v* \
+              "$_winget_pkgs"/BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_*/ripgrep-* \
+              "$_winget_pkgs"/dandavison.delta_Microsoft.Winget.Source_*/delta-* \
+              "$_winget_pkgs"/Oven-sh.Bun_Microsoft.Winget.Source_*/bun-windows-x64 \
+              "$_winget_pkgs"/sxyazi.yazi_Microsoft.Winget.Source_*/yazi-x86_64-pc-windows-msvc; do
         [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
     done
     export PATH

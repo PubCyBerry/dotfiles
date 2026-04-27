@@ -226,12 +226,21 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Pr
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Program Files\Git\bin\bash.exe" -PropertyType String -Force
 ```
 
-### SSH 세션에서 fnm / zoxide 오류
+### SSH 세션에서 WinGet CLI 도구 오류 (`Permission denied` / `Function not implemented`)
 
-WinGet으로 설치한 도구(`fnm`, `zoxide`, `fzf`, `eza`, `bat`)는 `%LOCALAPPDATA%\Microsoft\WinGet\Links\`의 reparse symlink로 노출된다. Windows OpenSSH는 NETWORK logon 토큰으로 셸을 띄우는데, 이 토큰에서 해당 symlink 평가가 거부되어 셸별로 다음 오류가 발생한다.
+WinGet으로 설치한 CLI 도구는 모두 `%LOCALAPPDATA%\Microsoft\WinGet\Links\`의 reparse symlink로 노출된다. Windows OpenSSH는 NETWORK logon 토큰으로 셸을 띄우는데, 이 토큰에서 해당 symlink 평가가 거부되어 호출 경로에 따라 두 가지 증상이 나타난다.
+
+- **사용자가 직접 호출** → `bash: .../fnm: Permission denied` (EACCES)
+- **다른 프로세스가 자동 spawn** → `error: cannot spawn delta: Function not implemented` / `fatal: unable to execute pager 'delta'` (ENOSYS). `git diff`가 `core.pager = delta`를 spawn하다 죽는 게 대표 사례.
+
+셸별 우회:
 
 - **PowerShell 7+**: 프로파일 로딩 시 `ResourceUnavailable`. `profile.ps1`의 `Resolve-ExePath` 헬퍼가 심볼릭 링크를 실제 실행 파일 경로로 해석해 우회.
-- **Git Bash**: `bash: .../fnm: Permission denied`. `config/bash/bashrc`가 `$HOME/AppData/Local/Microsoft/WinGet/Packages/<pkg>_Microsoft.Winget.Source_*` 하위의 실제 바이너리 경로를 PATH 앞에 prepend해 symlink 평가 자체를 회피.
+- **Git Bash**: `config/bash/bashrc`가 `$HOME/AppData/Local/Microsoft/WinGet/Packages/<pkg>_Microsoft.Winget.Source_*` 하위의 실제 바이너리 경로를 PATH 앞에 prepend해 symlink 평가 자체를 회피. 두 그룹으로 나눠 처리한다.
+  - 그룹 A (exe가 패키지 디렉토리 직속): `Schniz.fnm`, `ajeetdsouza.zoxide`, `junegunn.fzf`, `eza-community.eza`, `jqlang.jq`, `MikeFarah.yq`, `JesseDuffield.lazygit`
+  - 그룹 B (exe가 버전/아키텍처 서브 디렉토리 안): `sharkdp.bat/bat-v*`, `sharkdp.fd/fd-v*`, `BurntSushi.ripgrep.MSVC/ripgrep-*`, `dandavison.delta/delta-*`, `Oven-sh.Bun/bun-windows-x64`, `sxyazi.yazi/yazi-x86_64-pc-windows-msvc`
+
+> **새 WinGet 도구를 추가할 때**: `manifests/winget.txt`뿐 아니라 `config/bash/bashrc`의 두 그룹 중 적절한 쪽에도 등록해야 SSH 세션에서 깨지지 않는다. 디렉토리 케이스는 매니페스트가 아니라 실제 폴더명을 따른다 (bash glob은 case-sensitive). 예: `MikeFarah.yq`(대문자 M·F), `Oven-sh.Bun`(하이픈).
 
 별도 조치 불필요. 진단 단서: `whoami /groups`에 `NT AUTHORITY\NETWORK`가 포함되고 `INTERACTIVE`가 빠져 있으면 이 케이스다.
 
