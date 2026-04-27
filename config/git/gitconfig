@@ -3,12 +3,11 @@
     pager = delta
     # 기본 편집기: neovim (포그라운드 실행)
     editor = nvim -f
-    # Windows에서 파일 권한 변경 무시 (NTFS 미지원)
-    fileMode = false
-    # 체크아웃 시 LF→CRLF, 커밋 시 CRLF→LF 자동 변환
-    autocrlf = true
     # 줄바꿈 정규화 기준: OS 네이티브
     eol = native
+    # core.autocrlf, core.fileMode 은 OS별로 install 스크립트가 주입한다
+    #   Windows: autocrlf=true,  fileMode=false
+    #   Linux:   autocrlf=input, fileMode=true
 
 [interactive]
     # git add -p 등 대화형 모드에서도 delta 컬러 필터 적용

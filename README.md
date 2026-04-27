@@ -1,6 +1,6 @@
 # dotfiles
 
-Windows 11 환경을 위한 개인 dotfiles.
+Windows 11 / Ubuntu 환경을 위한 개인 dotfiles.
 터미널 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 
 ## 지원 환경
@@ -8,6 +8,7 @@ Windows 11 환경을 위한 개인 dotfiles.
 | 환경 | 지원 |
 |------|------|
 | Windows 11 (PowerShell 7+) | 완전 지원 (주 환경) |
+| Ubuntu 24.04 | 완전 지원 (apt 기반) |
 | macOS | 보류 (`macos/` 디렉토리에 코드 보관) |
 
 ## Quickstart
@@ -37,24 +38,48 @@ cd $env:USERPROFILE\dotfiles && git pull
 pwsh -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
+### Ubuntu (24.04)
+
+bash + apt 기반. sudo 권한이 필요하다.
+
+```bash
+# 1. 저장소 클론 후 단일 진입점 실행
+git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
+bash ~/dotfiles/install.sh
+
+# 2. git 사용자 정보 설정 (최초 1회)
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+```
+
+기존 머신 업데이트:
+
+```bash
+cd ~/dotfiles && git pull
+bash install.sh
+```
+
 ## 파일 구조
 
 ```text
 dotfiles/
-  install.ps1                      # 설치 스크립트(Windows 11)
+  install.ps1                      # 설치 스크립트 (Windows 11)
+  install.sh                       # 설치 스크립트 (Ubuntu)
   config/
     claude/
       claude-hud.json              # claude-hud 설정
       CLAUDE.md                    # Claude 전역 지침 설정
       settings.json                # Claude Code 설정 (hook, env, permissions)
     git/
-      gitconfig                    # git 설정 (delta pager 포함)
+      gitconfig                    # git 설정 (delta pager 포함, OS-중립)
     windows/
       profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
-      tmux.conf                    # tmux 설정
+      tmux.conf                    # tmux 설정 (default-shell=pwsh)
+    linux/
+      tmux.conf                    # tmux 설정 (default-shell=bash)
     bash/
-      bashrc                       # Git Bash 설정
-      inputrc                      # Git Bash readline 설정
+      bashrc                       # bash 설정 (Git Bash + Linux 공통)
+      inputrc                      # readline 설정
     nvim/
       init.lua                     # Neovim 진입점 (lazy.nvim 로드)
       lua/config/lazy.lua          # lazy.nvim 부트스트랩 및 설정
@@ -64,7 +89,7 @@ dotfiles/
     starship.toml                  # Starship 프롬프트 설정
   manifests/
     winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
-    apt.txt                        # Linux apt 패키지 목록
+    apt.txt                        # Ubuntu apt 패키지 목록
     npm-global.txt                 # npm 전역 패키지 목록
     skills.txt                     # Claude Code skills 목록
   macos/                           # macOS 지원 (보류)

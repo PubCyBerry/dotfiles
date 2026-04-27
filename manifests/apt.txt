@@ -1,0 +1,55 @@
+# Ubuntu/Debian apt 패키지 목록
+# install.sh가 읽어서 설치
+# apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
+#   (atuin, rtk)
+
+# 빌드/기본
+build-essential
+ca-certificates
+curl
+wget
+git
+gpg
+shellcheck
+
+# 개발 환경 기초
+git                             # Git
+gh                              # Github CLI
+vim
+neovim                          # 26.04+: 0.11+. 22.04/24.04는 PPA 권장 (docs)
+
+# 자바스크립트 런타임
+fnm  # X, apt로 설치 안됨                    # Node.js 버전관리
+Bun  # X, apt로 설치 안됨 
+
+# 터미널 멀티플렉서
+tmux
+
+# 현대적인 터미널 도구
+bat                             # 'cat' with syntax highlighting and Git intergration
+fzf                             # command-line fuzzy finder
+eza                             # alternative to 'ls'
+fd-find                         # alternative to 'find', `ln -s $(which fdfind) ~/.local/bin/fd` + `$HOME/.local/bin`를 `$PATH`에 등록 필요
+delta # X, apt로 설치 안됨
+ripgrep                         # rg
+jq
+yq
+zoxide # ?, 설치는 되는데 업뎃이 느리다고 함, curl로 설치 권장, 그리고 zoxide만 되고 z나 zi는 동작 안함
+starship # X, curl로 설치 필요
+yazi # X, 바이너리 다운로드 필요(https://github.com/sxyazi/yazi/releases)
+lazygit # X, PPA 추가 혹은 바이너리 다운로드 필요
+
+
+# 동영상/미디어/문서 (yazi preview 의존성)
+ffmpeg                          # 비디오
+poppler-utils                   # PDF
+imagemagick                     # 폰트, HEIC, JPEG
+7zip                            # 압축 파일
+file                            # MIME type(파일 타입 탐지)
+
+
+# 미설치 패키지:
+# ruff # X, uv로 설치
+# httpie                        # O, http/https CLI
+# atuin # X, ?
+# rtk # X, ?

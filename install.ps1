@@ -135,6 +135,11 @@ Write-Host ""
 Write-Host "==> Merging git config..."
 Merge-GitConfig (Join-Path $ROOT "config\git\gitconfig")
 
+# Windows 전용 git 설정 주입 (공유 gitconfig는 OS-중립)
+git config --global core.autocrlf true
+git config --global core.fileMode false
+Write-Host "    Set core.autocrlf=true, core.fileMode=false (Windows)"
+
 # =============================================
 # 1-2. tmux 설정 복사
 # =============================================
