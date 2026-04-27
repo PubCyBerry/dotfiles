@@ -135,6 +135,10 @@ else
     echo "    [!] manifests/apt.txt not found, skipping."
 fi
 
+echo "    Setting timezone to Asia/Seoul..."
+run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
+
 # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
 if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
     ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
@@ -449,7 +453,7 @@ else
 fi
 
 # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-rtk init -g --hook-only     # Hook only, no RTK.md
+rtk init -g --hook-only --auto-patch
 # mkdir -p "$CLAUDE_DIR/hooks"
 # HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
 # if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
@@ -490,8 +494,9 @@ if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
         repo="${BASH_REMATCH[1]}"
         skill="${BASH_REMATCH[2]}"
         echo "    Adding skill: $skill from $repo..."
-        npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code >/dev/null 2>&1 \
-            || echo "    [!] Failed: $repo@$skill"
+        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code 2>&1 | sed 's/^/    /'; then
+            echo "    [!] Failed: $repo@$skill"
+        fi
     done < <(manifest_lines "$SKILLS_FILE")
     echo "    Skills restored."
 else
