@@ -35,7 +35,6 @@ fd-find                         # alternative to 'find', `ln -s $(which fdfind) 
 ripgrep                         # rg
 jq
 yq
-zoxide # ?, 설치는 되는데 업뎃이 느리다고 함, curl로 설치 권장, 그리고 zoxide만 되고 z나 zi는 동작 안함
 # starship # X, curl로 설치 필요
 # yazi # X, 바이너리 다운로드 필요(https://github.com/sxyazi/yazi/releases)
 # lazygit # X, PPA 추가 혹은 바이너리 다운로드 필요
