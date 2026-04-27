@@ -251,3 +251,47 @@ Windows OpenSSH 서버는 Administrators 그룹 계정으로 접속 시 UAC 필�
 [username]
 show_always = false
 ```
+
+### SSH 세션에서 GitHub HTTPS 인증 실패
+
+SSH로 접속한 비대화형 세션에서 `git fetch`/`git push` 시 다음 오류가 발생한다.
+
+```
+fatal: Unable to persist credentials with the 'wincredman' credential store.
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/...'
+```
+
+fatal이 안 떠도 username/password 프롬프트가 떠서 통과 못 하는 경우도 같은 원인이다.
+
+**원인**:
+
+- Git for Windows의 system gitconfig가 `credential.helper = manager`(GCM)를 박아놓고, GCM의 기본 store는 `wincredman`(Windows Credential Manager)이다. 이 store는 **대화형 데스크톱 세션**이 있어야 동작해, SSH 비대화형 세션에서는 fatal로 helper chain이 끊긴다.
+- `gh auth setup-git`이 추가하는 URL-specific gh helper도 chain이 끊겨 호출 안 되고, 호출되더라도 `gh`의 keyring 자체가 `wincredman` 기반이라 SSH 세션에서 토큰을 못 읽는다.
+
+**해결**: GitHub는 **SSH 키 인증**으로 전환. GitHub 외 HTTPS 호스트(GitLab 등)는 GCM `credentialStore`를 `dpapi`로 변경해 `wincredman` 의존성을 제거한다.
+
+```bash
+# 1. GitHub용 SSH 키 생성 + 등록 (gh 토큰에 admin:public_key scope 필요)
+ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519_$(hostname) -N ""
+gh ssh-key add ~/.ssh/id_ed25519_$(hostname).pub --title "$(hostname)"
+
+# 2. ~/.ssh/config에 GitHub 항목 추가
+cat >> ~/.ssh/config <<EOF
+
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_$(hostname)
+    IdentitiesOnly yes
+EOF
+
+# 3. 기존 HTTPS remote를 SSH로 전환
+git remote set-url origin git@github.com:<user>/<repo>.git
+
+# 4. 검증
+ssh -T git@github.com   # → "Hi <user>! You've successfully authenticated..."
+git fetch
+```
+
+GitHub 외 호스트용 `dpapi` 설정은 `config/git/gitconfig`에 반영되어 있다. DPAPI는 사용자 프로필 기반이라 SSH 비대화형 세션에서도 동작한다.

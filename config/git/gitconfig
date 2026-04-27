@@ -26,3 +26,10 @@
 [merge]
     # zdiff3: base 원본을 함께 표시해 충돌 컨텍스트 확대
     conflictStyle = zdiff3
+
+[credential]
+    # Git for Windows의 system gitconfig가 박은 manager(GCM) helper는
+    # 기본적으로 wincredman 저장소를 사용. wincredman은 대화형 데스크톱
+    # 세션이 필요해 SSH 세션에서 fatal로 helper chain을 끊음.
+    # dpapi 저장소는 사용자 프로필 기반이라 SSH 세션에서도 동작.
+    credentialStore = dpapi
