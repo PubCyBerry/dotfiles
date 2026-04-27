@@ -1,7 +1,7 @@
 # Ubuntu/Debian apt 패키지 목록
 # install.sh가 읽어서 설치
 # apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
-#   (atuin, rtk)
+#   (fnm, bun, starship, yazi, lazygit, ruffm httpie, atuin, rtk)
 
 # 빌드/기본
 build-essential
@@ -11,6 +11,7 @@ wget
 git
 gpg
 shellcheck
+unzip
 
 # 개발 환경 기초
 git                             # Git
@@ -30,7 +31,7 @@ bat                             # 'cat' with syntax highlighting and Git intergr
 fzf                             # command-line fuzzy finder
 eza                             # alternative to 'ls'
 fd-find                         # alternative to 'find', `ln -s $(which fdfind) ~/.local/bin/fd` + `$HOME/.local/bin`를 `$PATH`에 등록 필요
-delta # X, apt로 설치 안됨
+# delta # X, apt로 설치 안됨
 ripgrep                         # rg
 jq
 yq

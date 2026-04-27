@@ -129,7 +129,8 @@ APT_FILE="$ROOT/manifests/apt.txt"
 if [[ -f "$APT_FILE" ]]; then
     run_privileged apt-get update -y
     # shellcheck disable=SC2046
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y $(manifest_lines "$APT_FILE")
+    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
+        $(manifest_lines "$APT_FILE") --no-install-recommends
 else
     echo "    [!] manifests/apt.txt not found, skipping."
 fi
