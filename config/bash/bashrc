@@ -1,5 +1,40 @@
-# bash/bashrc — Git Bash $HOME/.bashrc에 추가할 dotfiles 설정
-# 직접 실행하지 않음. install.ps1이 $HOME/.bashrc에 마커 블록으로 삽입.
+# bash/bashrc — Git Bash $HOME/.bashrc 및 Linux ~/.bashrc에 마커 블록으로 삽입.
+# 직접 실행하지 않음. install.ps1 / install.sh가 삽입한다.
+
+# === 비대화형 세션에서도 필요한 PATH 설정 ===
+# scp/rsync 등이 ~/.local/bin의 도구를 호출할 수 있으므로 가드 위에 둔다.
+RTK_PATH="$HOME/.local/bin"
+if [[ -d "$RTK_PATH" ]] && [[ ":$PATH:" != *":$RTK_PATH:"* ]]; then
+    export PATH="$RTK_PATH:$PATH"
+fi
+
+# === Windows: WinGet Links 우회 (SSH/NETWORK 토큰에서 reparse symlink 거부 회피) ===
+# Windows OpenSSH 세션은 NETWORK logon이라 WinGet Links의 reparse symlink 평가가
+# 거부되어 fnm/zoxide/fzf/eza/bat이 "Permission denied"를 낸다.
+# 실제 Packages 경로를 PATH 앞에 추가해서 symlink 평가 자체를 회피한다.
+# Linux 환경에선 디렉토리 존재 체크가 false라 무동작.
+_winget_pkgs="$HOME/AppData/Local/Microsoft/WinGet/Packages"
+if [[ -d "$_winget_pkgs" ]]; then
+    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza}_Microsoft.Winget.Source_*; do
+        [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
+    done
+    for _d in "$_winget_pkgs"/sharkdp.bat_Microsoft.Winget.Source_*/bat-v*; do
+        [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
+    done
+    export PATH
+    unset _d
+fi
+unset _winget_pkgs
+
+# === 비대화형 셸은 여기서 종료 ===
+# SSH 명령 실행, scp, rsync, git over ssh 등에서 prompt/eval 초기화가
+# stderr를 오염시켜 파일 전송이 깨지는 것을 방지한다.
+case $- in
+    *i*) ;;
+    *) return ;;
+esac
+
+# === 대화형 전용 초기화 ===
 
 # fnm (Node.js 버전 관리)
 if command -v fnm &> /dev/null; then
@@ -13,8 +48,8 @@ if command -v zoxide &> /dev/null; then
     eval "$(zoxide init bash)"
 fi
 
-# starship 프롬프트
-if command -v starship &> /dev/null; then
+# starship 프롬프트 (TERM=dumb 환경 — Emacs tramp 등 — 에서는 스킵)
+if [[ "$TERM" != "dumb" ]] && command -v starship &> /dev/null; then
     eval "$(starship init bash)"
 fi
 
@@ -33,12 +68,6 @@ fi
 # bat 별칭
 if command -v bat &> /dev/null; then
     alias cat='bat'
-fi
-
-# RTK PATH
-RTK_PATH="$HOME/.local/bin"
-if [[ -d "$RTK_PATH" ]] && [[ ":$PATH:" != *":$RTK_PATH:"* ]]; then
-    export PATH="$RTK_PATH:$PATH"
 fi
 
 # Claude Code

@@ -225,9 +225,18 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Pr
 
 ### SSH 세션에서 fnm / zoxide 오류
 
-WinGet으로 설치한 도구(`fnm`, `zoxide` 등)는 `%LOCALAPPDATA%\Microsoft\WinGet\Links\`의 심볼릭 링크로 노출된다. Windows OpenSSH 서버는 보안상 이 링크를 통한 프로세스 실행을 차단하므로 SSH 세션의 프로파일 로딩 시 `ResourceUnavailable` 오류가 발생한다.
+WinGet으로 설치한 도구(`fnm`, `zoxide`, `fzf`, `eza`, `bat`)는 `%LOCALAPPDATA%\Microsoft\WinGet\Links\`의 reparse symlink로 노출된다. Windows OpenSSH는 NETWORK logon 토큰으로 셸을 띄우는데, 이 토큰에서 해당 symlink 평가가 거부되어 셸별로 다음 오류가 발생한다.
 
-`profile.ps1`의 `Resolve-ExePath` 헬퍼가 심볼릭 링크를 실제 실행 파일 경로로 해석해 우회하므로 별도 조치 불필요.
+- **PowerShell 7+**: 프로파일 로딩 시 `ResourceUnavailable`. `profile.ps1`의 `Resolve-ExePath` 헬퍼가 심볼릭 링크를 실제 실행 파일 경로로 해석해 우회.
+- **Git Bash**: `bash: .../fnm: Permission denied`. `config/bash/bashrc`가 `$HOME/AppData/Local/Microsoft/WinGet/Packages/<pkg>_Microsoft.Winget.Source_*` 하위의 실제 바이너리 경로를 PATH 앞에 prepend해 symlink 평가 자체를 회피.
+
+별도 조치 불필요. 진단 단서: `whoami /groups`에 `NT AUTHORITY\NETWORK`가 포함되고 `INTERACTIVE`가 빠져 있으면 이 케이스다.
+
+### SSH 비대화형 세션에서 scp/rsync/git 깨짐
+
+`ssh host 'cmd'`, scp, rsync, git over ssh 등 비대화형 세션도 `~/.bashrc`를 source한다. starship/fzf의 `eval` 초기화가 stderr를 출력하면 파일 전송 프로토콜이 깨지거나 git이 비정상 종료된다.
+
+`config/bash/bashrc` 상단의 `case $- in *i*) ;; *) return ;; esac` 가드가 비대화형 셸을 즉시 return시켜 prompt/eval/alias 초기화를 모두 건너뛴다. PATH 설정(`~/.local/bin`, WinGet 우회)은 가드 위에 있어 비대화형에서도 적용된다.
 
 ### SSH 세션에서 Starship이 Administrator 표시
 
