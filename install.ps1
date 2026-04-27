@@ -56,7 +56,7 @@ function Set-ProfileBlock([string]$FilePath, [string]$Content) {
     # 기존 마커 블록을 정규식으로 완전 교체 (Singleline으로 개행 포함 매칭)
     $pattern    = [regex]::Escape($begin) + ".*?" + [regex]::Escape($end)
     $newContent = [regex]::Replace($existing, $pattern, $block,
-                      [System.Text.RegexOptions]::Singleline)
+                      [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
     if ($newContent -eq $existing) {
         $newContent = "$existing`n$block"
