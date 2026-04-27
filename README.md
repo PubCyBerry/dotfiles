@@ -3,31 +3,6 @@
 Windows 11 환경을 위한 개인 dotfiles.
 터미널 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
 
-## 목차
-
-- [dotfiles](#dotfiles)
-  - [목차](#목차)
-  - [지원 환경](#지원-환경)
-  - [Quickstart](#quickstart)
-    - [Windows 11](#windows-11)
-  - [파일 구조](#파일-구조)
-  - [Neovim 키맵](#neovim-키맵)
-    - [yazi.nvim](#yazinvim)
-  - [References](#references)
-    - [Dotfiles](#dotfiles-1)
-    - [Agent](#agent)
-    - [Harness](#harness)
-    - [Skills](#skills)
-    - [Tools](#tools)
-    - [Vim](#vim)
-    - [Tmux](#tmux)
-    - [CLI Tools](#cli-tools)
-    - [Tips](#tips)
-  - [Troubleshooting](#troubleshooting)
-    - [SSH 터미널을 powershell 7+로 설정](#ssh-터미널을-powershell-7로-설정)
-    - [SSH 세션에서 fnm / zoxide 오류](#ssh-세션에서-fnm--zoxide-오류)
-    - [SSH 세션에서 Starship이 Administrator 표시](#ssh-세션에서-starship이-administrator-표시)
-
 ## 지원 환경
 
 | 환경 | 지원 |
