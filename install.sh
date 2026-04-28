@@ -134,7 +134,7 @@ install_gh_tar() {
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
     curl -fsSL -o "$TMP/$name.tar.gz" "$url"
-    tar -xzf "$TMP/$name.tar.gz" -C "$TMP" "$bin"
+    tar -xzf "$TMP/$name.tar.gz" -C "$TMP"
     run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
     hash -r 2>/dev/null || true
     echo "    $name installed."
