@@ -258,7 +258,7 @@ add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
 # =============================================
-# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta)
+# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf)
 # =============================================
 echo
 echo "==> Installing yazi from GitHub releases..."
@@ -355,6 +355,31 @@ if ! command -v delta >/dev/null 2>&1; then
     fi
 else
     echo "    delta already installed."
+fi
+
+echo
+echo "==> Installing fzf from GitHub releases..."
+if ! command -v fzf >/dev/null 2>&1; then
+    case "$ARCH" in
+        amd64) FZF_ARCH="linux_amd64" ;;
+        arm64) FZF_ARCH="linux_arm64" ;;
+        *)     FZF_ARCH="" ;;
+    esac
+    if [[ -n "$FZF_ARCH" ]]; then
+        FZF_TAG="$(gh_release_tag junegunn/fzf)"
+        FZF_VER="${FZF_TAG#v}"
+        TMP_DIR="$(mktemp -d)"
+        curl -fsSL -o "$TMP_DIR/fzf.tar.gz" \
+            "https://github.com/junegunn/fzf/releases/download/${FZF_TAG}/fzf-${FZF_VER}-${FZF_ARCH}.tar.gz"
+        tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
+        run_privileged install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
+        rm -rf "$TMP_DIR"
+        echo "    fzf installed."
+    else
+        echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
+    fi
+else
+    echo "    fzf already installed."
 fi
 
 # =============================================
@@ -455,7 +480,8 @@ else
 fi
 
 # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-rtk init -g --hook-only --auto-patch
+export RTK_TELEMETRY_DISABLED=1
+rtk init -g --hook-only
 # mkdir -p "$CLAUDE_DIR/hooks"
 # HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
 # if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
@@ -496,7 +522,7 @@ if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
         repo="${BASH_REMATCH[1]}"
         skill="${BASH_REMATCH[2]}"
         echo "    Adding skill: $skill from $repo..."
-        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null 2>&1 | sed 's/^/    /'; then
+        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
             echo "    [!] Failed: $repo@$skill"
         fi
     done < <(manifest_lines "$SKILLS_FILE")

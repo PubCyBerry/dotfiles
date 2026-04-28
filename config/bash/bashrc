@@ -46,6 +46,10 @@ esac
 # === 대화형 전용 초기화 ===
 
 # fnm (Node.js 버전 관리)
+FNM_DIR="${FNM_DIR:-$HOME/.local/share/fnm}"
+if [[ -d "$FNM_DIR" ]] && [[ ":$PATH:" != *":$FNM_DIR:"* ]]; then
+    export PATH="$FNM_DIR:$PATH"
+fi
 if command -v fnm &> /dev/null; then
     eval "$(fnm env --use-on-cd --shell bash)"
 fi
