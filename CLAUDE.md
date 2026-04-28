@@ -82,7 +82,7 @@ dotfiles/
    1-4. `config/nvim/` → `~/.config/nvim/` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. 공식 install 스크립트: zoxide, starship, atuin, fnm(--skip-shell), bun
-   1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb)
+   1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf(tar.gz), eza(tar.gz), yq(단일 바이너리)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)

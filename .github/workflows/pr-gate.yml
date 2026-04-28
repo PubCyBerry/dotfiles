@@ -64,6 +64,8 @@ jobs:
           lazygit --version
           delta --version
           fzf --version
+          eza --version | head -1
+          yq --version
           yazi --version
           zoxide --version
           starship --version

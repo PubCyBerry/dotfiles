@@ -215,7 +215,9 @@ fi
 echo
 echo "==> Installing zoxide (official script)..."
 if ! command -v zoxide >/dev/null 2>&1; then
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+    # --bin-dir로 사용자 디렉토리 지정 → sudo 없이 설치 (zoxide 기본도 ~/.local/bin이지만 명시)
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh \
+        | sh -s -- --bin-dir "$LOCAL_BIN"
 else
     echo "    zoxide already installed."
 fi
@@ -223,7 +225,8 @@ fi
 echo
 echo "==> Installing starship (official script)..."
 if ! command -v starship >/dev/null 2>&1; then
-    curl -sS https://starship.rs/install.sh | sh -s -- -y
+    # -b 로 사용자 디렉토리 지정 → sudo 비밀번호 prompt 회피 (starship 기본은 /usr/local/bin)
+    curl -sS https://starship.rs/install.sh | sh -s -- -b "$LOCAL_BIN" -y
 else
     echo "    starship already installed."
 fi
@@ -268,14 +271,21 @@ add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
 # =============================================
-# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf)
+# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
 # =============================================
 echo
 echo "==> Installing yazi from GitHub releases..."
-if ! command -v yazi >/dev/null 2>&1; then
+# musl 정적 빌드 사용 → glibc 버전 무관 (22.04 glibc 2.35 등 구버전에서도 동작)
+# gnu 빌드는 24.04 빌드러너에서 컴파일되어 GLIBC_2.39 요구함.
+yazi_works=false
+if command -v yazi >/dev/null 2>&1 && yazi --version >/dev/null 2>&1; then
+    yazi_works=true
+    echo "    yazi already installed: $(yazi --version | head -1)"
+fi
+if ! $yazi_works; then
     case "$ARCH" in
-        amd64) YAZI_TRIPLE="x86_64-unknown-linux-gnu" ;;
-        arm64) YAZI_TRIPLE="aarch64-unknown-linux-gnu" ;;
+        amd64) YAZI_TRIPLE="x86_64-unknown-linux-musl" ;;
+        arm64) YAZI_TRIPLE="aarch64-unknown-linux-musl" ;;
         *)     YAZI_TRIPLE="" ;;
     esac
     if [[ -n "$YAZI_TRIPLE" ]]; then
@@ -285,12 +295,11 @@ if ! command -v yazi >/dev/null 2>&1; then
         chmod 644 "$TMP_DEB"
         DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
         rm -f "$TMP_DEB"
-        echo "    yazi installed."
+        hash -r 2>/dev/null || true
+        echo "    yazi installed: $(yazi --version | head -1)"
     else
         echo "    [!] Unsupported arch for yazi: $ARCH (skipping)"
     fi
-else
-    echo "    yazi already installed."
 fi
 
 echo
@@ -320,7 +329,21 @@ fi
 
 echo
 echo "==> Installing neovim from GitHub releases..."
-if ! command -v nvim >/dev/null 2>&1; then
+# 22.04 apt의 nvim은 0.6.x → lazy.nvim(>=0.8) 및 본 설정(0.10+) 미만이면 GitHub releases로 강제 업그레이드
+NVIM_MIN_VER="0.10.0"
+nvim_needs_install=true
+if command -v nvim >/dev/null 2>&1; then
+    nvim_cur_ver="$(nvim --version 2>/dev/null | head -1 \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    if [[ -n "$nvim_cur_ver" ]] \
+        && dpkg --compare-versions "$nvim_cur_ver" ge "$NVIM_MIN_VER"; then
+        nvim_needs_install=false
+        echo "    neovim already installed: $(nvim --version | head -1)"
+    else
+        echo "    nvim ${nvim_cur_ver:-unknown} < ${NVIM_MIN_VER}, upgrading from GitHub releases..."
+    fi
+fi
+if $nvim_needs_install; then
     case "$ARCH" in
         amd64) NVIM_ARCH="x86_64" ;;
         arm64) NVIM_ARCH="aarch64" ;;
@@ -334,12 +357,11 @@ if ! command -v nvim >/dev/null 2>&1; then
         NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
         run_privileged cp -r "${NVIM_DIR}/." /usr/local/
         rm -rf "$TMP_DIR"
+        hash -r 2>/dev/null || true   # 캐시된 /usr/bin/nvim 경로 무효화
         echo "    neovim installed: $(nvim --version | head -1)"
     else
         echo "    [!] Unsupported arch for neovim: $ARCH (skipping)"
     fi
-else
-    echo "    neovim already installed: $(nvim --version | head -1)"
 fi
 
 echo
@@ -369,7 +391,21 @@ fi
 
 echo
 echo "==> Installing fzf from GitHub releases..."
-if ! command -v fzf >/dev/null 2>&1; then
+# 22.04 apt의 fzf는 0.29 → 본 dotfiles 키바인딩/preview 옵션 호환을 위해 0.40+ 강제
+FZF_MIN_VER="0.40.0"
+fzf_needs_install=true
+if command -v fzf >/dev/null 2>&1; then
+    fzf_cur_ver="$(fzf --version 2>/dev/null \
+        | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
+    if [[ -n "$fzf_cur_ver" ]] \
+        && dpkg --compare-versions "$fzf_cur_ver" ge "$FZF_MIN_VER"; then
+        fzf_needs_install=false
+        echo "    fzf already installed: $(fzf --version)"
+    else
+        echo "    fzf ${fzf_cur_ver:-unknown} < ${FZF_MIN_VER}, upgrading from GitHub releases..."
+    fi
+fi
+if $fzf_needs_install; then
     case "$ARCH" in
         amd64) FZF_ARCH="linux_amd64" ;;
         arm64) FZF_ARCH="linux_arm64" ;;
@@ -384,12 +420,56 @@ if ! command -v fzf >/dev/null 2>&1; then
         tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
         run_privileged install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
         rm -rf "$TMP_DIR"
-        echo "    fzf installed."
+        hash -r 2>/dev/null || true   # 캐시된 /usr/bin/fzf 경로 무효화
+        echo "    fzf installed: $(fzf --version)"
     else
         echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
     fi
+fi
+
+echo
+echo "==> Installing eza from GitHub releases..."
+if ! command -v eza >/dev/null 2>&1; then
+    case "$ARCH" in
+        amd64) EZA_TRIPLE="x86_64-unknown-linux-gnu" ;;
+        arm64) EZA_TRIPLE="aarch64-unknown-linux-gnu" ;;
+        *)     EZA_TRIPLE="" ;;
+    esac
+    if [[ -n "$EZA_TRIPLE" ]]; then
+        TMP_DIR="$(mktemp -d)"
+        curl -fsSL -o "$TMP_DIR/eza.tar.gz" \
+            "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
+        tar -xzf "$TMP_DIR/eza.tar.gz" -C "$TMP_DIR"
+        run_privileged install -m 755 "$TMP_DIR/eza" /usr/local/bin/eza
+        rm -rf "$TMP_DIR"
+        echo "    eza installed."
+    else
+        echo "    [!] Unsupported arch for eza: $ARCH (skipping)"
+    fi
 else
-    echo "    fzf already installed."
+    echo "    eza already installed."
+fi
+
+echo
+echo "==> Installing yq from GitHub releases..."
+if ! command -v yq >/dev/null 2>&1; then
+    case "$ARCH" in
+        amd64) YQ_ARCH="linux_amd64" ;;
+        arm64) YQ_ARCH="linux_arm64" ;;
+        *)     YQ_ARCH="" ;;
+    esac
+    if [[ -n "$YQ_ARCH" ]]; then
+        TMP_DIR="$(mktemp -d)"
+        curl -fsSL -o "$TMP_DIR/yq" \
+            "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
+        run_privileged install -m 755 "$TMP_DIR/yq" /usr/local/bin/yq
+        rm -rf "$TMP_DIR"
+        echo "    yq installed."
+    else
+        echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
+    fi
+else
+    echo "    yq already installed."
 fi
 
 # =============================================

@@ -48,6 +48,8 @@ jobs:
             echo "neovim     $(_latest neovim/neovim)"
             echo "git-delta  $(_latest dandavison/delta)"
             echo "fzf        $(_latest junegunn/fzf)"
+            echo "eza        $(_latest eza-community/eza)"
+            echo "yq         $(_latest mikefarah/yq)"
           } | tee /tmp/upstream-report.txt
 
           echo "=== Latest upstream releases ==="

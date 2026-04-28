@@ -1,7 +1,7 @@
 # Ubuntu/Debian apt 패키지 목록
 # install.sh가 읽어서 설치
 # apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
-#   (fnm, bun, delta, starship, yazi, lazygit, neovim, ruff, httpie, atuin, rtk)
+#   (fnm, bun, fzf, eza, delta, yq, starship, yazi, lazygit, neovim, ruff, httpie, atuin, rtk)
 
 # 빌드/기본
 build-essential
@@ -28,13 +28,13 @@ tmux
 
 # 현대적인 터미널 도구
 bat                             # 'cat' with syntax highlighting and Git intergration
-fzf                             # command-line fuzzy finder
-eza                             # alternative to 'ls'
+# fzf                             # command-line fuzzy finder, 바이너리로 설치
+# eza # X, apt(22.04)에 없음 → GitHub releases 바이너리로 설치
 fd-find                         # alternative to 'find', `ln -s $(which fdfind) ~/.local/bin/fd` + `$HOME/.local/bin`를 `$PATH`에 등록 필요
 # delta # X, apt로 설치 안됨
 ripgrep                         # rg
 jq
-yq
+# yq # X, apt(22.04)에 없음 → GitHub releases 바이너리로 설치
 # starship # X, curl로 설치 필요
 # yazi # X, 바이너리 다운로드 필요(https://github.com/sxyazi/yazi/releases)
 # lazygit # X, PPA 추가 혹은 바이너리 다운로드 필요

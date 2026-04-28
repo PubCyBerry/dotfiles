@@ -112,10 +112,11 @@ jobs:
 
       - name: Install yazi
         run: |
+          # musl 정적 빌드 사용 → glibc 버전 무관 (install.sh와 동일 코드 경로)
           ARCH="$(dpkg --print-architecture)"
           case "$ARCH" in
-            amd64) TRIPLE="x86_64-unknown-linux-gnu" ;;
-            arm64) TRIPLE="aarch64-unknown-linux-gnu" ;;
+            amd64) TRIPLE="x86_64-unknown-linux-musl" ;;
+            arm64) TRIPLE="aarch64-unknown-linux-musl" ;;
             *) echo "Unsupported: $ARCH"; exit 0 ;;
           esac
           TMP="$(mktemp --suffix=.deb)"
@@ -191,6 +192,35 @@ jobs:
           sudo install -m 755 "$TMP/fzf" /usr/local/bin/fzf
           rm -rf "$TMP"
 
+      - name: Install eza
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) EZA_TRIPLE="x86_64-unknown-linux-gnu" ;;
+            arm64) EZA_TRIPLE="aarch64-unknown-linux-gnu" ;;
+            *) exit 0 ;;
+          esac
+          TMP="$(mktemp -d)"
+          curl -fsSL -o "$TMP/eza.tar.gz" \
+            "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
+          tar -xzf "$TMP/eza.tar.gz" -C "$TMP"
+          sudo install -m 755 "$TMP/eza" /usr/local/bin/eza
+          rm -rf "$TMP"
+
+      - name: Install yq
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) YQ_ARCH="linux_amd64" ;;
+            arm64) YQ_ARCH="linux_arm64" ;;
+            *) exit 0 ;;
+          esac
+          TMP="$(mktemp -d)"
+          curl -fsSL -o "$TMP/yq" \
+            "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
+          sudo install -m 755 "$TMP/yq" /usr/local/bin/yq
+          rm -rf "$TMP"
+
       - name: Verify binaries
         run: |
           {
@@ -199,6 +229,8 @@ jobs:
             nvim --version | head -1
             delta --version
             fzf --version
+            eza --version | head -1
+            yq --version
           } | tee /tmp/phase3.txt
 
       - uses: actions/upload-artifact@v4
