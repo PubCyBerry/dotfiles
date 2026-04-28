@@ -325,15 +325,7 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
     }
 }
 
-# rtk init --hook-only는 Windows 미지원 → GitHub에서 직접 다운로드
-New-Item -ItemType Directory -Force -Path (Join-Path $ClaudeDir "hooks") | Out-Null
-$hookPath = Join-Path $ClaudeDir "hooks\rtk-rewrite.sh"
-try {
-    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -OutFile $hookPath -UseBasicParsing
-    Write-Host "    RTK hook installed"
-} catch {
-    Write-Host "    [!] RTK hook download failed: $_"
-}
+# hook 등록은 config\claude\settings.json에 박혀 있고 3-1 단계의 settings.json 병합으로 반영됨
 
 # =============================================
 # 4. PowerShell 프로파일 설정 (마커 방식)

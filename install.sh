@@ -576,9 +576,7 @@ else
         fi
     fi
 
-    # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-    # < /dev/null: stdin을 non-terminal로 만들어 telemetry consent prompt blocking 방지
-    rtk init -g --hook-only --auto-patch < /dev/null
+    # hook 등록은 config/claude/settings.json에 박혀 있고 3-1 단계의 jq deep-merge로 ~/.claude/settings.json에 반영됨
 fi
 
 # =============================================
