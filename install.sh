@@ -26,7 +26,7 @@ manifest_lines() {
     # 주석/공백 제거 + 인라인 '#' 주석 제거
     local path="$1"
     [[ -f "$path" ]] || return 0
-    sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
+    LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
 }
 
 set_profile_block() {
