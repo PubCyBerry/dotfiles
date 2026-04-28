@@ -41,10 +41,18 @@ dotfiles/
 ├── manifests/           # 패키지/스킬 목록
 │   ├── winget.txt       # Windows winget 패키지 ID
 │   ├── apt.txt          # Ubuntu apt 패키지
-│   ├── npm-global.txt   # npm 전역 패키지
+│   ├── npm-global.txt   # npm 전역 패키지 (@google/gemini-cli, @openai/codex)
 │   └── skills.txt       # Claude Code skills (owner/repo@skill-name)
 ├── macos/               # macOS 지원 (보류)
 └── docs/
+    ├── tools.md                   # CLI 도구 사용법 cheatsheet
+    ├── ai-agents.md               # Claude Code, 플러그인, skills 상세
+    ├── claude-hud.md              # Claude HUD 설정 가이드
+    ├── uninstall.md               # 클린 언인스톨 가이드
+    ├── git-commit-convention.md   # Conventional Commits 규칙
+    ├── worktree-git-workflows.md  # Worktree 커밋 히스토리 관리 전략
+    ├── ci-pipelines.md            # GitHub Actions CI 파이프라인 가이드
+    └── github-actions.md          # GitHub Actions 핵심 개념 레퍼런스
 ```
 
 ### Windows install.ps1 실행 순서

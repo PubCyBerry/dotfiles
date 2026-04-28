@@ -78,6 +78,17 @@ sg -p 'console.log($A)' -r 'logger.info($A)' src/  # 일괄 치환
 sg -p 'useState($A)' -l ts            # TypeScript 파일에서 useState 검색
 ```
 
+### mgrep — 시맨틱 코드 검색 (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 별도 API 키가 필요하다. 필요 시 직접 설치: `npm install -g @mixedbread-ai/mgrep`
+
+텍스트 매칭이 아닌 의미(semantic) 기반으로 코드·문서·이미지·PDF를 검색한다.
+
+```bash
+mgrep "인증 처리 로직"    # 의미적으로 관련된 코드 검색
+mgrep "error handling" src/
+```
+
 ## Git
 
 ### delta — git diff 뷰어
@@ -140,6 +151,18 @@ atuin stats            # 명령어 사용 통계
 
 `Ctrl+R` 입력 시 atuin 검색 UI 자동 바인딩.
 
+### navi — 대화형 cheatsheet (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 필요 시 직접 설치: `winget install denisidoro.navi`
+
+명령어와 설명을 인터랙티브하게 탐색하고 실행한다.
+
+```bash
+navi                  # 전체 cheatsheet 탐색
+navi --query git      # git 관련 항목 검색
+navi --print          # 명령어만 출력 (실행 안 함, 클립보드 확인용)
+```
+
 ### tmux — 터미널 멀티플렉서
 
 ```bash
@@ -187,6 +210,19 @@ https example.com                             # HTTPS 단축 명령
 ruff check .         # 린팅
 ruff check . --fix   # 자동 수정
 ruff format .        # 포매팅
+```
+
+### hyperfine — 커맨드라인 벤치마킹 (선택적 설치)
+
+> winget.txt에 포함되지 않아 자동 설치되지 않는다. 필요 시 직접 설치: `winget install sharkdp.hyperfine`
+
+두 명령어의 실행 시간을 통계적으로 비교한다.
+
+```bash
+hyperfine 'sleep 0.3'                      # 단일 명령 벤치마크
+hyperfine 'find . -name "*.md"' 'fd .md'   # 두 명령 비교
+hyperfine --warmup 3 'rg pattern .'        # 워밍업 포함 (캐시 안정화)
+hyperfine --export-markdown bench.md 'cmd' # 결과를 마크다운 테이블로 저장
 ```
 
 ### RTK — 토큰 최적화 프록시

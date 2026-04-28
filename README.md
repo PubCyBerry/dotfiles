@@ -100,6 +100,8 @@ dotfiles/
     uninstall.md                   # 클린 언인스톨 가이드
     git-commit-convention.md       # Git Commit Convention (Conventional Commits)
     worktree-git-workflows.md      # Worktree 커밋 히스토리 관리 전략
+    ci-pipelines.md                # GitHub Actions CI 파이프라인 가이드 (PR Gate / Precision / Freshness)
+    github-actions.md              # GitHub Actions 핵심 개념 레퍼런스
 ```
 
 ## Neovim 키맵

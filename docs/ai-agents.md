@@ -9,7 +9,7 @@ Claude Code와 관련 에이전트/스킬 설정 상세.
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (도구 사용 규칙) |
 | `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
 
-Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패치 후 복사된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로, CLAUDE.md는 단순 복사로 설정된다.
+Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합, CLAUDE.md는 단순 복사된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로, CLAUDE.md는 단순 복사로 설정된다.
 
 ## claude-hud
 
@@ -17,11 +17,20 @@ Linux에서는 CLAUDE.md는 심볼릭 링크, settings.json은 MCP 명령어 패
 → 상세 설치/설정 가이드: [docs/claude-hud.md](claude-hud.md)  
 → 기본 설정 파일: `config/claude/claude-hud.json`
 
+## npm 전역 패키지
+
+`manifests/npm-global.txt`에 목록을 유지하고, fnm으로 설치된 Node.js의 npm으로 일괄 설치한다.
+
+| 패키지 | 설명 |
+|--------|------|
+| `@google/gemini-cli` | Google Gemini CLI — Gemini 모델과 터미널에서 대화 |
+| `@openai/codex` | OpenAI Codex CLI — 코드 생성/수정 에이전트 |
+
 ## npx skills
 
-`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, `install.ps1`이 일괄 설치한다.
+`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, install 스크립트가 일괄 설치한다.
 
 | 스킬 | 설명 |
 |------|------|
-| `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 |
-| `skill-creator` | 새 skill 생성 |
+| `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 (읽기/생성/편집) |
+| `skill-creator` | 새 skill 생성 및 최적화 |
