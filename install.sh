@@ -489,7 +489,8 @@ else
     fi
 
     # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-    export RTK_TELEMETRY_DISABLED=1 rtk init -g --hook-only --auto-patch
+    # < /dev/null: stdin을 non-terminal로 만들어 telemetry consent prompt blocking 방지
+    rtk init -g --hook-only --auto-patch < /dev/null
 fi
 
 # =============================================
