@@ -272,6 +272,7 @@ if ! command -v yazi >/dev/null 2>&1; then
         TMP_DEB="$(mktemp --suffix=.deb)"
         curl -fsSL -o "$TMP_DEB" \
             "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
+        chmod 644 "$TMP_DEB"
         DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
         rm -f "$TMP_DEB"
         echo "    yazi installed."
@@ -345,6 +346,7 @@ if ! command -v delta >/dev/null 2>&1; then
         TMP_DEB="$(mktemp --suffix=.deb)"
         curl -fsSL -o "$TMP_DEB" \
             "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
+        chmod 644 "$TMP_DEB"
         DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
         rm -f "$TMP_DEB"
         echo "    git-delta installed."
@@ -494,7 +496,7 @@ if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
         repo="${BASH_REMATCH[1]}"
         skill="${BASH_REMATCH[2]}"
         echo "    Adding skill: $skill from $repo..."
-        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code 2>&1 | sed 's/^/    /'; then
+        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null 2>&1 | sed 's/^/    /'; then
             echo "    [!] Failed: $repo@$skill"
         fi
     done < <(manifest_lines "$SKILLS_FILE")
