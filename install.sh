@@ -480,8 +480,7 @@ else
 fi
 
 # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-export RTK_TELEMETRY_DISABLED=1
-rtk init -g --hook-only
+export RTK_TELEMETRY_DISABLED=1 rtk init -g --hook-only --auto-patch
 # mkdir -p "$CLAUDE_DIR/hooks"
 # HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
 # if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
