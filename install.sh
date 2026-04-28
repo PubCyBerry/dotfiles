@@ -22,15 +22,17 @@ mkdir -p "$LOCAL_BIN" "$HOME/.config"
 # =============================================
 # 헬퍼 함수
 # =============================================
+_TMPFILES=()
+_cleanup() { [[ ${#_TMPFILES[@]} -gt 0 ]] && rm -rf "${_TMPFILES[@]}"; }
+trap _cleanup EXIT
+
 manifest_lines() {
-    # 주석/공백 제거 + 인라인 '#' 주석 제거
     local path="$1"
     [[ -f "$path" ]] || return 0
     LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
 }
 
 set_profile_block() {
-    # 마커 블록 멱등 삽입/교체
     local file="$1" content="$2"
     local begin="# ===== dotfiles-begin ====="
     local end="# ===== dotfiles-end ====="
@@ -41,8 +43,7 @@ set_profile_block() {
     [[ -f "$file" ]] || : > "$file"
 
     if grep -qF "$begin" "$file" && grep -qF "$end" "$file"; then
-        # 기존 블록 교체 (sed 멀티라인)
-        tmp="$(mktemp)"
+        tmp="$(mktemp)"; _TMPFILES+=("$tmp")
         awk -v begin="$begin" -v end="$end" -v repl="$block" '
             BEGIN { skip = 0 }
             $0 == begin { print repl; skip = 1; next }
@@ -58,7 +59,6 @@ set_profile_block() {
 }
 
 merge_gitconfig() {
-    # 기존 git config 키 보존, 미설정인 키만 추가
     local path="$1"
     if [[ ! -f "$path" ]]; then
         echo "    [!] $path not found, skipping."
@@ -72,8 +72,8 @@ merge_gitconfig() {
 
     local section="" trimmed key value
     while IFS= read -r line || [[ -n "$line" ]]; do
-        trimmed="${line#"${line%%[![:space:]]*}"}"   # ltrim
-        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"   # rtrim
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
         if [[ "$trimmed" =~ ^\[(.+)\]$ ]]; then
             section="${BASH_REMATCH[1]}"
         elif [[ -n "$trimmed" && "${trimmed:0:1}" != "#" && -n "$section" ]]; then
@@ -115,7 +115,50 @@ gh_release_tag() {
     local auth_header=()
     [[ -n "${GITHUB_TOKEN:-}" ]] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
     curl -fsSL "${auth_header[@]}" "https://api.github.com/repos/$1/releases/latest" \
-        | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/'
+        | jq -r '.tag_name // empty'
+}
+
+arch_triple() {
+    # ARCH에 맞는 triple 반환. schema 예: "amd64:x86_64-linux-musl|arm64:aarch64-linux-musl"
+    local schema="$1" entry
+    for entry in $(echo "$schema" | tr '|' ' '); do
+        if [[ "${entry%%:*}" == "$ARCH" ]]; then
+            echo "${entry#*:}"; return
+        fi
+    done
+}
+
+install_gh_tar() {
+    # tar.gz → /usr/local/bin/$name. $1=name $2=url $3=bin_in_archive(default:$1)
+    local name="$1" url="$2" bin="${3:-$1}"
+    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
+    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
+    curl -fsSL -o "$TMP/$name.tar.gz" "$url"
+    tar -xzf "$TMP/$name.tar.gz" -C "$TMP" "$bin"
+    run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
+    hash -r 2>/dev/null || true
+    echo "    $name installed."
+}
+
+install_gh_deb() {
+    # .deb → apt-get install. $1=name $2=url
+    local name="$1" url="$2"
+    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
+    local TMP_DEB; TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
+    curl -fsSL -o "$TMP_DEB" "$url"
+    chmod 644 "$TMP_DEB"
+    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
+    echo "    $name installed."
+}
+
+install_gh_bin() {
+    # 단일 바이너리 → /usr/local/bin/$name. $1=name $2=url
+    local name="$1" url="$2"
+    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
+    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
+    curl -fsSL -o "$TMP/$name" "$url"
+    run_privileged install -m 755 "$TMP/$name" "/usr/local/bin/$name"
+    echo "    $name installed."
 }
 
 echo "==> Linux (Ubuntu) dotfiles setup starting..."
@@ -234,7 +277,6 @@ fi
 echo
 echo "==> Installing atuin (official script, non-interactive)..."
 if ! command -v atuin >/dev/null 2>&1; then
-    # ATUIN_NO_MODIFY_PATH=1: install.sh가 직접 PATH 처리 (bashrc 수정은 우리가 담당)
     curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
         | sh -s -- --non-interactive || echo "    [!] atuin install returned non-zero (check log)."
 else
@@ -265,7 +307,6 @@ if [[ -x "$HOME/.bun/bin/bun" ]] && [[ ! -e "$LOCAL_BIN/bun" ]]; then
     echo "    Linked $LOCAL_BIN/bun -> bun"
 fi
 
-# 현재 셸에서 도구를 사용 가능하도록 PATH 보강
 add_to_path_runtime "$LOCAL_BIN"
 add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
@@ -273,58 +314,42 @@ add_to_path_runtime "$HOME/.local/share/fnm"
 # =============================================
 # 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
 # =============================================
+
+# GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
+_TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
+gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit" &
+gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"   &
+gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"     &
+wait
+
 echo
 echo "==> Installing yazi from GitHub releases..."
 # musl 정적 빌드 사용 → glibc 버전 무관 (22.04 glibc 2.35 등 구버전에서도 동작)
-# gnu 빌드는 24.04 빌드러너에서 컴파일되어 GLIBC_2.39 요구함.
-yazi_works=false
+YAZI_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-musl|arm64:aarch64-unknown-linux-musl")"
 if command -v yazi >/dev/null 2>&1 && yazi --version >/dev/null 2>&1; then
-    yazi_works=true
     echo "    yazi already installed: $(yazi --version | head -1)"
-fi
-if ! $yazi_works; then
-    case "$ARCH" in
-        amd64) YAZI_TRIPLE="x86_64-unknown-linux-musl" ;;
-        arm64) YAZI_TRIPLE="aarch64-unknown-linux-musl" ;;
-        *)     YAZI_TRIPLE="" ;;
-    esac
-    if [[ -n "$YAZI_TRIPLE" ]]; then
-        TMP_DEB="$(mktemp --suffix=.deb)"
-        curl -fsSL -o "$TMP_DEB" \
-            "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
-        chmod 644 "$TMP_DEB"
-        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-        rm -f "$TMP_DEB"
-        hash -r 2>/dev/null || true
-        echo "    yazi installed: $(yazi --version | head -1)"
-    else
-        echo "    [!] Unsupported arch for yazi: $ARCH (skipping)"
-    fi
+elif [[ -n "$YAZI_TRIPLE" ]]; then
+    TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
+    curl -fsSL -o "$TMP_DEB" \
+        "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
+    chmod 644 "$TMP_DEB"
+    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
+    hash -r 2>/dev/null || true
+    echo "    yazi installed: $(yazi --version | head -1)"
+else
+    echo "    [!] Unsupported arch for yazi: $ARCH (skipping)"
 fi
 
 echo
 echo "==> Installing lazygit from GitHub releases..."
-if ! command -v lazygit >/dev/null 2>&1; then
-    case "$ARCH" in
-        amd64) LG_ARCH="Linux_x86_64" ;;
-        arm64) LG_ARCH="Linux_arm64" ;;
-        *)     LG_ARCH="" ;;
-    esac
-    if [[ -n "$LG_ARCH" ]]; then
-        LG_TAG="$(gh_release_tag jesseduffield/lazygit)"     # vX.Y.Z
-        LG_VER="${LG_TAG#v}"
-        TMP_DIR="$(mktemp -d)"
-        curl -fsSL -o "$TMP_DIR/lazygit.tar.gz" \
-            "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/lazygit.tar.gz" -C "$TMP_DIR" lazygit
-        run_privileged install -m 755 "$TMP_DIR/lazygit" /usr/local/bin/lazygit
-        rm -rf "$TMP_DIR"
-        echo "    lazygit installed."
-    else
-        echo "    [!] Unsupported arch for lazygit: $ARCH (skipping)"
-    fi
+LG_ARCH="$(arch_triple "amd64:Linux_x86_64|arm64:Linux_arm64")"
+if [[ -n "$LG_ARCH" ]]; then
+    LG_TAG="$(cat "$_TAG_DIR/lazygit")"
+    LG_VER="${LG_TAG#v}"
+    install_gh_tar "lazygit" \
+        "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
 else
-    echo "    lazygit already installed."
+    echo "    [!] Unsupported arch for lazygit: $ARCH (skipping)"
 fi
 
 echo
@@ -344,20 +369,15 @@ if command -v nvim >/dev/null 2>&1; then
     fi
 fi
 if $nvim_needs_install; then
-    case "$ARCH" in
-        amd64) NVIM_ARCH="x86_64" ;;
-        arm64) NVIM_ARCH="aarch64" ;;
-        *)     NVIM_ARCH="" ;;
-    esac
+    NVIM_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
     if [[ -n "$NVIM_ARCH" ]]; then
-        TMP_DIR="$(mktemp -d)"
+        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
         curl -fsSL -o "$TMP_DIR/nvim.tar.gz" \
             "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
         tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
         NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
         run_privileged cp -r "${NVIM_DIR}/." /usr/local/
-        rm -rf "$TMP_DIR"
-        hash -r 2>/dev/null || true   # 캐시된 /usr/bin/nvim 경로 무효화
+        hash -r 2>/dev/null || true
         echo "    neovim installed: $(nvim --version | head -1)"
     else
         echo "    [!] Unsupported arch for neovim: $ARCH (skipping)"
@@ -366,27 +386,14 @@ fi
 
 echo
 echo "==> Installing git-delta from GitHub releases..."
-if ! command -v delta >/dev/null 2>&1; then
-    case "$ARCH" in
-        amd64) DELTA_ARCH="amd64" ;;
-        arm64) DELTA_ARCH="arm64" ;;
-        *)     DELTA_ARCH="" ;;
-    esac
-    if [[ -n "$DELTA_ARCH" ]]; then
-        DELTA_TAG="$(gh_release_tag dandavison/delta)"        # 0.X.Y (no 'v')
-        DELTA_VER="${DELTA_TAG#v}"
-        TMP_DEB="$(mktemp --suffix=.deb)"
-        curl -fsSL -o "$TMP_DEB" \
-            "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
-        chmod 644 "$TMP_DEB"
-        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-        rm -f "$TMP_DEB"
-        echo "    git-delta installed."
-    else
-        echo "    [!] Unsupported arch for delta: $ARCH (skipping)"
-    fi
+DELTA_ARCH="$(arch_triple "amd64:amd64|arm64:arm64")"
+if [[ -n "$DELTA_ARCH" ]]; then
+    DELTA_TAG="$(cat "$_TAG_DIR/delta")"
+    DELTA_VER="${DELTA_TAG#v}"
+    install_gh_deb "delta" \
+        "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
 else
-    echo "    delta already installed."
+    echo "    [!] Unsupported arch for delta: $ARCH (skipping)"
 fi
 
 echo
@@ -406,21 +413,16 @@ if command -v fzf >/dev/null 2>&1; then
     fi
 fi
 if $fzf_needs_install; then
-    case "$ARCH" in
-        amd64) FZF_ARCH="linux_amd64" ;;
-        arm64) FZF_ARCH="linux_arm64" ;;
-        *)     FZF_ARCH="" ;;
-    esac
+    FZF_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
     if [[ -n "$FZF_ARCH" ]]; then
-        FZF_TAG="$(gh_release_tag junegunn/fzf)"
+        FZF_TAG="$(cat "$_TAG_DIR/fzf")"
         FZF_VER="${FZF_TAG#v}"
-        TMP_DIR="$(mktemp -d)"
+        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
         curl -fsSL -o "$TMP_DIR/fzf.tar.gz" \
             "https://github.com/junegunn/fzf/releases/download/${FZF_TAG}/fzf-${FZF_VER}-${FZF_ARCH}.tar.gz"
         tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
         run_privileged install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
-        rm -rf "$TMP_DIR"
-        hash -r 2>/dev/null || true   # 캐시된 /usr/bin/fzf 경로 무효화
+        hash -r 2>/dev/null || true
         echo "    fzf installed: $(fzf --version)"
     else
         echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
@@ -429,47 +431,22 @@ fi
 
 echo
 echo "==> Installing eza from GitHub releases..."
-if ! command -v eza >/dev/null 2>&1; then
-    case "$ARCH" in
-        amd64) EZA_TRIPLE="x86_64-unknown-linux-gnu" ;;
-        arm64) EZA_TRIPLE="aarch64-unknown-linux-gnu" ;;
-        *)     EZA_TRIPLE="" ;;
-    esac
-    if [[ -n "$EZA_TRIPLE" ]]; then
-        TMP_DIR="$(mktemp -d)"
-        curl -fsSL -o "$TMP_DIR/eza.tar.gz" \
-            "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
-        tar -xzf "$TMP_DIR/eza.tar.gz" -C "$TMP_DIR"
-        run_privileged install -m 755 "$TMP_DIR/eza" /usr/local/bin/eza
-        rm -rf "$TMP_DIR"
-        echo "    eza installed."
-    else
-        echo "    [!] Unsupported arch for eza: $ARCH (skipping)"
-    fi
+EZA_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-gnu|arm64:aarch64-unknown-linux-gnu")"
+if [[ -n "$EZA_TRIPLE" ]]; then
+    install_gh_tar "eza" \
+        "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
 else
-    echo "    eza already installed."
+    echo "    [!] Unsupported arch for eza: $ARCH (skipping)"
 fi
 
 echo
 echo "==> Installing yq from GitHub releases..."
-if ! command -v yq >/dev/null 2>&1; then
-    case "$ARCH" in
-        amd64) YQ_ARCH="linux_amd64" ;;
-        arm64) YQ_ARCH="linux_arm64" ;;
-        *)     YQ_ARCH="" ;;
-    esac
-    if [[ -n "$YQ_ARCH" ]]; then
-        TMP_DIR="$(mktemp -d)"
-        curl -fsSL -o "$TMP_DIR/yq" \
-            "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
-        run_privileged install -m 755 "$TMP_DIR/yq" /usr/local/bin/yq
-        rm -rf "$TMP_DIR"
-        echo "    yq installed."
-    else
-        echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
-    fi
+YQ_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
+if [[ -n "$YQ_ARCH" ]]; then
+    install_gh_bin "yq" \
+        "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
 else
-    echo "    yq already installed."
+    echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
 fi
 
 # =============================================
@@ -478,7 +455,6 @@ fi
 echo
 echo "==> Installing Node.js LTS via fnm..."
 if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
-    add_to_path_runtime "$HOME/.local/share/fnm"
     eval "$(fnm env --shell bash)"
     fnm install --lts
     fnm default lts-latest
@@ -516,7 +492,6 @@ if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
     echo "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)"
 else
     echo "==> Installing Claude Code (native)..."
-    add_to_path_runtime "$LOCAL_BIN"
     if command -v claude >/dev/null 2>&1; then
         echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
     else
@@ -536,10 +511,14 @@ else
     if [[ -f "$SETTINGS_SRC" ]]; then
         if [[ -f "$SETTINGS_DST" ]] && command -v jq >/dev/null 2>&1; then
             # 기존 키 보존(claude-hud의 statusLine 등) + 새 키 덮어쓰기/추가
-            TMP="$(mktemp)"
-            jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP"
-            mv "$TMP" "$SETTINGS_DST"
-            echo "    Merged settings.json"
+            TMP="$(mktemp)"; _TMPFILES+=("$TMP")
+            if jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP" \
+                && [[ -s "$TMP" ]]; then
+                mv "$TMP" "$SETTINGS_DST"
+                echo "    Merged settings.json"
+            else
+                echo "    [!] jq merge failed, keeping existing settings.json"
+            fi
         else
             cp -f "$SETTINGS_SRC" "$SETTINGS_DST"
             echo "    Copied settings.json"
@@ -584,19 +563,14 @@ fi
 # =============================================
 echo
 echo "==> Updating bash profile..."
-BASHRC_SRC="$ROOT/config/bash/bashrc"
-if [[ -f "$BASHRC_SRC" ]]; then
-    BASHRC_CONTENT="$(cat "$BASHRC_SRC")"
-    set_profile_block "$HOME/.bashrc" "$BASHRC_CONTENT"
-else
-    echo "    [!] config/bash/bashrc not found, skipping bashrc."
-fi
-
-INPUTRC_SRC="$ROOT/config/bash/inputrc"
-if [[ -f "$INPUTRC_SRC" ]]; then
-    INPUTRC_CONTENT="$(cat "$INPUTRC_SRC")"
-    set_profile_block "$HOME/.inputrc" "$INPUTRC_CONTENT"
-fi
+for _profile in bashrc inputrc; do
+    _src="$ROOT/config/bash/$_profile"
+    if [[ -f "$_src" ]]; then
+        set_profile_block "$HOME/.$_profile" "$(cat "$_src")"
+    elif [[ "$_profile" == "bashrc" ]]; then
+        echo "    [!] config/bash/bashrc not found, skipping bashrc."
+    fi
+done
 
 # =============================================
 # 6. Claude Code skills 설치 (manifests/skills.txt)
