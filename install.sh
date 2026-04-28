@@ -332,7 +332,7 @@ if ! command -v nvim >/dev/null 2>&1; then
             "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
         tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
         NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
-        run_privileged cp -r "${NVIM_DIR}." /usr/local/
+        run_privileged cp -r "${NVIM_DIR}/." /usr/local/
         rm -rf "$TMP_DIR"
         echo "    neovim installed: $(nvim --version | head -1)"
     else
