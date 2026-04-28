@@ -245,6 +245,10 @@ if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; 
 else
     echo "    fnm already installed."
 fi
+if [[ -x "$HOME/.local/share/fnm/fnm" ]] && [[ ! -e "$LOCAL_BIN/fnm" ]]; then
+    ln -sf "$HOME/.local/share/fnm/fnm" "$LOCAL_BIN/fnm"
+    echo "    Linked $LOCAL_BIN/fnm -> fnm"
+fi
 
 echo
 echo "==> Installing bun (official script)..."
@@ -252,6 +256,10 @@ if ! command -v bun >/dev/null 2>&1 && [[ ! -x "$HOME/.bun/bin/bun" ]]; then
     curl -fsSL https://bun.sh/install | bash
 else
     echo "    bun already installed."
+fi
+if [[ -x "$HOME/.bun/bin/bun" ]] && [[ ! -e "$LOCAL_BIN/bun" ]]; then
+    ln -sf "$HOME/.bun/bin/bun" "$LOCAL_BIN/bun"
+    echo "    Linked $LOCAL_BIN/bun -> bun"
 fi
 
 # 현재 셸에서 도구를 사용 가능하도록 PATH 보강
@@ -323,7 +331,7 @@ if ! command -v nvim >/dev/null 2>&1; then
         curl -fsSL -o "$TMP_DIR/nvim.tar.gz" \
             "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
         tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
-        NVIM_DIR="$(ls -d "$TMP_DIR"/nvim-linux-*/ 2>/dev/null | head -1)"
+        NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
         run_privileged cp -r "${NVIM_DIR}." /usr/local/
         rm -rf "$TMP_DIR"
         echo "    neovim installed: $(nvim --version | head -1)"
