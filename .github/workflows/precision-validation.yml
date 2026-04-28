@@ -1,0 +1,317 @@
+name: Precision Validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - install.sh
+      - "manifests/**"
+
+jobs:
+  phase1-apt:
+    name: "Phase 1: apt packages"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu-24.04-${{ hashFiles('manifests/apt.txt') }}
+          restore-keys: apt-ubuntu-24.04-
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update -y
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+            $(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' manifests/apt.txt | tr '\n' ' ') \
+            --no-install-recommends
+
+      - name: Create symlinks (bat, fd)
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          command -v bat  >/dev/null || ln -sf "$(command -v batcat)"  "$HOME/.local/bin/bat"
+          command -v fd   >/dev/null || ln -sf "$(command -v fdfind)"  "$HOME/.local/bin/fd"
+
+      - name: Verify apt tools
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          {
+            git --version
+            curl --version | head -1
+            tmux -V
+            jq --version
+            gh --version
+            rg --version | head -1
+            bat --version | head -1
+            fd --version | head -1
+          } | tee /tmp/phase1.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase1-versions
+          path: /tmp/phase1.txt
+          retention-days: 7
+
+  phase2-official-scripts:
+    name: "Phase 2: official install scripts"
+    needs: phase1-apt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Install zoxide
+        run: curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+
+      - name: Install starship
+        run: curl -sS https://starship.rs/install.sh | sh -s -- -y
+
+      - name: Install atuin
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
+            | sh -s -- --non-interactive || true
+
+      - name: Install fnm
+        run: |
+          curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
+
+      - name: Install bun
+        run: curl -fsSL https://bun.sh/install | bash
+
+      - name: Verify
+        run: |
+          export PATH="$HOME/.local/bin:$HOME/.local/share/fnm:$HOME/.bun/bin:$PATH"
+          {
+            zoxide --version
+            starship --version
+            atuin --version 2>/dev/null || echo "atuin: check skipped"
+            fnm --version
+            bun --version
+          } | tee /tmp/phase2.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase2-versions
+          path: /tmp/phase2.txt
+          retention-days: 7
+
+  phase3-github-releases:
+    name: "Phase 3: GitHub releases binaries"
+    needs: phase1-apt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Install apt deps
+        run: sudo apt-get install -y curl jq
+
+      - name: Install yazi
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) TRIPLE="x86_64-unknown-linux-gnu" ;;
+            arm64) TRIPLE="aarch64-unknown-linux-gnu" ;;
+            *) echo "Unsupported: $ARCH"; exit 0 ;;
+          esac
+          TMP="$(mktemp --suffix=.deb)"
+          curl -fsSL -o "$TMP" \
+            "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${TRIPLE}.deb"
+          sudo apt-get install -y "$TMP"
+          rm -f "$TMP"
+
+      - name: Install lazygit
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) LG_ARCH="Linux_x86_64" ;;
+            arm64) LG_ARCH="Linux_arm64" ;;
+            *) exit 0 ;;
+          esac
+          TAG="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" \
+            | jq -r '.tag_name')"
+          VER="${TAG#v}"
+          TMP="$(mktemp -d)"
+          curl -fsSL -o "$TMP/lg.tar.gz" \
+            "https://github.com/jesseduffield/lazygit/releases/download/${TAG}/lazygit_${VER}_${LG_ARCH}.tar.gz"
+          tar -xzf "$TMP/lg.tar.gz" -C "$TMP" lazygit
+          sudo install -m 755 "$TMP/lazygit" /usr/local/bin/lazygit
+          rm -rf "$TMP"
+
+      - name: Install neovim
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) NVIM_ARCH="x86_64" ;;
+            arm64) NVIM_ARCH="aarch64" ;;
+            *) exit 0 ;;
+          esac
+          TMP="$(mktemp -d)"
+          curl -fsSL -o "$TMP/nvim.tar.gz" \
+            "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
+          tar -xzf "$TMP/nvim.tar.gz" -C "$TMP"
+          NVIM_DIR="$(ls -d "$TMP"/nvim-linux-*/ | head -1)"
+          sudo cp -r "${NVIM_DIR}." /usr/local/
+          rm -rf "$TMP"
+
+      - name: Install git-delta
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          TAG="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/dandavison/delta/releases/latest" \
+            | jq -r '.tag_name')"
+          VER="${TAG#v}"
+          TMP="$(mktemp --suffix=.deb)"
+          curl -fsSL -o "$TMP" \
+            "https://github.com/dandavison/delta/releases/download/${TAG}/git-delta_${VER}_${ARCH}.deb"
+          sudo apt-get install -y "$TMP"
+          rm -f "$TMP"
+
+      - name: Install fzf
+        run: |
+          ARCH="$(dpkg --print-architecture)"
+          case "$ARCH" in
+            amd64) FZF_ARCH="linux_amd64" ;;
+            arm64) FZF_ARCH="linux_arm64" ;;
+            *) exit 0 ;;
+          esac
+          TAG="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/junegunn/fzf/releases/latest" \
+            | jq -r '.tag_name')"
+          VER="${TAG#v}"
+          TMP="$(mktemp -d)"
+          curl -fsSL -o "$TMP/fzf.tar.gz" \
+            "https://github.com/junegunn/fzf/releases/download/${TAG}/fzf-${VER}-${FZF_ARCH}.tar.gz"
+          tar -xzf "$TMP/fzf.tar.gz" -C "$TMP" fzf
+          sudo install -m 755 "$TMP/fzf" /usr/local/bin/fzf
+          rm -rf "$TMP"
+
+      - name: Verify binaries
+        run: |
+          {
+            yazi --version
+            lazygit --version
+            nvim --version | head -1
+            delta --version
+            fzf --version
+          } | tee /tmp/phase3.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-versions
+          path: /tmp/phase3.txt
+          retention-days: 7
+
+  phase4-nodejs-npm:
+    name: "Phase 4: Node.js LTS + npm packages"
+    needs: phase2-official-scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install fnm
+        run: curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
+
+      - name: Install Node.js LTS
+        run: |
+          export PATH="$HOME/.local/share/fnm:$PATH"
+          eval "$(fnm env --shell bash)"
+          fnm install --lts
+          fnm default lts-latest
+          fnm use lts-latest
+          node --version
+          npm --version
+
+      - name: Install global npm packages
+        run: |
+          export PATH="$HOME/.local/share/fnm:$PATH"
+          eval "$(fnm env --shell bash)"
+          while IFS= read -r pkg; do
+            [[ -z "$pkg" ]] && continue
+            npm install -g "$pkg" && echo "Installed: $pkg" || echo "Failed: $pkg"
+          done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' manifests/npm-global.txt)
+          npm list -g --depth=0 | tee /tmp/phase4.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase4-versions
+          path: /tmp/phase4.txt
+          retention-days: 7
+
+  phase5-configs:
+    name: "Phase 5: Config deployment"
+    needs: phase1-apt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: gitconfig 문법 검증
+        run: git config --file config/git/gitconfig --list > /dev/null
+
+      - name: JSON 문법 검증
+        run: |
+          jq empty config/claude/settings.json
+          jq empty config/claude/claude-hud.json
+
+      - name: 설정 파일 배포 시뮬레이션
+        run: |
+          export HOME="$RUNNER_TEMP/test-home"
+          mkdir -p "$HOME/.config/nvim" "$HOME/.config/yazi" "$HOME/.local/bin"
+
+          # gitconfig 병합 (Linux override)
+          cp config/git/gitconfig "$RUNNER_TEMP/test.gitconfig"
+          git config --file "$RUNNER_TEMP/test.gitconfig" core.autocrlf input
+          git config --file "$RUNNER_TEMP/test.gitconfig" core.fileMode true
+
+          # tmux 설정
+          cp config/linux/tmux.conf "$HOME/.tmux.conf"
+
+          # yazi 설정
+          cp -r config/yazi/. "$HOME/.config/yazi/"
+
+          # nvim 설정 (기존 없으면 배포)
+          [[ -f "$HOME/.config/nvim/init.lua" ]] || cp -r config/nvim/. "$HOME/.config/nvim/"
+
+          # starship 설정
+          cp config/starship.toml "$HOME/.config/starship.toml"
+
+          echo "Config deployment OK"
+
+  final-summary:
+    name: Summary
+    needs:
+      - phase1-apt
+      - phase2-official-scripts
+      - phase3-github-releases
+      - phase4-nodejs-npm
+      - phase5-configs
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          declare -A results=(
+            [phase1-apt]="${{ needs.phase1-apt.result }}"
+            [phase2-official-scripts]="${{ needs.phase2-official-scripts.result }}"
+            [phase3-github-releases]="${{ needs.phase3-github-releases.result }}"
+            [phase4-nodejs-npm]="${{ needs.phase4-nodejs-npm.result }}"
+            [phase5-configs]="${{ needs.phase5-configs.result }}"
+          )
+          failed=0
+          for phase in "${!results[@]}"; do
+            status="${results[$phase]}"
+            [[ "$status" == "success" ]] && echo "✓ $phase" || { echo "✗ $phase ($status)"; failed=1; }
+          done
+          exit $failed

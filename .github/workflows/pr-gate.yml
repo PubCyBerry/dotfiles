@@ -1,0 +1,137 @@
+name: PR Gate
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - install.sh
+      - "config/**"
+      - "manifests/**"
+      - ".github/workflows/pr-gate.yml"
+  pull_request:
+    paths:
+      - install.sh
+      - "config/**"
+      - "manifests/**"
+      - ".github/workflows/pr-gate.yml"
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x install.sh
+
+  test-apt-install:
+    name: apt install + verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_RTK: "1"
+      SKIP_SKILLS: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu-24.04-${{ hashFiles('manifests/apt.txt') }}
+          restore-keys: apt-ubuntu-24.04-
+
+      - name: Run install.sh
+        run: bash install.sh
+
+      - name: Verify tools
+        run: |
+          set -e
+          git --version
+          curl --version | head -1
+          tmux -V
+          jq --version
+          gh --version
+          rg --version | head -1
+          bat --version | head -1 || batcat --version | head -1
+          fd --version | head -1 || fdfind --version | head -1
+          nvim --version | head -1
+          lazygit --version
+          delta --version
+          fzf --version
+          yazi --version
+          zoxide --version
+          starship --version
+          fnm --version
+          bun --version
+
+  test-configs:
+    name: Config syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: gitconfig 문법
+        run: git config --file config/git/gitconfig --list > /dev/null
+
+      - name: JSON 문법
+        run: |
+          jq empty config/claude/settings.json
+          jq empty config/claude/claude-hud.json
+
+  test-manifest-syntax:
+    name: Manifest syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifests
+        run: |
+          set -e
+          _check_lines() {
+            local file="$1" pattern="$2" label="$3"
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              [[ "$line" =~ $pattern ]] || { echo "Invalid $label: $line"; exit 1; }
+            done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$file")
+            echo "OK: $file"
+          }
+          _check_lines manifests/apt.txt \
+            '^[a-z0-9][a-z0-9._+:-]*$' 'apt package'
+          _check_lines manifests/npm-global.txt \
+            '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' 'npm package'
+          _check_lines manifests/skills.txt \
+            '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
+
+  summary:
+    name: Summary
+    needs: [lint, test-apt-install, test-configs, test-manifest-syntax]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          results=(
+            "lint:${{ needs.lint.result }}"
+            "test-apt-install:${{ needs.test-apt-install.result }}"
+            "test-configs:${{ needs.test-configs.result }}"
+            "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
+          )
+          failed=0
+          for r in "${results[@]}"; do
+            name="${r%%:*}"; status="${r##*:}"
+            if [[ "$status" == "success" ]]; then
+              echo "✓ $name"
+            else
+              echo "✗ $name ($status)"; failed=1
+            fi
+          done
+          exit $failed

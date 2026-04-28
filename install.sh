@@ -111,8 +111,10 @@ run_privileged() {
 }
 
 gh_release_tag() {
-    # 최신 release tag (v 접두사 포함)
-    curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
+    # 최신 release tag (v 접두사 포함). GITHUB_TOKEN 설정 시 rate limit 5000/hr
+    local auth_header=()
+    [[ -n "${GITHUB_TOKEN:-}" ]] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
+    curl -fsSL "${auth_header[@]}" "https://api.github.com/repos/$1/releases/latest" \
         | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/'
 }
 
@@ -422,73 +424,73 @@ fi
 # 3. Claude Code 네이티브 설치
 # =============================================
 echo
-echo "==> Installing Claude Code (native)..."
-add_to_path_runtime "$LOCAL_BIN"
-if command -v claude >/dev/null 2>&1; then
-    echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
+if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
+    echo "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)"
 else
-    curl -fsSL https://claude.ai/install.sh | bash
-    echo "    Claude Code installed."
-fi
-
-# =============================================
-# 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
-# =============================================
-echo
-echo "==> Deploying Claude Code config..."
-mkdir -p "$CLAUDE_DIR"
-
-SETTINGS_SRC="$ROOT/config/claude/settings.json"
-SETTINGS_DST="$CLAUDE_DIR/settings.json"
-if [[ -f "$SETTINGS_SRC" ]]; then
-    if [[ -f "$SETTINGS_DST" ]] && command -v jq >/dev/null 2>&1; then
-        # 기존 키 보존(claude-hud의 statusLine 등) + 새 키 덮어쓰기/추가
-        TMP="$(mktemp)"
-        jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP"
-        mv "$TMP" "$SETTINGS_DST"
-        echo "    Merged settings.json"
+    echo "==> Installing Claude Code (native)..."
+    add_to_path_runtime "$LOCAL_BIN"
+    if command -v claude >/dev/null 2>&1; then
+        echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
     else
-        cp -f "$SETTINGS_SRC" "$SETTINGS_DST"
-        echo "    Copied settings.json"
+        curl -fsSL https://claude.ai/install.sh | bash
+        echo "    Claude Code installed."
     fi
-else
-    echo "    [!] config/claude/settings.json not found"
-fi
 
-CLAUDE_MD_SRC="$ROOT/config/claude/CLAUDE.md"
-if [[ -f "$CLAUDE_MD_SRC" ]]; then
-    cp -f "$CLAUDE_MD_SRC" "$CLAUDE_DIR/CLAUDE.md"
-    echo "    Copied CLAUDE.md"
-else
-    echo "    [!] config/claude/CLAUDE.md not found"
+    # =============================================
+    # 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
+    # =============================================
+    echo
+    echo "==> Deploying Claude Code config..."
+    mkdir -p "$CLAUDE_DIR"
+
+    SETTINGS_SRC="$ROOT/config/claude/settings.json"
+    SETTINGS_DST="$CLAUDE_DIR/settings.json"
+    if [[ -f "$SETTINGS_SRC" ]]; then
+        if [[ -f "$SETTINGS_DST" ]] && command -v jq >/dev/null 2>&1; then
+            # 기존 키 보존(claude-hud의 statusLine 등) + 새 키 덮어쓰기/추가
+            TMP="$(mktemp)"
+            jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP"
+            mv "$TMP" "$SETTINGS_DST"
+            echo "    Merged settings.json"
+        else
+            cp -f "$SETTINGS_SRC" "$SETTINGS_DST"
+            echo "    Copied settings.json"
+        fi
+    else
+        echo "    [!] config/claude/settings.json not found"
+    fi
+
+    CLAUDE_MD_SRC="$ROOT/config/claude/CLAUDE.md"
+    if [[ -f "$CLAUDE_MD_SRC" ]]; then
+        cp -f "$CLAUDE_MD_SRC" "$CLAUDE_DIR/CLAUDE.md"
+        echo "    Copied CLAUDE.md"
+    else
+        echo "    [!] config/claude/CLAUDE.md not found"
+    fi
 fi
 
 # =============================================
 # 3-2. RTK (Rust Token Killer) + Claude hook
 # =============================================
 echo
-echo "==> Installing RTK (Rust Token Killer)..."
-if command -v rtk >/dev/null 2>&1; then
-    echo "    RTK already installed: $(rtk --version 2>/dev/null | head -1 || echo unknown)"
+if [[ "${SKIP_RTK:-0}" == "1" ]]; then
+    echo "==> [CI] Skipping RTK installation (SKIP_RTK=1)"
 else
-    # 공식 install.sh — ~/.local/bin 에 binary 배치
-    if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh; then
-        echo "    RTK installed."
+    echo "==> Installing RTK (Rust Token Killer)..."
+    if command -v rtk >/dev/null 2>&1; then
+        echo "    RTK already installed: $(rtk --version 2>/dev/null | head -1 || echo unknown)"
     else
-        echo "    [!] RTK install failed. Manual: cargo install --git https://github.com/rtk-ai/rtk"
+        # 공식 install.sh — ~/.local/bin 에 binary 배치
+        if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh; then
+            echo "    RTK installed."
+        else
+            echo "    [!] RTK install failed. Manual: cargo install --git https://github.com/rtk-ai/rtk"
+        fi
     fi
-fi
 
-# Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
-export RTK_TELEMETRY_DISABLED=1 rtk init -g --hook-only --auto-patch
-# mkdir -p "$CLAUDE_DIR/hooks"
-# HOOK_PATH="$CLAUDE_DIR/hooks/rtk-rewrite.sh"
-# if curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/master/hooks/claude/rtk-rewrite.sh" -o "$HOOK_PATH"; then
-#     chmod +x "$HOOK_PATH"
-#     echo "    RTK hook installed at $HOOK_PATH"
-# else
-#     echo "    [!] RTK hook download failed."
-# fi
+    # Claude Code hook 직접 다운로드 (install.ps1과 동일 방식)
+    export RTK_TELEMETRY_DISABLED=1 rtk init -g --hook-only --auto-patch
+fi
 
 # =============================================
 # 4. bash 프로파일 설정 (~/.bashrc, ~/.inputrc, 마커 방식)
@@ -513,21 +515,25 @@ fi
 # 6. Claude Code skills 설치 (manifests/skills.txt)
 # =============================================
 echo
-echo "==> Restoring Claude Code skills..."
-SKILLS_FILE="$ROOT/manifests/skills.txt"
-if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
-    while IFS= read -r line; do
-        [[ "$line" =~ ^([^@]+)@(.+)$ ]] || continue
-        repo="${BASH_REMATCH[1]}"
-        skill="${BASH_REMATCH[2]}"
-        echo "    Adding skill: $skill from $repo..."
-        if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
-            echo "    [!] Failed: $repo@$skill"
-        fi
-    done < <(manifest_lines "$SKILLS_FILE")
-    echo "    Skills restored."
+if [[ "${SKIP_SKILLS:-0}" == "1" ]]; then
+    echo "==> [CI] Skipping Claude Code skills (SKIP_SKILLS=1)"
 else
-    echo "    [!] manifests/skills.txt or npx not found, skipping skills."
+    echo "==> Restoring Claude Code skills..."
+    SKILLS_FILE="$ROOT/manifests/skills.txt"
+    if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^([^@]+)@(.+)$ ]] || continue
+            repo="${BASH_REMATCH[1]}"
+            skill="${BASH_REMATCH[2]}"
+            echo "    Adding skill: $skill from $repo..."
+            if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+                echo "    [!] Failed: $repo@$skill"
+            fi
+        done < <(manifest_lines "$SKILLS_FILE")
+        echo "    Skills restored."
+    else
+        echo "    [!] manifests/skills.txt or npx not found, skipping skills."
+    fi
 fi
 
 echo
