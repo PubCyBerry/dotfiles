@@ -126,6 +126,7 @@ dotfiles/
 |--------|------|-------|
 | [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles) | dotfiles 구성 참고 | <img src="https://img.shields.io/github/stars/mathiasbynens/dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
 | [gpakosz/.tmux](https://github.com/gpakosz/.tmux) | tmux 설정 레퍼런스 | <img src="https://img.shields.io/github/stars/gpakosz/.tmux?style=flat&label=%E2%AD%90" alt="stars"> |
+| [citypaul/.dotfiles](https://github.com/citypaul/.dotfiles) | dotfiles 구성 참고 | <img src="https://img.shields.io/github/stars/citypaul/.dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Agent
 
