@@ -587,7 +587,7 @@ else
             repo="${BASH_REMATCH[1]}"
             skill="${BASH_REMATCH[2]}"
             echo "    Adding skill: $skill from $repo..."
-            if ! npx skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+            if ! npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
                 echo "    [!] Failed: $repo@$skill"
             fi
         done < <(manifest_lines "$SKILLS_FILE")
