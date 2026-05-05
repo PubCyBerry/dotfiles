@@ -449,8 +449,6 @@ else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
 fi
 
-fi
-
 # =============================================
 # 2. Node.js LTS (fnm)
 # =============================================
