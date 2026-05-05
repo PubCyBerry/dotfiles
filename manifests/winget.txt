@@ -33,6 +33,6 @@ oschwartz10612.Poppler          # PDF
 ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
 
 # 추가 CLI 도구
-Astral.uv                          # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
+astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
 # astral-sh.ruff
 # httpie.httpie
