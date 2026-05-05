@@ -205,13 +205,13 @@ git config --global core.fileMode true
 echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
 
 # =============================================
-# 1-2. tmux 설정 복사 (config/linux/tmux.conf → ~/.tmux.conf)
+# 1-2. tmux 설정 복사 (config/tmux/tmux.linux.conf → ~/.tmux.conf)
 # =============================================
 echo
-TMUX_SRC="$ROOT/config/linux/tmux.conf"
+TMUX_SRC="$ROOT/config/tmux/tmux.linux.conf"
 if [[ -f "$TMUX_SRC" ]]; then
     cp -f "$TMUX_SRC" "$HOME/.tmux.conf"
-    echo "    Copied .tmux.conf (tmux default shell: bash)"
+    echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"
 fi
 
 # =============================================
@@ -447,6 +447,8 @@ if [[ -n "$YQ_ARCH" ]]; then
         "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
 else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
+fi
+
 fi
 
 # =============================================
