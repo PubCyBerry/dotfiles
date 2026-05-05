@@ -29,7 +29,7 @@ mkdir -p "$LOCAL_BIN" "$HOME/.config"
 # 헬퍼 함수
 # =============================================
 _TMPFILES=()
-_cleanup() { [[ ${#_TMPFILES[@]} -gt 0 ]] && rm -rf "${_TMPFILES[@]}" || true; }
+_cleanup() { if [[ ${#_TMPFILES[@]} -gt 0 ]]; then rm -rf "${_TMPFILES[@]}"; fi; }
 trap _cleanup EXIT
 
 manifest_lines() {
