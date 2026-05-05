@@ -6,6 +6,12 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OS="$(uname -s)"
+
+APPLY_DEFAULTS=false
+for arg in "$@"; do
+  [[ "$arg" == "--with-defaults" ]] && APPLY_DEFAULTS=true
+done
 
 # =============================================
 # 경로 상수
@@ -163,7 +169,7 @@ install_gh_bin() {
 
 echo "==> Unix dotfiles setup starting..."
 echo "    Source: $ROOT"
-echo "    OS:     $OS"
+echo "    OS:     ${OS:-unknown}"
 echo "    Arch:   $ARCH"
 
 if [[ "$OS" == "Darwin" ]]; then
