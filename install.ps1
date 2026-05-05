@@ -201,12 +201,9 @@ if (Test-Path $NvimBin) {
 # =============================================
 Write-Host ""
 Write-Host "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
-$nvimInitDst = Join-Path $NvimConfigDir "init.lua"
-$nvimSrc     = Join-Path $ROOT "config\nvim"
+$nvimSrc = Join-Path $ROOT "config\nvim"
 
-if (Test-Path $nvimInitDst) {
-    Write-Host "    Neovim config already exists, skipping."
-} elseif (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
+if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
     Write-Host "    [!] config\nvim\init.lua not found, skipping."
 } else {
     New-Item -ItemType Directory -Force -Path $NvimConfigDir | Out-Null

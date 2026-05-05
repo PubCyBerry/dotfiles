@@ -273,13 +273,11 @@ else
 fi
 
 # =============================================
-# 1-4. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/, 기존 있으면 skip)
+# 1-4. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/)
 # =============================================
 echo
 echo "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
-if [[ -f "$NVIM_CONFIG_DIR/init.lua" ]]; then
-    echo "    Neovim config already exists, skipping."
-elif [[ ! -f "$ROOT/config/nvim/init.lua" ]]; then
+if [[ ! -f "$ROOT/config/nvim/init.lua" ]]; then
     echo "    [!] config/nvim/init.lua not found, skipping."
 else
     mkdir -p "$NVIM_CONFIG_DIR"
