@@ -353,9 +353,11 @@ add_to_path_runtime "$LOCAL_BIN"
 add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
-# =============================================
-# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
-# =============================================
+# macOS already installed most of these via Brewfile. Skip Linux-only binary installs on macOS.
+if [[ "$OS" == "Linux" ]]; then
+    # =============================================
+    # 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
+    # =============================================
 
 # GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
 _TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
@@ -487,18 +489,18 @@ YQ_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
 if [[ -n "$YQ_ARCH" ]]; then
     install_gh_bin "yq" \
         "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
-else
+    else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
-fi
+    fi
+    fi
 
-# =============================================
-# 2. Node.js LTS (fnm)
-# =============================================
-echo
-echo "==> Installing Node.js LTS via fnm..."
-if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+    # =============================================
+    # 2. Node.js LTS (fnm)
+    # =============================================
+    echo
+    echo "==> Installing Node.js LTS via fnm..."
+    if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
     eval "$(fnm env --shell bash)"
-    fnm install --lts
     fnm default lts-latest
     fnm use lts-latest
     echo "    Node.js LTS installed."
