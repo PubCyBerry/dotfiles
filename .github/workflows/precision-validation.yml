@@ -308,7 +308,7 @@ jobs:
           git config --file "$RUNNER_TEMP/test.gitconfig" core.fileMode true
 
           # tmux 설정
-          cp config/linux/tmux.conf "$HOME/.tmux.conf"
+          cp config/tmux/tmux.linux.conf "$HOME/.tmux.conf"
 
           # yazi 설정
           cp -r config/yazi/. "$HOME/.config/yazi/"
