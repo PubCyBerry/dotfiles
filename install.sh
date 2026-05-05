@@ -161,48 +161,88 @@ install_gh_bin() {
     echo "    $name installed."
 }
 
-echo "==> Linux (Ubuntu) dotfiles setup starting..."
+echo "==> Unix dotfiles setup starting..."
 echo "    Source: $ROOT"
+echo "    OS:     $OS"
 echo "    Arch:   $ARCH"
 
-# =============================================
-# 1. apt 패키지 설치 (manifests/apt.txt)
-# =============================================
-echo
-echo "==> Installing packages via apt..."
-APT_FILE="$ROOT/manifests/apt.txt"
-if [[ -f "$APT_FILE" ]]; then
-    run_privileged apt-get update -y
-    # shellcheck disable=SC2046
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
-        $(manifest_lines "$APT_FILE") --no-install-recommends
-else
-    echo "    [!] manifests/apt.txt not found, skipping."
-fi
+if [[ "$OS" == "Darwin" ]]; then
+    # =============================================
+    # [macOS] Homebrew 및 Brewfile
+    # =============================================
+    echo
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "    Installing Homebrew..."
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      if [[ "$(uname -m)" == "arm64" ]]; then
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+      else
+          eval "$(/usr/local/bin/brew shellenv)"
+      fi
+    fi
 
-echo "    Setting timezone to Asia/Seoul..."
-run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
-echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
+    BREWFILE="$ROOT/manifests/Brewfile"
+    echo "    Installing packages from Brewfile..."
+    if [[ -f "$BREWFILE" ]]; then
+        brew bundle --file="$BREWFILE"
+    else
+        echo "    [!] manifests/Brewfile not found, skipping."
+    fi
 
-# 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
-if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
-    ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
-    echo "    Linked $LOCAL_BIN/bat -> batcat"
-fi
-if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-    ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
-    echo "    Linked $LOCAL_BIN/fd -> fdfind"
-fi
+    if $APPLY_DEFAULTS; then
+      echo "==> Applying macOS system defaults..."
+      MACOS_DEFAULTS="$ROOT/config/macos/.macos"
+      if [[ -f "$MACOS_DEFAULTS" ]]; then
+          bash "$MACOS_DEFAULTS"
+      fi
+    fi
 
-# =============================================
-# 1-1. gitconfig 병합 + Linux 전용 override
-# =============================================
-echo
-echo "==> Merging git config..."
-merge_gitconfig "$ROOT/config/git/gitconfig"
-git config --global core.autocrlf input
-git config --global core.fileMode true
-echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
+    echo
+    echo "==> Merging git config (macOS)..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    git config --global core.autocrlf input
+    git config --global core.fileMode true
+
+elif [[ "$OS" == "Linux" ]]; then
+    # =============================================
+    # [Linux] apt 및 github releases
+    # =============================================
+    echo
+    echo "==> Installing packages via apt..."
+    APT_FILE="$ROOT/manifests/apt.txt"
+    if [[ -f "$APT_FILE" ]]; then
+        run_privileged apt-get update -y
+        # shellcheck disable=SC2046
+        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
+            $(manifest_lines "$APT_FILE") --no-install-recommends
+    else
+        echo "    [!] manifests/apt.txt not found, skipping."
+    fi
+
+    echo "    Setting timezone to Asia/Seoul..."
+    run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+    echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
+
+    # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
+    if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+        ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
+        echo "    Linked $LOCAL_BIN/bat -> batcat"
+    fi
+    if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+        ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
+        echo "    Linked $LOCAL_BIN/fd -> fdfind"
+    fi
+
+    # =============================================
+    # 1-1. gitconfig 병합 + Linux 전용 override
+    # =============================================
+    echo
+    echo "==> Merging git config..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    git config --global core.autocrlf input
+    git config --global core.fileMode true
+    echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
+fi
 
 # =============================================
 # 1-2. tmux 설정 복사 (config/tmux/tmux.linux.conf → ~/.tmux.conf)
