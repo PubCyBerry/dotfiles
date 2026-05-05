@@ -71,12 +71,7 @@ merge_gitconfig() {
         return 0
     fi
 
-    declare -A existing
-    while IFS='=' read -r k v; do
-        [[ -n "$k" ]] && existing["$k"]="$v"
-    done < <(git config --global --list 2>/dev/null || true)
-
-    local section="" trimmed key value
+    local section="" trimmed key value existing_val
     while IFS= read -r line || [[ -n "$line" ]]; do
         trimmed="${line#"${line%%[![:space:]]*}"}"
         trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
@@ -86,7 +81,8 @@ merge_gitconfig() {
             if [[ "$trimmed" =~ ^([^[:space:]=]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
                 key="${BASH_REMATCH[1]}"
                 value="${BASH_REMATCH[2]}"
-                if [[ -z "${existing[$section.$key]+x}" ]]; then
+                existing_val=$(git config --global "$section.$key" 2>/dev/null || true)
+                if [[ -z "$existing_val" ]]; then
                     git config --global "$section.$key" "$value"
                     echo "    Added [$section] $key = $value"
                 else
