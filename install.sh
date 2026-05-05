@@ -138,7 +138,7 @@ install_gh_tar() {
     local name="$1" url="$2" bin="${3:-$1}"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl -fsSL -o "$TMP/$name.tar.gz" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name.tar.gz" "$url"
     tar -xzf "$TMP/$name.tar.gz" -C "$TMP"
     run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
     hash -r 2>/dev/null || true
@@ -150,7 +150,7 @@ install_gh_deb() {
     local name="$1" url="$2"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP_DEB; TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl -fsSL -o "$TMP_DEB" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP_DEB" "$url"
     chmod 644 "$TMP_DEB"
     DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
     echo "    $name installed."
@@ -161,7 +161,7 @@ install_gh_bin() {
     local name="$1" url="$2"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl -fsSL -o "$TMP/$name" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name" "$url"
     run_privileged install -m 755 "$TMP/$name" "/usr/local/bin/$name"
     echo "    $name installed."
 }
