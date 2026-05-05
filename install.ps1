@@ -111,19 +111,23 @@ Write-Host ""
 Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
-    Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $package = $_
-        $alreadyInstalled = @(0x8A150015, 43, -1978335189)
-        winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    Installed $package"
-        } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
-            Write-Host "    Already installed $package"
-        } else {
-            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
-        }
-    } -ThrottleLimit 4
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            $package = $_
+            $alreadyInstalled = @(0x8A150015, 43, -1978335189)
+            winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "    Installed $package"
+            } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
+                Write-Host "    Already installed $package"
+            } else {
+                Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+            }
+        } -ThrottleLimit 4
+    } else {
+        Write-Host "    [!] winget not found. Skipping package installation."
+    }
 } else {
     Write-Host "    [!] manifests\winget.txt not found, skipping."
 }
@@ -144,7 +148,7 @@ Write-Host "    Set core.autocrlf=true, core.fileMode=false (Windows)"
 # 1-2. tmux 설정 복사
 # =============================================
 Write-Host ""
-$tmuxSrc = Join-Path $ROOT "config\windows\tmux.conf"
+$tmuxSrc = Join-Path $ROOT "config\tmux\tmux.windows.conf"
 if (Test-Path $tmuxSrc) {
     Copy-Item $tmuxSrc (Join-Path $env:USERPROFILE ".tmux.conf") -Force
     Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)"
@@ -332,7 +336,7 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
 # =============================================
 Write-Host ""
 Write-Host "==> Updating PowerShell profiles..."
-$profileSrc = Join-Path $ROOT "config\windows\profile.ps1"
+$profileSrc = Join-Path $ROOT "config\powershell\profile.ps1"
 if (Test-Path $profileSrc) {
     $profileContent = Get-Content $profileSrc -Raw
     $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"

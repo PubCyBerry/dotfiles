@@ -6,6 +6,12 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OS="$(uname -s)"
+
+APPLY_DEFAULTS=false
+for arg in "$@"; do
+  [[ "$arg" == "--with-defaults" ]] && APPLY_DEFAULTS=true
+done
 
 # =============================================
 # 경로 상수
@@ -23,7 +29,7 @@ mkdir -p "$LOCAL_BIN" "$HOME/.config"
 # 헬퍼 함수
 # =============================================
 _TMPFILES=()
-_cleanup() { [[ ${#_TMPFILES[@]} -gt 0 ]] && rm -rf "${_TMPFILES[@]}"; }
+_cleanup() { if [[ ${#_TMPFILES[@]} -gt 0 ]]; then rm -rf "${_TMPFILES[@]}"; fi; }
 trap _cleanup EXIT
 
 manifest_lines() {
@@ -65,12 +71,7 @@ merge_gitconfig() {
         return 0
     fi
 
-    declare -A existing
-    while IFS='=' read -r k v; do
-        [[ -n "$k" ]] && existing["$k"]="$v"
-    done < <(git config --global --list 2>/dev/null || true)
-
-    local section="" trimmed key value
+    local section="" trimmed key value existing_val
     while IFS= read -r line || [[ -n "$line" ]]; do
         trimmed="${line#"${line%%[![:space:]]*}"}"
         trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
@@ -80,7 +81,8 @@ merge_gitconfig() {
             if [[ "$trimmed" =~ ^([^[:space:]=]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
                 key="${BASH_REMATCH[1]}"
                 value="${BASH_REMATCH[2]}"
-                if [[ -z "${existing[$section.$key]+x}" ]]; then
+                existing_val=$(git config --global "$section.$key" 2>/dev/null || true)
+                if [[ -z "$existing_val" ]]; then
                     git config --global "$section.$key" "$value"
                     echo "    Added [$section] $key = $value"
                 else
@@ -112,10 +114,13 @@ run_privileged() {
 
 gh_release_tag() {
     # 최신 release tag (v 접두사 포함). GITHUB_TOKEN 설정 시 rate limit 5000/hr
-    local auth_header=()
-    [[ -n "${GITHUB_TOKEN:-}" ]] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
-    curl -fsSL "${auth_header[@]}" "https://api.github.com/repos/$1/releases/latest" \
-        | jq -r '.tag_name // empty'
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$1/releases/latest" \
+            | jq -r '.tag_name // empty'
+    else
+        curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
+            | jq -r '.tag_name // empty'
+    fi
 }
 
 arch_triple() {
@@ -133,7 +138,7 @@ install_gh_tar() {
     local name="$1" url="$2" bin="${3:-$1}"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl -fsSL -o "$TMP/$name.tar.gz" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name.tar.gz" "$url"
     tar -xzf "$TMP/$name.tar.gz" -C "$TMP"
     run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
     hash -r 2>/dev/null || true
@@ -145,7 +150,7 @@ install_gh_deb() {
     local name="$1" url="$2"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP_DEB; TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl -fsSL -o "$TMP_DEB" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP_DEB" "$url"
     chmod 644 "$TMP_DEB"
     DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
     echo "    $name installed."
@@ -156,62 +161,102 @@ install_gh_bin() {
     local name="$1" url="$2"
     command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
     local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl -fsSL -o "$TMP/$name" "$url"
+    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name" "$url"
     run_privileged install -m 755 "$TMP/$name" "/usr/local/bin/$name"
     echo "    $name installed."
 }
 
-echo "==> Linux (Ubuntu) dotfiles setup starting..."
+echo "==> Unix dotfiles setup starting..."
 echo "    Source: $ROOT"
+echo "    OS:     ${OS:-unknown}"
 echo "    Arch:   $ARCH"
 
-# =============================================
-# 1. apt 패키지 설치 (manifests/apt.txt)
-# =============================================
-echo
-echo "==> Installing packages via apt..."
-APT_FILE="$ROOT/manifests/apt.txt"
-if [[ -f "$APT_FILE" ]]; then
-    run_privileged apt-get update -y
-    # shellcheck disable=SC2046
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
-        $(manifest_lines "$APT_FILE") --no-install-recommends
-else
-    echo "    [!] manifests/apt.txt not found, skipping."
+if [[ "$OS" == "Darwin" ]]; then
+    # =============================================
+    # [macOS] Homebrew 및 Brewfile
+    # =============================================
+    echo
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "    Installing Homebrew..."
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      if [[ "$(uname -m)" == "arm64" ]]; then
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+      else
+          eval "$(/usr/local/bin/brew shellenv)"
+      fi
+    fi
+
+    BREWFILE="$ROOT/manifests/Brewfile"
+    echo "    Installing packages from Brewfile..."
+    if [[ -f "$BREWFILE" ]]; then
+        brew bundle --file="$BREWFILE"
+    else
+        echo "    [!] manifests/Brewfile not found, skipping."
+    fi
+
+    if $APPLY_DEFAULTS; then
+      echo "==> Applying macOS system defaults..."
+      MACOS_DEFAULTS="$ROOT/config/macos/.macos"
+      if [[ -f "$MACOS_DEFAULTS" ]]; then
+          bash "$MACOS_DEFAULTS"
+      fi
+    fi
+
+    echo
+    echo "==> Merging git config (macOS)..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    git config --global core.autocrlf input
+    git config --global core.fileMode true
+
+elif [[ "$OS" == "Linux" ]]; then
+    # =============================================
+    # [Linux] apt 및 github releases
+    # =============================================
+    echo
+    echo "==> Installing packages via apt..."
+    APT_FILE="$ROOT/manifests/apt.txt"
+    if [[ -f "$APT_FILE" ]]; then
+        run_privileged apt-get update -y
+        # shellcheck disable=SC2046
+        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
+            $(manifest_lines "$APT_FILE") --no-install-recommends
+    else
+        echo "    [!] manifests/apt.txt not found, skipping."
+    fi
+
+    echo "    Setting timezone to Asia/Seoul..."
+    run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+    echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
+
+    # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
+    if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+        ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
+        echo "    Linked $LOCAL_BIN/bat -> batcat"
+    fi
+    if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+        ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
+        echo "    Linked $LOCAL_BIN/fd -> fdfind"
+    fi
+
+    # =============================================
+    # 1-1. gitconfig 병합 + Linux 전용 override
+    # =============================================
+    echo
+    echo "==> Merging git config..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    git config --global core.autocrlf input
+    git config --global core.fileMode true
+    echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
 fi
 
-echo "    Setting timezone to Asia/Seoul..."
-run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
-echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
-
-# 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
-if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
-    ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
-    echo "    Linked $LOCAL_BIN/bat -> batcat"
-fi
-if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-    ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
-    echo "    Linked $LOCAL_BIN/fd -> fdfind"
-fi
-
 # =============================================
-# 1-1. gitconfig 병합 + Linux 전용 override
+# 1-2. tmux 설정 복사 (config/tmux/tmux.linux.conf → ~/.tmux.conf)
 # =============================================
 echo
-echo "==> Merging git config..."
-merge_gitconfig "$ROOT/config/git/gitconfig"
-git config --global core.autocrlf input
-git config --global core.fileMode true
-echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
-
-# =============================================
-# 1-2. tmux 설정 복사 (config/linux/tmux.conf → ~/.tmux.conf)
-# =============================================
-echo
-TMUX_SRC="$ROOT/config/linux/tmux.conf"
+TMUX_SRC="$ROOT/config/tmux/tmux.linux.conf"
 if [[ -f "$TMUX_SRC" ]]; then
     cp -f "$TMUX_SRC" "$HOME/.tmux.conf"
-    echo "    Copied .tmux.conf (tmux default shell: bash)"
+    echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"
 fi
 
 # =============================================
@@ -311,9 +356,11 @@ add_to_path_runtime "$LOCAL_BIN"
 add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
-# =============================================
-# 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
-# =============================================
+# macOS already installed most of these via Brewfile. Skip Linux-only binary installs on macOS.
+if [[ "$OS" == "Linux" ]]; then
+    # =============================================
+    # 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
+    # =============================================
 
 # GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
 _TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
@@ -445,26 +492,37 @@ YQ_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
 if [[ -n "$YQ_ARCH" ]]; then
     install_gh_bin "yq" \
         "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
-else
+    else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
-fi
+    fi
+    fi
 
-# =============================================
-# 2. Node.js LTS (fnm)
-# =============================================
-echo
-echo "==> Installing Node.js LTS via fnm..."
-if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
-    eval "$(fnm env --shell bash)"
-    fnm install --lts
-    fnm default lts-latest
-    fnm use lts-latest
-    echo "    Node.js LTS installed."
-else
-    echo "    [!] fnm not found. Restart terminal and run:"
-    echo "        fnm install --lts && fnm default lts-latest"
-fi
-
+    # =============================================
+    # 2. Node.js LTS (fnm)
+    # =============================================
+    echo
+    echo "==> Installing Node.js LTS via fnm..."
+    if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+        eval "$(fnm env --shell bash)"
+        fnm install --lts
+        # fnm uses the exact version number, but we can set default to the installed lts
+        LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
+        if [[ -z "$LTS_VER" ]]; then
+            LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
+        fi
+        if [[ -n "$LTS_VER" ]]; then
+            fnm default "$LTS_VER"
+            fnm use "$LTS_VER"
+        else
+            # fallback
+            fnm default lts-latest || true
+            fnm use lts-latest || true
+        fi
+        echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
+    else
+        echo "    [!] fnm not found. Restart terminal and run:"
+        echo "        fnm install --lts"
+    fi
 # =============================================
 # 2-1. npm 전역 패키지 (manifests/npm-global.txt)
 # =============================================
@@ -599,3 +657,4 @@ fi
 
 echo
 echo "==> Done! Restart your terminal and Claude Code to apply all changes."
+

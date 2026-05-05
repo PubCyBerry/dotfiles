@@ -5,12 +5,14 @@ on:
     branches: [master]
     paths:
       - install.sh
+      - install.ps1
       - "config/**"
       - "manifests/**"
       - ".github/workflows/pr-gate.yml"
   pull_request:
     paths:
       - install.sh
+      - install.ps1
       - "config/**"
       - "manifests/**"
       - ".github/workflows/pr-gate.yml"
@@ -28,7 +30,7 @@ jobs:
       - run: shellcheck -x install.sh
 
   test-apt-install:
-    name: apt install + verify
+    name: Ubuntu install + verify
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -71,6 +73,36 @@ jobs:
           starship --version
           fnm --version
           bun --version
+
+  test-macos-install:
+    name: macOS install + verify
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_RTK: "1"
+      SKIP_SKILLS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh
+        run: bash install.sh --with-defaults
+
+  test-windows-install:
+    name: Windows install + verify
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_RTK: "1"
+      SKIP_SKILLS: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.ps1
+        shell: pwsh
+        run: .\install.ps1
 
   test-configs:
     name: Config syntax
@@ -115,7 +147,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-configs, test-manifest-syntax]
+    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-configs, test-manifest-syntax]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -124,6 +156,8 @@ jobs:
           results=(
             "lint:${{ needs.lint.result }}"
             "test-apt-install:${{ needs.test-apt-install.result }}"
+            "test-macos-install:${{ needs.test-macos-install.result }}"
+            "test-windows-install:${{ needs.test-windows-install.result }}"
             "test-configs:${{ needs.test-configs.result }}"
             "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
           )

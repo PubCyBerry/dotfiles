@@ -7,6 +7,7 @@ on:
     paths:
       - install.sh
       - "manifests/**"
+      - ".github/workflows/precision-validation.yml"
 
 jobs:
   phase1-apt:
@@ -126,6 +127,8 @@ jobs:
           rm -f "$TMP"
 
       - name: Install lazygit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARCH="$(dpkg --print-architecture)"
           case "$ARCH" in
@@ -133,14 +136,12 @@ jobs:
             arm64) LG_ARCH="Linux_arm64" ;;
             *) exit 0 ;;
           esac
-          TAG="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" \
-            | jq -r '.tag_name')"
-          VER="${TAG#v}"
+          LG_TAG=$(curl --retry 3 --retry-delay 2 -fsSL -H "Authorization: token ${{ env.GITHUB_TOKEN }}" https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r '.tag_name')
+          LG_VER="${LG_TAG#v}"
           TMP="$(mktemp -d)"
-          curl -fsSL -o "$TMP/lg.tar.gz" \
-            "https://github.com/jesseduffield/lazygit/releases/download/${TAG}/lazygit_${VER}_${LG_ARCH}.tar.gz"
-          tar -xzf "$TMP/lg.tar.gz" -C "$TMP" lazygit
+          curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/lazygit.tar.gz" \
+            "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
+          tar -xzf "$TMP/lazygit.tar.gz" -C "$TMP" lazygit
           sudo install -m 755 "$TMP/lazygit" /usr/local/bin/lazygit
           rm -rf "$TMP"
 
@@ -153,7 +154,7 @@ jobs:
             *) exit 0 ;;
           esac
           TMP="$(mktemp -d)"
-          curl -fsSL -o "$TMP/nvim.tar.gz" \
+          curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/nvim.tar.gz" \
             "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
           tar -xzf "$TMP/nvim.tar.gz" -C "$TMP"
           NVIM_DIR="$(ls -d "$TMP"/nvim-linux-*/ | head -1)"
@@ -201,7 +202,7 @@ jobs:
             *) exit 0 ;;
           esac
           TMP="$(mktemp -d)"
-          curl -fsSL -o "$TMP/eza.tar.gz" \
+          curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/eza.tar.gz" \
             "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
           tar -xzf "$TMP/eza.tar.gz" -C "$TMP"
           sudo install -m 755 "$TMP/eza" /usr/local/bin/eza
@@ -216,7 +217,7 @@ jobs:
             *) exit 0 ;;
           esac
           TMP="$(mktemp -d)"
-          curl -fsSL -o "$TMP/yq" \
+          curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/yq" \
             "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
           sudo install -m 755 "$TMP/yq" /usr/local/bin/yq
           rm -rf "$TMP"
@@ -308,7 +309,7 @@ jobs:
           git config --file "$RUNNER_TEMP/test.gitconfig" core.fileMode true
 
           # tmux 설정
-          cp config/linux/tmux.conf "$HOME/.tmux.conf"
+          cp config/tmux/tmux.linux.conf "$HOME/.tmux.conf"
 
           # yazi 설정
           cp -r config/yazi/. "$HOME/.config/yazi/"
