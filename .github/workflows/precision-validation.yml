@@ -347,9 +347,3 @@ jobs:
             [[ "$status" == "success" ]] && echo "✓ $phase" || { echo "✗ $phase ($status)"; failed=1; }
           done
           exit $failed
-phase" || { echo "✗ $phase ($status)"; failed=1; }
-          done
-          exit $failed
-phase" || { echo "✗ $phase ($status)"; failed=1; }
-          done
-          exit $failed
