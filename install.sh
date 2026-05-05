@@ -504,19 +504,24 @@ if [[ -n "$YQ_ARCH" ]]; then
     echo "==> Installing Node.js LTS via fnm..."
     if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
         eval "$(fnm env --shell bash)"
-        NODE_MAJOR=22
-        if fnm list 2>/dev/null | grep -q "v${NODE_MAJOR}\."; then
-            echo "    Node.js ${NODE_MAJOR}.x already installed, skipping"
-        else
-            echo "    Installing Node.js ${NODE_MAJOR}..."
-            fnm install "$NODE_MAJOR"
+        fnm install --lts
+        # fnm uses the exact version number, but we can set default to the installed lts
+        LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
+        if [[ -z "$LTS_VER" ]]; then
+            LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
         fi
-        fnm default "$NODE_MAJOR"
-        fnm use "$NODE_MAJOR"
+        if [[ -n "$LTS_VER" ]]; then
+            fnm default "$LTS_VER"
+            fnm use "$LTS_VER"
+        else
+            # fallback
+            fnm default lts-latest || true
+            fnm use lts-latest || true
+        fi
         echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
     else
         echo "    [!] fnm not found. Restart terminal and run:"
-        echo "        fnm install 22 && fnm default 22"
+        echo "        fnm install --lts"
     fi
 # =============================================
 # 2-1. npm 전역 패키지 (manifests/npm-global.txt)
