@@ -114,10 +114,13 @@ run_privileged() {
 
 gh_release_tag() {
     # 최신 release tag (v 접두사 포함). GITHUB_TOKEN 설정 시 rate limit 5000/hr
-    local auth_header=()
-    [[ -n "${GITHUB_TOKEN:-}" ]] && auth_header=(-H "Authorization: token $GITHUB_TOKEN")
-    curl -fsSL "${auth_header[@]}" "https://api.github.com/repos/$1/releases/latest" \
-        | jq -r '.tag_name // empty'
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$1/releases/latest" \
+            | jq -r '.tag_name // empty'
+    else
+        curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
+            | jq -r '.tag_name // empty'
+    fi
 }
 
 arch_triple() {
@@ -500,15 +503,21 @@ if [[ -n "$YQ_ARCH" ]]; then
     echo
     echo "==> Installing Node.js LTS via fnm..."
     if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
-    eval "$(fnm env --shell bash)"
-    fnm default lts-latest
-    fnm use lts-latest
-    echo "    Node.js LTS installed."
-else
-    echo "    [!] fnm not found. Restart terminal and run:"
-    echo "        fnm install --lts && fnm default lts-latest"
-fi
-
+        eval "$(fnm env --shell bash)"
+        NODE_MAJOR=22
+        if fnm list 2>/dev/null | grep -q "v${NODE_MAJOR}\."; then
+            echo "    Node.js ${NODE_MAJOR}.x already installed, skipping"
+        else
+            echo "    Installing Node.js ${NODE_MAJOR}..."
+            fnm install "$NODE_MAJOR"
+        fi
+        fnm default "$NODE_MAJOR"
+        fnm use "$NODE_MAJOR"
+        echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
+    else
+        echo "    [!] fnm not found. Restart terminal and run:"
+        echo "        fnm install 22 && fnm default 22"
+    fi
 # =============================================
 # 2-1. npm 전역 패키지 (manifests/npm-global.txt)
 # =============================================
