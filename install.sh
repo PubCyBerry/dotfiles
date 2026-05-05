@@ -657,3 +657,4 @@ fi
 
 echo
 echo "==> Done! Restart your terminal and Claude Code to apply all changes."
+
