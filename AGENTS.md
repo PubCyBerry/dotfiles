@@ -1,6 +1,6 @@
-# AGENTS.md
+# CLAUDE.md
 
-Windows 11 / Ubuntu 환경을 위한 개인 dotfiles. 터미널 설정, 패키지 설치 스크립트, AI 에이전트 설정을 관리한다.
+Windows 11 / Ubuntu / macOS 환경을 위한 개인 dotfiles. 터미널 설정, 패키지 설치 스크립트, AI 에이전트 설정을 관리한다.
 
 ## 설치 명령
 
@@ -30,24 +30,25 @@ dotfiles/
 ├── install.sh           # Ubuntu 설치 (all-in-one)
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc, inputrc) — Git Bash + Linux 공통, 마커 방식 삽입
-│   ├── Codex/          # Codex 설정 (settings.json, AGENTS.md)
+│   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
 │   ├── git/
 │   │   └── gitconfig    # OS-중립. autocrlf/fileMode은 install 스크립트가 OS별 주입
 │   ├── nvim/            # Neovim 설정 (lazy.nvim + yazi.nvim)
-│   ├── windows/         # Windows 전용 (profile.ps1, tmux.conf — default-shell=pwsh)
-│   ├── linux/           # Linux 전용 (tmux.conf — default-shell=bash)
+│   ├── powershell/      # Windows 전용 (profile.ps1 — fnm, zoxide, starship 초기화)
+│   ├── tmux/            # tmux 설정 (tmux.windows.conf, tmux.linux.conf)
+│   ├── macos/           # macOS 전용 (.macos — 시스템 기본값 설정)
 │   ├── yazi/            # yazi 설정 (yazi.toml — nvim opener)
 │   └── starship.toml
 ├── manifests/           # 패키지/스킬 목록
 │   ├── winget.txt       # Windows winget 패키지 ID
 │   ├── apt.txt          # Ubuntu apt 패키지
+│   ├── Brewfile         # macOS Homebrew 패키지
 │   ├── npm-global.txt   # npm 전역 패키지 (@google/gemini-cli, @openai/codex)
-│   └── skills.txt       # Codex skills (owner/repo@skill-name)
-├── macos/               # macOS 지원 (보류)
+│   └── skills.txt       # Claude Code skills (owner/repo@skill-name)
 └── docs/
     ├── tools.md                   # CLI 도구 사용법 cheatsheet
-    ├── ai-agents.md               # Codex, 플러그인, skills 상세
-    ├── Codex-hud.md              # Codex HUD 설정 가이드
+    ├── ai-agents.md               # Claude Code, 플러그인, skills 상세
+    ├── claude-hud.md              # Claude HUD 설정 가이드
     ├── uninstall.md               # 클린 언인스톨 가이드
     ├── git-commit-convention.md   # Conventional Commits 규칙
     ├── worktree-git-workflows.md  # Worktree 커밋 히스토리 관리 전략
@@ -59,25 +60,42 @@ dotfiles/
 
 1. `manifests/winget.txt` → winget 패키지 설치
    1-1. `config/git/gitconfig` → git config 병합 + Windows override (`autocrlf=true`, `fileMode=false`)
-   1-2. `config/windows/tmux.conf` → `~/.tmux.conf` 복사
+   1-2. `config/tmux/tmux.windows.conf` → `~/.tmux.conf` 복사
    1-3. `YAZI_FILE_ONE` 환경변수 설정 (Git file.exe 경로)
    1-4. `config/yazi/` → `%APPDATA%\yazi\config\` 배포 (nvim opener 설정)
    1-5. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
-3. Codex native 설치
-   3-1. `config/Codex/` → `~/.Codex/` 배포 (settings.json 병합, AGENTS.md 단순 복사)
-   3-2. RTK 바이너리 설치 + hook 생성 (`~/.local/bin/rtk`, `~/.Codex/hooks/rtk-rewrite.sh`)
-4. PowerShell 프로파일 설정 (`config/windows/profile.ps1`, 마커 방식)
+3. Claude Code native 설치
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
+   3-2. RTK 바이너리 설치 + hook 생성 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
+4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
 6. `manifests/skills.txt` → npx skills 설치
+
+### macOS install.sh 실행 순서
+
+1. `manifests/Brewfile` → Homebrew 패키지 설치
+   1-1. `config/git/gitconfig` → git config 병합 + macOS override (`autocrlf=input`, `fileMode=true`)
+   1-2. `config/tmux/tmux.linux.conf` → `~/.tmux.conf` 복사
+   1-3. `config/yazi/` → `~/.config/yazi/` 배포
+   1-4. `config/nvim/` → `~/.config/nvim/` 배포 (기존 설정 있으면 건너뜀)
+   1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
+   1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
+2. fnm → Node.js LTS
+   2-1. `manifests/npm-global.txt` → npm 전역 패키지
+3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
+   3-2. RTK 공식 install.sh + hook 다운로드 (`~/.local/bin/rtk`)
+4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
+5. `manifests/skills.txt` → npx skills 설치
 
 ### Linux install.sh 실행 순서
 
 1. `manifests/apt.txt` → apt 패키지 설치 
    1-1. `config/git/gitconfig` → git config 병합 + Linux override (`autocrlf=input`, `fileMode=true`)
-   1-2. `config/linux/tmux.conf` → `~/.tmux.conf` 복사
+   1-2. `config/tmux/tmux.linux.conf` → `~/.tmux.conf` 복사
    1-3. `config/yazi/` → `~/.config/yazi/` 배포
    1-4. `config/nvim/` → `~/.config/nvim/` 배포 (lazy.nvim Structured Setup, 기존 설정 있으면 건너뜀)
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
@@ -85,9 +103,9 @@ dotfiles/
    1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf(tar.gz), eza(tar.gz), yq(단일 바이너리)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
-3. Codex native 설치 (`curl -fsSL https://Codex.ai/install.sh | bash`)
-   3-1. `config/Codex/` → `~/.Codex/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, AGENTS.md 단순 복사)
-   3-2. RTK 공식 install.sh + hook 다운로드 (`~/.local/bin/rtk`, `~/.Codex/hooks/rtk-rewrite.sh`)
+3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
+   3-2. RTK 공식 install.sh + hook 다운로드 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
 
@@ -122,4 +140,4 @@ worktree 세션에서 작업 완료 후 main에 합칠 때 커밋 성격에 따�
 - Windows는 PowerShell 7+ (pwsh) 기준. `install.ps1`이 PS 7+ 프로파일에만 설정을 적용한다.
 - Git Bash 지원: `install.ps1`이 `~/.bashrc`에 마커 방식으로 설정을 삽입한다. Git for Windows가 설치되어 있어야 한다.
 - Linux는 Ubuntu 22.04 LTS 이상(apt 기반). `install.sh`는 sudo 권한이 필요하다.
-- macOS 지원은 `macos/` 디렉토리에 보류 중이며 현재 설치 스크립트에 포함되지 않는다.
+- macOS는 Homebrew 기반. `install.sh`가 `manifests/Brewfile`로 패키지를 설치하고 `config/macos/.macos`로 시스템 기본값을 적용한다.
