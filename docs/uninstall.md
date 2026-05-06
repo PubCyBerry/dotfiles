@@ -182,8 +182,11 @@ Remove-Item -Path "$env:USERPROFILE\.local\share\claude" -Recurse -Force
 # dotfiles가 복사한 CLAUDE.md만 제거
 Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force
 
-# RTK hook만 제거
-Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force
+# settings.json의 RTK hook만 제거
+$settingsPath = "$env:USERPROFILE\.claude\settings.json"
+$settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+$settings.hooks.PSObject.Properties.Remove("PreToolUse")
+$settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
 ```
 
 settings.json에서 dotfiles가 추가한 키 제거:
@@ -211,8 +214,15 @@ $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -No
 # 바이너리 제거
 Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
 
-# Claude hook 제거
-Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
+# Claude hook 제거 (settings.json 엔트리)
+$settingsPath = "$env:USERPROFILE\.claude\settings.json"
+if (Test-Path $settingsPath) {
+    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    if ($settings.hooks -and $settings.hooks.PreToolUse) {
+        $settings.hooks.PSObject.Properties.Remove("PreToolUse")
+        $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
+    }
+}
 
 # .local\bin에 다른 도구가 없을 경우 PATH에서도 제거
 $localBin = "$env:USERPROFILE\.local\bin"
@@ -316,7 +326,14 @@ npx skills remove anthropics/skills --skill pptx -g
 npx skills remove anthropics/skills --skill docx -g
 npx skills remove anthropics/skills --skill xlsx -g
 Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:USERPROFILE\.claude\hooks\rtk-rewrite.sh" -Force -ErrorAction SilentlyContinue
+$settingsPath = "$env:USERPROFILE\.claude\settings.json"
+if (Test-Path $settingsPath) {
+    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    if ($settings.hooks -and $settings.hooks.PreToolUse) {
+        $settings.hooks.PSObject.Properties.Remove("PreToolUse")
+        $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
+    }
+}
 Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force -ErrorAction SilentlyContinue
 winget uninstall --id Anthropic.Claude
 ```

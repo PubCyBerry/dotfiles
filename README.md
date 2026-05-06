@@ -90,7 +90,7 @@ dotfiles/
     claude/
       claude-hud.json              # claude-hud 설정
       CLAUDE.md                    # Claude 전역 지침 설정
-      settings.json                # Claude Code 설정 (hook, env, permissions)
+      settings.json                # Claude Code 설정 (`rtk hook claude`, env, permissions)
     git/
       gitconfig                    # git 설정 (delta pager 포함, OS-중립)
     powershell/

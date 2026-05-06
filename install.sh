@@ -625,7 +625,7 @@ else
         fi
     fi
 
-    # hook 등록은 config/claude/settings.json에 박혀 있고 3-1 단계의 jq deep-merge로 ~/.claude/settings.json에 반영됨
+    # Claude hook 등록은 config/claude/settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 jq deep-merge로 ~/.claude/settings.json에 반영됨
 fi
 
 # =============================================
@@ -669,4 +669,3 @@ fi
 
 echo
 echo "==> Done! Restart your terminal and Claude Code to apply all changes."
-

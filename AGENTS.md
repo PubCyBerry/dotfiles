@@ -69,7 +69,7 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
-   3-2. RTK 바이너리 설치 + hook 생성 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
+   3-2. RTK 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 등록 사용
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
 6. `manifests/skills.txt` → npx skills 설치
@@ -87,7 +87,7 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
-   3-2. RTK 공식 install.sh + hook 다운로드 (`~/.local/bin/rtk`)
+   3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치
 
@@ -105,7 +105,7 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
-   3-2. RTK 공식 install.sh + hook 다운로드 (`~/.local/bin/rtk`, `~/.claude/hooks/rtk-rewrite.sh`)
+   3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
 

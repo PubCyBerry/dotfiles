@@ -326,7 +326,7 @@ if (Get-Command rtk -ErrorAction SilentlyContinue) {
     }
 }
 
-# hook 등록은 config\claude\settings.json에 박혀 있고 3-1 단계의 settings.json 병합으로 반영됨
+# Claude hook 등록은 config\claude\settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 settings.json 병합으로 반영됨
 
 # =============================================
 # 4. PowerShell 프로파일 설정 (마커 방식)

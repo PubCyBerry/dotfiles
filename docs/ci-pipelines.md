@@ -138,7 +138,7 @@ fzf        v0.53.0
 | 환경변수 | 스킵 대상 | 이유 |
 |---|---|---|
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
-| `SKIP_RTK=1` | RTK 설치 + hook 생성 | 독점 외부 서비스 |
+| `SKIP_RTK=1` | RTK 설치 + `settings.json` hook 설정 준비 | 독점 외부 서비스 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `GITHUB_TOKEN=...` | `gh_release_tag()` 함수 | API rate limit 우회 |
 

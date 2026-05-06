@@ -7,9 +7,9 @@ Claude Code와 관련 에이전트/스킬 설정 상세.
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|
 | `config/claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 전역 행동 설정 (도구 사용 규칙) |
-| `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한 설정 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한, `rtk hook claude` hook 설정 |
 
-Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합, CLAUDE.md는 단순 복사된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로, CLAUDE.md는 단순 복사로 설정된다.
+Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합, CLAUDE.md는 단순 복사된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로, CLAUDE.md는 단순 복사로 설정된다. 현재 dotfiles는 `settings.json` 안에 `rtk hook claude`를 미리 포함해 배포하며, 별도 `rtk-rewrite.sh` 파일은 전제하지 않는다.
 
 ## claude-hud
 
