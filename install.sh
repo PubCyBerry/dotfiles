@@ -362,9 +362,10 @@ if [[ "$OS" == "Linux" ]]; then
 
 # GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
 _TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
-gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit" &
-gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"   &
-gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"     &
+gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit"   &
+gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"     &
+gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"       &
+gh_release_tag steipete/CodexBar     > "$_TAG_DIR/codexbar"  &
 wait
 
 echo
@@ -494,6 +495,18 @@ if [[ -n "$YQ_ARCH" ]]; then
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
     fi
     fi
+
+echo
+echo "==> Installing codexbar (CLI) from GitHub releases..."
+CB_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
+if [[ -n "$CB_ARCH" ]]; then
+    CB_TAG="$(cat "$_TAG_DIR/codexbar")"
+    install_gh_tar "codexbar" \
+        "https://github.com/steipete/CodexBar/releases/latest/download/CodexBarCLI-${CB_TAG}-linux-${CB_ARCH}.tar.gz" \
+        "codexbar"
+else
+    echo "    [!] Unsupported arch for codexbar: $ARCH (skipping)"
+fi
 
     # =============================================
     # 2. Node.js LTS (fnm)

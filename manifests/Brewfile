@@ -43,3 +43,7 @@ brew "tmux"
 
 # RTK (Rust Token Killer)
 brew "rtk"
+
+# CodexBar (AI 코딩 도구 사용량 메뉴바 앱, macOS 14+ Sonoma 필요)
+tap "steipete/tap"
+cask "codexbar"

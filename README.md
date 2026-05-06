@@ -188,6 +188,8 @@ dotfiles/
 | [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | Claude HUD statusline | <img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud?style=flat&label=%E2%AD%90" alt="stars"> |
 | [sirmalloc/ccstatusline](https://github.com/sirmalloc/ccstatusline) | Claude Code 상태줄 표시 도구 | <img src="https://img.shields.io/github/stars/sirmalloc/ccstatusline?style=flat&label=%E2%AD%90" alt="stars"> |
 | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | RTK 토큰 최적화 도구 | <img src="https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&label=%E2%AD%90" alt="stars"> |
+| [steipete/CodexBar](https://github.com/steipete/CodexBar) | AI 코딩 도구 사용량/쿼터 메뉴바 앱 (macOS GUI + Linux/macOS CLI) | <img src="https://img.shields.io/github/stars/steipete/CodexBar?style=flat&label=%E2%AD%90" alt="stars"> |
+| [Finesssee/Win-CodexBar](https://github.com/Finesssee/Win-CodexBar) | CodexBar Windows 포트 (Tauri 트레이 앱, 28개 AI 프로바이더) | <img src="https://img.shields.io/github/stars/Finesssee/Win-CodexBar?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Vim
 

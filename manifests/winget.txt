@@ -36,3 +36,6 @@ ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
 astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
 # astral-sh.ruff
 # httpie.httpie
+
+# AI 도구 사용량 모니터
+Finesssee.Win-CodexBar          # AI 코딩 도구 사용량/쿼터 트레이 모니터 (Windows 포트)
