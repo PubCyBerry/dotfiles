@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Windows 11 / Ubuntu / macOS 환경을 위한 개인 dotfiles. 터미널 설정, 패키지 설치 스크립트, AI 에이전트 설정을 관리한다.
 
