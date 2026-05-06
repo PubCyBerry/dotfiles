@@ -494,7 +494,6 @@ if [[ -n "$YQ_ARCH" ]]; then
     else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
     fi
-    fi
 
 echo
 echo "==> Installing codexbar (CLI) from GitHub releases..."
@@ -507,6 +506,8 @@ if [[ -n "$CB_ARCH" ]]; then
 else
     echo "    [!] Unsupported arch for codexbar: $ARCH (skipping)"
 fi
+
+    fi
 
     # =============================================
     # 2. Node.js LTS (fnm)
