@@ -2,6 +2,15 @@
 
 dotfiles가 설치한 모든 항목을 제거하는 방법. 필요한 항목만 선택적으로 제거 가능.
 
+## 백업 경로
+
+설치/업데이트 시 기존 대상 파일은 다음 경로에 백업된다.
+
+- Windows: `%USERPROFILE%\.dotfiles-backup\<timestamp>\`
+- Linux/macOS: `$HOME/.dotfiles-backup/<timestamp>/`
+
+설정 제거 전에 필요한 파일은 이 백업 경로에서 복구할 수 있다.
+
 ## Windows
 
 `install.ps1`의 실행 순서와 동일한 번호로 구성. PowerShell 7+ (pwsh)에서 실행.

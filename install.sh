@@ -1,671 +1,474 @@
 #!/usr/bin/env bash
-# Linux(Ubuntu) dotfiles 설치 진입점 (all-in-one)
-# 실행: bash install.sh
-# 지원: Ubuntu 22.04+ (apt 기반)
+# Unix dotfiles installer/updater.
+# Usage: bash install.sh [--profile minimal|default|full] [--only steps] [--skip steps] [--dry-run] [--with-defaults]
 
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OS="$(uname -s)"
+# shellcheck source=scripts/install/lib.sh
+source "$ROOT/scripts/install/lib.sh"
+trap cleanup_tmpfiles EXIT
 
+OS="$(uname -s)"
+ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+PROFILE="default"
 APPLY_DEFAULTS=false
-for arg in "$@"; do
-  [[ "$arg" == "--with-defaults" ]] && APPLY_DEFAULTS=true
+DOTFILES_ONLY=""
+DOTFILES_SKIP=""
+DOTFILES_DRY_RUN=false
+
+usage() {
+    cat <<'EOF'
+Usage: bash install.sh [options]
+
+Options:
+  --profile minimal|default|full   Installation profile (default: default)
+  --only a,b,c                     Run only selected steps: packages,configs,node,claude,rtk,skills
+  --skip a,b,c                     Skip selected steps
+  --dry-run                        Print planned changes without mutating files
+  --with-defaults                  Apply macOS defaults
+  -h, --help                       Show this help
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --profile) PROFILE="${2:-}"; shift 2 ;;
+        --profile=*) PROFILE="${1#*=}"; shift ;;
+        --only) DOTFILES_ONLY="${2:-}"; shift 2 ;;
+        --only=*) DOTFILES_ONLY="${1#*=}"; shift ;;
+        --skip) DOTFILES_SKIP="${2:-}"; shift 2 ;;
+        --skip=*) DOTFILES_SKIP="${1#*=}"; shift ;;
+        --dry-run) DOTFILES_DRY_RUN=true; shift ;;
+        --with-defaults) APPLY_DEFAULTS=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) log_fail "Unknown option: $1"; usage; exit 2 ;;
+    esac
 done
 
-# =============================================
-# 경로 상수
-# =============================================
+case "$PROFILE" in
+    minimal)
+        [[ -z "$DOTFILES_ONLY" ]] && DOTFILES_ONLY="packages,configs"
+        ;;
+    default)
+        ;;
+    full)
+        ;;
+    *)
+        log_fail "Invalid profile: $PROFILE"
+        exit 2
+        ;;
+esac
+
+export DOTFILES_DRY_RUN DOTFILES_ONLY DOTFILES_SKIP
+
 CLAUDE_DIR="$HOME/.claude"
 LOCAL_BIN="$HOME/.local/bin"
 NVIM_CONFIG_DIR="$HOME/.config/nvim"
 YAZI_CONFIG_DIR="$HOME/.config/yazi"
 STARSHIP_CONFIG="$HOME/.config/starship.toml"
-ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"   # amd64, arm64, ...
 
-mkdir -p "$LOCAL_BIN" "$HOME/.config"
+if ! is_dry_run; then
+    mkdir -p "$LOCAL_BIN" "$HOME/.config"
+fi
 
-# =============================================
-# 헬퍼 함수
-# =============================================
-_TMPFILES=()
-_cleanup() { if [[ ${#_TMPFILES[@]} -gt 0 ]]; then rm -rf "${_TMPFILES[@]}"; fi; }
-trap _cleanup EXIT
+log_step "Unix dotfiles setup starting"
+printf '    Source: %s\n' "$ROOT"
+printf '    OS:     %s\n' "${OS:-unknown}"
+printf '    Arch:   %s\n' "$ARCH"
+printf '    Profile:%s\n' "$PROFILE"
+is_dry_run && printf '    Mode:   dry-run\n'
+printf '    Backup: %s\n' "$DOTFILES_BACKUP_ROOT"
 
-manifest_lines() {
-    local path="$1"
-    [[ -f "$path" ]] || return 0
-    LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
-}
-
-set_profile_block() {
-    local file="$1" content="$2"
-    local begin="# ===== dotfiles-begin ====="
-    local end="# ===== dotfiles-end ====="
-    local block tmp
-    block="$(printf '%s\n%s\n%s' "$begin" "$content" "$end")"
-
-    mkdir -p "$(dirname "$file")"
-    [[ -f "$file" ]] || : > "$file"
-
-    if grep -qF "$begin" "$file" && grep -qF "$end" "$file"; then
-        tmp="$(mktemp)"; _TMPFILES+=("$tmp")
-        awk -v begin="$begin" -v end="$end" -v repl="$block" '
-            BEGIN { skip = 0 }
-            $0 == begin { print repl; skip = 1; next }
-            skip && $0 == end { skip = 0; next }
-            !skip { print }
-        ' "$file" > "$tmp"
-        mv "$tmp" "$file"
-        echo "    Updated dotfiles block in $file"
-    else
-        printf '\n%s\n' "$block" >> "$file"
-        echo "    Appended dotfiles block to $file"
-    fi
-}
-
-merge_gitconfig() {
-    local path="$1"
-    if [[ ! -f "$path" ]]; then
-        echo "    [!] $path not found, skipping."
-        return 0
-    fi
-
-    local section="" trimmed key value existing_val
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        trimmed="${line#"${line%%[![:space:]]*}"}"
-        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-        if [[ "$trimmed" =~ ^\[(.+)\]$ ]]; then
-            section="${BASH_REMATCH[1]}"
-        elif [[ -n "$trimmed" && "${trimmed:0:1}" != "#" && -n "$section" ]]; then
-            if [[ "$trimmed" =~ ^([^[:space:]=]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-                key="${BASH_REMATCH[1]}"
-                value="${BASH_REMATCH[2]}"
-                existing_val=$(git config --global "$section.$key" 2>/dev/null || true)
-                if [[ -z "$existing_val" ]]; then
-                    git config --global "$section.$key" "$value"
-                    echo "    Added [$section] $key = $value"
-                else
-                    echo "    Skip  [$section] $key (already set)"
-                fi
+install_packages() {
+    if [[ "$OS" == "Darwin" ]]; then
+        log_step "Installing packages via Homebrew"
+        if ! command -v brew >/dev/null 2>&1; then
+            if is_dry_run; then
+                log_skip "Would install Homebrew"
+                return 0
+            fi
+            retry_curl https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash
+            if [[ "$(uname -m)" == "arm64" ]]; then
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+            else
+                eval "$(/usr/local/bin/brew shellenv)"
             fi
         fi
-    done < "$path"
-    echo "    gitconfig merged."
-}
-
-add_to_path_runtime() {
-    # 현재 셸 PATH 에 추가 (idempotent)
-    local dir="$1"
-    case ":$PATH:" in
-        *":$dir:"*) ;;
-        *) export PATH="$dir:$PATH" ;;
-    esac
-}
-
-run_privileged() {
-    # root면 직접 실행, 일반 유저면 sudo 경유
-    if [[ "$(id -u)" -eq 0 ]]; then
-        "$@"
-    else
-        sudo "$@"
-    fi
-}
-
-gh_release_tag() {
-    # 최신 release tag (v 접두사 포함). GITHUB_TOKEN 설정 시 rate limit 5000/hr
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$1/releases/latest" \
-            | jq -r '.tag_name // empty'
-    else
-        curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
-            | jq -r '.tag_name // empty'
-    fi
-}
-
-arch_triple() {
-    # ARCH에 맞는 triple 반환. schema 예: "amd64:x86_64-linux-musl|arm64:aarch64-linux-musl"
-    local schema="$1" entry
-    for entry in $(echo "$schema" | tr '|' ' '); do
-        if [[ "${entry%%:*}" == "$ARCH" ]]; then
-            echo "${entry#*:}"; return
+        if [[ -f "$ROOT/manifests/Brewfile" ]]; then
+            run_cmd brew bundle --file="$ROOT/manifests/Brewfile"
+        else
+            log_warn "manifests/Brewfile not found, skipping"
         fi
-    done
+        if $APPLY_DEFAULTS; then
+            log_step "Applying macOS system defaults"
+            [[ -f "$ROOT/config/macos/.macos" ]] && run_cmd bash "$ROOT/config/macos/.macos"
+        fi
+    elif [[ "$OS" == "Linux" ]]; then
+        log_step "Installing packages via apt"
+        if [[ -f "$ROOT/manifests/apt.txt" ]]; then
+            run_privileged apt-get update -y
+            mapfile -t apt_packages < <(manifest_lines "$ROOT/manifests/apt.txt")
+            if [[ ${#apt_packages[@]} -gt 0 ]]; then
+                DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "${apt_packages[@]}" --no-install-recommends
+            fi
+        else
+            log_warn "manifests/apt.txt not found, skipping"
+        fi
+
+        log_step "Configuring Linux compatibility links"
+        run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
+        if ! is_dry_run; then
+            echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
+        else
+            log_skip "Would set /etc/timezone to Asia/Seoul"
+        fi
+        if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+            run_cmd ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
+        fi
+        if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+            run_cmd ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
+        fi
+    else
+        log_warn "Unsupported OS: $OS"
+    fi
+}
+
+install_official_scripts() {
+    [[ "$OS" == "Darwin" ]] && return 0
+
+    log_step "Installing official-script tools"
+    if is_dry_run; then
+        log_skip "Would install/update zoxide, starship, atuin, fnm, bun"
+        return 0
+    fi
+    if ! command -v zoxide >/dev/null 2>&1; then
+        retry_curl https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh -s -- --bin-dir "$LOCAL_BIN"
+    else
+        log_skip "zoxide already installed"
+    fi
+
+    if ! command -v starship >/dev/null 2>&1; then
+        retry_curl https://starship.rs/install.sh | sh -s -- -b "$LOCAL_BIN" -y
+    else
+        log_skip "starship already installed"
+    fi
+
+    if ! command -v atuin >/dev/null 2>&1; then
+        curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh -s -- --non-interactive || log_warn "atuin install returned non-zero"
+    else
+        log_skip "atuin already installed"
+    fi
+
+    if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
+        retry_curl https://fnm.vercel.app/install | bash -s -- --skip-shell
+    else
+        log_skip "fnm already installed"
+    fi
+    if [[ -x "$HOME/.local/share/fnm/fnm" && ! -e "$LOCAL_BIN/fnm" ]]; then
+        run_cmd ln -sf "$HOME/.local/share/fnm/fnm" "$LOCAL_BIN/fnm"
+    fi
+
+    if ! command -v bun >/dev/null 2>&1 && [[ ! -x "$HOME/.bun/bin/bun" ]]; then
+        retry_curl https://bun.sh/install | bash
+    else
+        log_skip "bun already installed"
+    fi
+    if [[ -x "$HOME/.bun/bin/bun" && ! -e "$LOCAL_BIN/bun" ]]; then
+        run_cmd ln -sf "$HOME/.bun/bin/bun" "$LOCAL_BIN/bun"
+    fi
+
+    add_to_path_runtime "$LOCAL_BIN"
+    add_to_path_runtime "$HOME/.bun/bin"
+    add_to_path_runtime "$HOME/.local/share/fnm"
 }
 
 install_gh_tar() {
-    # tar.gz → /usr/local/bin/$name. $1=name $2=url $3=bin_in_archive(default:$1)
     local name="$1" url="$2" bin="${3:-$1}"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name.tar.gz" "$url"
-    tar -xzf "$TMP/$name.tar.gz" -C "$TMP"
-    run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
+    if command -v "$name" >/dev/null 2>&1; then
+        log_skip "$name already installed"
+        return 0
+    fi
+    local tmp
+    tmp="$(mktemp -d)"; _TMPFILES+=("$tmp")
+    retry_curl -o "$tmp/$name.tar.gz" "$url"
+    tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
+    run_privileged install -m 755 "$tmp/$bin" "/usr/local/bin/$name"
     hash -r 2>/dev/null || true
-    echo "    $name installed."
+    log_ok "$name installed"
 }
 
 install_gh_deb() {
-    # .deb → apt-get install. $1=name $2=url
     local name="$1" url="$2"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP_DEB; TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP_DEB" "$url"
-    chmod 644 "$TMP_DEB"
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-    echo "    $name installed."
+    if command -v "$name" >/dev/null 2>&1; then
+        log_skip "$name already installed"
+        return 0
+    fi
+    local tmp_deb
+    tmp_deb="$(mktemp --suffix=.deb)"; _TMPFILES+=("$tmp_deb")
+    retry_curl -o "$tmp_deb" "$url"
+    chmod 644 "$tmp_deb"
+    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$tmp_deb"
+    log_ok "$name installed"
 }
 
 install_gh_bin() {
-    # 단일 바이너리 → /usr/local/bin/$name. $1=name $2=url
     local name="$1" url="$2"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name" "$url"
-    run_privileged install -m 755 "$TMP/$name" "/usr/local/bin/$name"
-    echo "    $name installed."
+    if command -v "$name" >/dev/null 2>&1; then
+        log_skip "$name already installed"
+        return 0
+    fi
+    local tmp
+    tmp="$(mktemp -d)"; _TMPFILES+=("$tmp")
+    retry_curl -o "$tmp/$name" "$url"
+    run_privileged install -m 755 "$tmp/$name" "/usr/local/bin/$name"
+    log_ok "$name installed"
 }
 
-echo "==> Unix dotfiles setup starting..."
-echo "    Source: $ROOT"
-echo "    OS:     ${OS:-unknown}"
-echo "    Arch:   $ARCH"
-
-if [[ "$OS" == "Darwin" ]]; then
-    # =============================================
-    # [macOS] Homebrew 및 Brewfile
-    # =============================================
-    echo
-    if ! command -v brew >/dev/null 2>&1; then
-      echo "    Installing Homebrew..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      if [[ "$(uname -m)" == "arm64" ]]; then
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-      else
-          eval "$(/usr/local/bin/brew shellenv)"
-      fi
+install_github_releases() {
+    [[ "$OS" == "Linux" ]] || return 0
+    log_step "Installing GitHub release tools"
+    if is_dry_run; then
+        log_skip "Would install/update GitHub release tools from manifests/tools.tsv"
+        return 0
     fi
 
-    BREWFILE="$ROOT/manifests/Brewfile"
-    echo "    Installing packages from Brewfile..."
-    if [[ -f "$BREWFILE" ]]; then
-        brew bundle --file="$BREWFILE"
+    local tag_dir
+    tag_dir="$(mktemp -d)"; _TMPFILES+=("$tag_dir")
+    gh_release_tag jesseduffield/lazygit > "$tag_dir/lazygit" &
+    gh_release_tag dandavison/delta > "$tag_dir/delta" &
+    gh_release_tag junegunn/fzf > "$tag_dir/fzf" &
+    gh_release_tag steipete/CodexBar > "$tag_dir/codexbar" &
+    wait
+
+    local yazi_triple
+    yazi_triple="$(arch_triple "amd64:x86_64-unknown-linux-musl|arm64:aarch64-unknown-linux-musl" "$ARCH")"
+    if command -v yazi >/dev/null 2>&1; then
+        log_skip "yazi already installed"
+    elif [[ -n "$yazi_triple" ]]; then
+        install_gh_deb "yazi" "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${yazi_triple}.deb"
     else
-        echo "    [!] manifests/Brewfile not found, skipping."
+        log_warn "Unsupported arch for yazi: $ARCH"
     fi
 
-    if $APPLY_DEFAULTS; then
-      echo "==> Applying macOS system defaults..."
-      MACOS_DEFAULTS="$ROOT/config/macos/.macos"
-      if [[ -f "$MACOS_DEFAULTS" ]]; then
-          bash "$MACOS_DEFAULTS"
-      fi
+    local lg_arch lg_tag lg_ver
+    lg_arch="$(arch_triple "amd64:Linux_x86_64|arm64:Linux_arm64" "$ARCH")"
+    if [[ -n "$lg_arch" ]]; then
+        lg_tag="$(cat "$tag_dir/lazygit")"; lg_ver="${lg_tag#v}"
+        install_gh_tar "lazygit" "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${lg_ver}_${lg_arch}.tar.gz"
     fi
 
-    echo
-    echo "==> Merging git config (macOS)..."
-    merge_gitconfig "$ROOT/config/git/gitconfig"
-    git config --global core.autocrlf input
-    git config --global core.fileMode true
-
-elif [[ "$OS" == "Linux" ]]; then
-    # =============================================
-    # [Linux] apt 및 github releases
-    # =============================================
-    echo
-    echo "==> Installing packages via apt..."
-    APT_FILE="$ROOT/manifests/apt.txt"
-    if [[ -f "$APT_FILE" ]]; then
-        run_privileged apt-get update -y
-        # shellcheck disable=SC2046
-        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
-            $(manifest_lines "$APT_FILE") --no-install-recommends
-    else
-        echo "    [!] manifests/apt.txt not found, skipping."
+    local nvim_min="0.10.0" nvim_needs=true nvim_cur nvim_arch tmp nvim_dir
+    if command -v nvim >/dev/null 2>&1; then
+        nvim_cur="$(nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+        if [[ -n "$nvim_cur" ]] && version_ge "$nvim_cur" "$nvim_min"; then
+            nvim_needs=false
+            log_skip "neovim already satisfies >= $nvim_min"
+        fi
+    fi
+    if $nvim_needs; then
+        nvim_arch="$(arch_triple "amd64:x86_64|arm64:aarch64" "$ARCH")"
+        if [[ -n "$nvim_arch" ]]; then
+            tmp="$(mktemp -d)"; _TMPFILES+=("$tmp")
+            retry_curl -o "$tmp/nvim.tar.gz" "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${nvim_arch}.tar.gz"
+            tar -xzf "$tmp/nvim.tar.gz" -C "$tmp"
+            nvim_dir="$(find "$tmp" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
+            run_privileged cp -r "${nvim_dir}/." /usr/local/
+            log_ok "neovim installed"
+        fi
     fi
 
-    echo "    Setting timezone to Asia/Seoul..."
-    run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
-    echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
-
-    # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
-    if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
-        ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
-        echo "    Linked $LOCAL_BIN/bat -> batcat"
-    fi
-    if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-        ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
-        echo "    Linked $LOCAL_BIN/fd -> fdfind"
+    local delta_arch delta_tag delta_ver
+    delta_arch="$(arch_triple "amd64:amd64|arm64:arm64" "$ARCH")"
+    if [[ -n "$delta_arch" ]]; then
+        delta_tag="$(cat "$tag_dir/delta")"; delta_ver="${delta_tag#v}"
+        install_gh_deb "delta" "https://github.com/dandavison/delta/releases/download/${delta_tag}/git-delta_${delta_ver}_${delta_arch}.deb"
     fi
 
-    # =============================================
-    # 1-1. gitconfig 병합 + Linux 전용 override
-    # =============================================
-    echo
-    echo "==> Merging git config..."
-    merge_gitconfig "$ROOT/config/git/gitconfig"
-    git config --global core.autocrlf input
-    git config --global core.fileMode true
-    echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
-fi
-
-# =============================================
-# 1-2. tmux 설정 복사 (config/tmux/tmux.linux.conf → ~/.tmux.conf)
-# =============================================
-echo
-TMUX_SRC="$ROOT/config/tmux/tmux.linux.conf"
-if [[ -f "$TMUX_SRC" ]]; then
-    cp -f "$TMUX_SRC" "$HOME/.tmux.conf"
-    echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"
-fi
-
-# =============================================
-# 1-3. yazi 설정 배포 (config/yazi/ → ~/.config/yazi/)
-# =============================================
-echo
-echo "==> Deploying yazi config..."
-if [[ -d "$ROOT/config/yazi" ]]; then
-    mkdir -p "$YAZI_CONFIG_DIR"
-    cp -rf "$ROOT/config/yazi/." "$YAZI_CONFIG_DIR/"
-    echo "    yazi config deployed to $YAZI_CONFIG_DIR"
-else
-    echo "    [!] config/yazi not found, skipping."
-fi
-
-# =============================================
-# 1-4. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/)
-# =============================================
-echo
-echo "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
-if [[ ! -f "$ROOT/config/nvim/init.lua" ]]; then
-    echo "    [!] config/nvim/init.lua not found, skipping."
-else
-    mkdir -p "$NVIM_CONFIG_DIR"
-    cp -rf "$ROOT/config/nvim/." "$NVIM_CONFIG_DIR/"
-    echo "    lazy.nvim config deployed to $NVIM_CONFIG_DIR"
-    echo "    Run nvim to auto-install lazy.nvim on first launch."
-fi
-
-# =============================================
-# 1-5. starship 설정 배포 (config/starship.toml → ~/.config/starship.toml)
-# =============================================
-echo
-if [[ -f "$ROOT/config/starship.toml" ]]; then
-    cp -f "$ROOT/config/starship.toml" "$STARSHIP_CONFIG"
-    echo "    Copied starship.toml to $STARSHIP_CONFIG"
-fi
-
-# =============================================
-# 1-6. apt에 없거나 오래된 도구 — 공식 install one-liner
-# =============================================
-echo
-echo "==> Installing zoxide (official script)..."
-if ! command -v zoxide >/dev/null 2>&1; then
-    # --bin-dir로 사용자 디렉토리 지정 → sudo 없이 설치 (zoxide 기본도 ~/.local/bin이지만 명시)
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh \
-        | sh -s -- --bin-dir "$LOCAL_BIN"
-else
-    echo "    zoxide already installed."
-fi
-
-echo
-echo "==> Installing starship (official script)..."
-if ! command -v starship >/dev/null 2>&1; then
-    # -b 로 사용자 디렉토리 지정 → sudo 비밀번호 prompt 회피 (starship 기본은 /usr/local/bin)
-    curl -sS https://starship.rs/install.sh | sh -s -- -b "$LOCAL_BIN" -y
-else
-    echo "    starship already installed."
-fi
-
-echo
-echo "==> Installing atuin (official script, non-interactive)..."
-if ! command -v atuin >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
-        | sh -s -- --non-interactive || echo "    [!] atuin install returned non-zero (check log)."
-else
-    echo "    atuin already installed."
-fi
-
-echo
-echo "==> Installing fnm (official script, --skip-shell)..."
-if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-else
-    echo "    fnm already installed."
-fi
-if [[ -x "$HOME/.local/share/fnm/fnm" ]] && [[ ! -e "$LOCAL_BIN/fnm" ]]; then
-    ln -sf "$HOME/.local/share/fnm/fnm" "$LOCAL_BIN/fnm"
-    echo "    Linked $LOCAL_BIN/fnm -> fnm"
-fi
-
-echo
-echo "==> Installing bun (official script)..."
-if ! command -v bun >/dev/null 2>&1 && [[ ! -x "$HOME/.bun/bin/bun" ]]; then
-    curl -fsSL https://bun.sh/install | bash
-else
-    echo "    bun already installed."
-fi
-if [[ -x "$HOME/.bun/bin/bun" ]] && [[ ! -e "$LOCAL_BIN/bun" ]]; then
-    ln -sf "$HOME/.bun/bin/bun" "$LOCAL_BIN/bun"
-    echo "    Linked $LOCAL_BIN/bun -> bun"
-fi
-
-add_to_path_runtime "$LOCAL_BIN"
-add_to_path_runtime "$HOME/.bun/bin"
-add_to_path_runtime "$HOME/.local/share/fnm"
-
-# macOS already installed most of these via Brewfile. Skip Linux-only binary installs on macOS.
-if [[ "$OS" == "Linux" ]]; then
-    # =============================================
-    # 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
-    # =============================================
-
-# GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
-_TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
-gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit"   &
-gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"     &
-gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"       &
-gh_release_tag steipete/CodexBar     > "$_TAG_DIR/codexbar"  &
-wait
-
-echo
-echo "==> Installing yazi from GitHub releases..."
-# musl 정적 빌드 사용 → glibc 버전 무관 (22.04 glibc 2.35 등 구버전에서도 동작)
-YAZI_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-musl|arm64:aarch64-unknown-linux-musl")"
-if command -v yazi >/dev/null 2>&1 && yazi --version >/dev/null 2>&1; then
-    echo "    yazi already installed: $(yazi --version | head -1)"
-elif [[ -n "$YAZI_TRIPLE" ]]; then
-    TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl -fsSL -o "$TMP_DEB" \
-        "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
-    chmod 644 "$TMP_DEB"
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-    hash -r 2>/dev/null || true
-    echo "    yazi installed: $(yazi --version | head -1)"
-else
-    echo "    [!] Unsupported arch for yazi: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing lazygit from GitHub releases..."
-LG_ARCH="$(arch_triple "amd64:Linux_x86_64|arm64:Linux_arm64")"
-if [[ -n "$LG_ARCH" ]]; then
-    LG_TAG="$(cat "$_TAG_DIR/lazygit")"
-    LG_VER="${LG_TAG#v}"
-    install_gh_tar "lazygit" \
-        "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
-else
-    echo "    [!] Unsupported arch for lazygit: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing neovim from GitHub releases..."
-# 22.04 apt의 nvim은 0.6.x → lazy.nvim(>=0.8) 및 본 설정(0.10+) 미만이면 GitHub releases로 강제 업그레이드
-NVIM_MIN_VER="0.10.0"
-nvim_needs_install=true
-if command -v nvim >/dev/null 2>&1; then
-    nvim_cur_ver="$(nvim --version 2>/dev/null | head -1 \
-        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-    if [[ -n "$nvim_cur_ver" ]] \
-        && dpkg --compare-versions "$nvim_cur_ver" ge "$NVIM_MIN_VER"; then
-        nvim_needs_install=false
-        echo "    neovim already installed: $(nvim --version | head -1)"
-    else
-        echo "    nvim ${nvim_cur_ver:-unknown} < ${NVIM_MIN_VER}, upgrading from GitHub releases..."
+    local fzf_min="0.40.0" fzf_needs=true fzf_cur fzf_arch fzf_tag fzf_ver
+    if command -v fzf >/dev/null 2>&1; then
+        fzf_cur="$(fzf --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
+        if [[ -n "$fzf_cur" ]] && version_ge "$fzf_cur" "$fzf_min"; then
+            fzf_needs=false
+            log_skip "fzf already satisfies >= $fzf_min"
+        fi
     fi
-fi
-if $nvim_needs_install; then
-    NVIM_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
-    if [[ -n "$NVIM_ARCH" ]]; then
-        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
-        curl -fsSL -o "$TMP_DIR/nvim.tar.gz" \
-            "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
-        NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
-        run_privileged cp -r "${NVIM_DIR}/." /usr/local/
-        hash -r 2>/dev/null || true
-        echo "    neovim installed: $(nvim --version | head -1)"
-    else
-        echo "    [!] Unsupported arch for neovim: $ARCH (skipping)"
-    fi
-fi
-
-echo
-echo "==> Installing git-delta from GitHub releases..."
-DELTA_ARCH="$(arch_triple "amd64:amd64|arm64:arm64")"
-if [[ -n "$DELTA_ARCH" ]]; then
-    DELTA_TAG="$(cat "$_TAG_DIR/delta")"
-    DELTA_VER="${DELTA_TAG#v}"
-    install_gh_deb "delta" \
-        "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
-else
-    echo "    [!] Unsupported arch for delta: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing fzf from GitHub releases..."
-# 22.04 apt의 fzf는 0.29 → 본 dotfiles 키바인딩/preview 옵션 호환을 위해 0.40+ 강제
-FZF_MIN_VER="0.40.0"
-fzf_needs_install=true
-if command -v fzf >/dev/null 2>&1; then
-    fzf_cur_ver="$(fzf --version 2>/dev/null \
-        | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
-    if [[ -n "$fzf_cur_ver" ]] \
-        && dpkg --compare-versions "$fzf_cur_ver" ge "$FZF_MIN_VER"; then
-        fzf_needs_install=false
-        echo "    fzf already installed: $(fzf --version)"
-    else
-        echo "    fzf ${fzf_cur_ver:-unknown} < ${FZF_MIN_VER}, upgrading from GitHub releases..."
-    fi
-fi
-if $fzf_needs_install; then
-    FZF_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
-    if [[ -n "$FZF_ARCH" ]]; then
-        FZF_TAG="$(cat "$_TAG_DIR/fzf")"
-        FZF_VER="${FZF_TAG#v}"
-        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
-        curl -fsSL -o "$TMP_DIR/fzf.tar.gz" \
-            "https://github.com/junegunn/fzf/releases/download/${FZF_TAG}/fzf-${FZF_VER}-${FZF_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
-        run_privileged install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
-        hash -r 2>/dev/null || true
-        echo "    fzf installed: $(fzf --version)"
-    else
-        echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
-    fi
-fi
-
-echo
-echo "==> Installing eza from GitHub releases..."
-EZA_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-gnu|arm64:aarch64-unknown-linux-gnu")"
-if [[ -n "$EZA_TRIPLE" ]]; then
-    install_gh_tar "eza" \
-        "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
-else
-    echo "    [!] Unsupported arch for eza: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing yq from GitHub releases..."
-YQ_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
-if [[ -n "$YQ_ARCH" ]]; then
-    install_gh_bin "yq" \
-        "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
-    else
-    echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
+    if $fzf_needs; then
+        fzf_arch="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64" "$ARCH")"
+        if [[ -n "$fzf_arch" ]]; then
+            fzf_tag="$(cat "$tag_dir/fzf")"; fzf_ver="${fzf_tag#v}"
+            tmp="$(mktemp -d)"; _TMPFILES+=("$tmp")
+            retry_curl -o "$tmp/fzf.tar.gz" "https://github.com/junegunn/fzf/releases/download/${fzf_tag}/fzf-${fzf_ver}-${fzf_arch}.tar.gz"
+            tar -xzf "$tmp/fzf.tar.gz" -C "$tmp" fzf
+            run_privileged install -m 755 "$tmp/fzf" /usr/local/bin/fzf
+            log_ok "fzf installed"
+        fi
     fi
 
-echo
-echo "==> Installing codexbar (CLI) from GitHub releases..."
-CB_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
-if [[ -n "$CB_ARCH" ]]; then
-    CB_TAG="$(cat "$_TAG_DIR/codexbar")"
-    install_gh_tar "codexbar" \
-        "https://github.com/steipete/CodexBar/releases/latest/download/CodexBarCLI-${CB_TAG}-linux-${CB_ARCH}.tar.gz" \
-        "codexbar"
-else
-    echo "    [!] Unsupported arch for codexbar: $ARCH (skipping)"
-fi
+    local eza_triple yq_arch cb_arch cb_tag
+    eza_triple="$(arch_triple "amd64:x86_64-unknown-linux-gnu|arm64:aarch64-unknown-linux-gnu" "$ARCH")"
+    [[ -n "$eza_triple" ]] && install_gh_tar "eza" "https://github.com/eza-community/eza/releases/latest/download/eza_${eza_triple}.tar.gz"
+    yq_arch="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64" "$ARCH")"
+    [[ -n "$yq_arch" ]] && install_gh_bin "yq" "https://github.com/mikefarah/yq/releases/latest/download/yq_${yq_arch}"
+    cb_arch="$(arch_triple "amd64:x86_64|arm64:aarch64" "$ARCH")"
+    if [[ -n "$cb_arch" ]]; then
+        cb_tag="$(cat "$tag_dir/codexbar")"
+        install_gh_tar "codexbar" "https://github.com/steipete/CodexBar/releases/latest/download/CodexBarCLI-${cb_tag}-linux-${cb_arch}.tar.gz" "codexbar"
+    fi
+}
 
+deploy_configs() {
+    log_step "Deploying config files"
+    if [[ "$OS" == "Darwin" ]]; then
+        merge_gitconfig "$ROOT/config/git/gitconfig"
+        run_cmd git config --global core.autocrlf input
+        run_cmd git config --global core.fileMode true
+    elif [[ "$OS" == "Linux" ]]; then
+        merge_gitconfig "$ROOT/config/git/gitconfig"
+        run_cmd git config --global core.autocrlf input
+        run_cmd git config --global core.fileMode true
     fi
 
-    # =============================================
-    # 2. Node.js LTS (fnm)
-    # =============================================
-    echo
-    echo "==> Installing Node.js LTS via fnm..."
-    if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+    copy_managed_file "$ROOT/config/tmux/tmux.linux.conf" "$HOME/.tmux.conf"
+    copy_managed_dir "$ROOT/config/yazi" "$YAZI_CONFIG_DIR"
+    copy_managed_dir "$ROOT/config/nvim" "$NVIM_CONFIG_DIR"
+    copy_managed_file "$ROOT/config/starship.toml" "$STARSHIP_CONFIG"
+
+    for profile in bashrc inputrc; do
+        local src="$ROOT/config/bash/$profile"
+        [[ -f "$src" ]] && set_profile_block "$HOME/.$profile" "$(cat "$src")"
+    done
+}
+
+install_node() {
+    log_step "Installing Node.js LTS via fnm"
+    if is_dry_run; then
+        log_skip "Would install/use Node.js LTS via fnm"
+    elif ! command -v fnm >/dev/null 2>&1 && [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
+        add_to_path_runtime "$HOME/.local/share/fnm"
+    fi
+    if ! is_dry_run && command -v fnm >/dev/null 2>&1; then
         eval "$(fnm env --shell bash)"
         fnm install --lts
-        # fnm uses the exact version number, but we can set default to the installed lts
-        LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
-        if [[ -z "$LTS_VER" ]]; then
-            LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
-        fi
-        if [[ -n "$LTS_VER" ]]; then
-            fnm default "$LTS_VER"
-            fnm use "$LTS_VER"
+        local lts_ver
+        lts_ver="$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)"
+        [[ -z "$lts_ver" ]] && lts_ver="$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)"
+        if [[ -n "$lts_ver" ]]; then
+            fnm default "$lts_ver"
+            fnm use "$lts_ver"
         else
-            # fallback
             fnm default lts-latest || true
             fnm use lts-latest || true
         fi
-        echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
-    else
-        echo "    [!] fnm not found. Restart terminal and run:"
-        echo "        fnm install --lts"
-    fi
-# =============================================
-# 2-1. npm 전역 패키지 (manifests/npm-global.txt)
-# =============================================
-echo
-echo "==> Installing global npm packages..."
-NPM_FILE="$ROOT/manifests/npm-global.txt"
-if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
-    while IFS= read -r pkg; do
-        [[ -z "$pkg" ]] && continue
-        if npm install -g "$pkg" >/dev/null 2>&1; then
-            echo "    Installed $pkg"
-        else
-            echo "    [!] Failed: $pkg"
-        fi
-    done < <(manifest_lines "$NPM_FILE")
-else
-    echo "    [!] manifests/npm-global.txt or npm not found, skipping."
-fi
-
-# =============================================
-# 3. Claude Code 네이티브 설치
-# =============================================
-echo
-if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)"
-else
-    echo "==> Installing Claude Code (native)..."
-    if command -v claude >/dev/null 2>&1; then
-        echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
-    else
-        curl -fsSL https://claude.ai/install.sh | bash
-        echo "    Claude Code installed."
+        log_ok "Node $(node --version 2>/dev/null || echo 'not active yet') active"
+    elif ! is_dry_run; then
+        log_warn "fnm not found. Restart terminal and run: fnm install --lts"
     fi
 
-    # =============================================
-    # 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
-    # =============================================
-    echo
-    echo "==> Deploying Claude Code config..."
-    mkdir -p "$CLAUDE_DIR"
-
-    SETTINGS_SRC="$ROOT/config/claude/settings.json"
-    SETTINGS_DST="$CLAUDE_DIR/settings.json"
-    if [[ -f "$SETTINGS_SRC" ]]; then
-        if [[ -f "$SETTINGS_DST" ]] && command -v jq >/dev/null 2>&1; then
-            # 기존 키 보존(claude-hud의 statusLine 등) + 새 키 덮어쓰기/추가
-            TMP="$(mktemp)"; _TMPFILES+=("$TMP")
-            if jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP" \
-                && [[ -s "$TMP" ]]; then
-                mv "$TMP" "$SETTINGS_DST"
-                echo "    Merged settings.json"
+    log_step "Installing global npm packages"
+    if [[ -f "$ROOT/manifests/npm-global.txt" ]] && { is_dry_run || command -v npm >/dev/null 2>&1; }; then
+        while IFS= read -r pkg; do
+            [[ -z "$pkg" ]] && continue
+            if is_dry_run; then
+                log_skip "Would npm install -g $pkg"
+            elif npm install -g "$pkg" >/dev/null 2>&1; then
+                log_ok "Installed $pkg"
             else
-                echo "    [!] jq merge failed, keeping existing settings.json"
+                log_warn "Failed: $pkg"
+            fi
+        done < <(manifest_lines "$ROOT/manifests/npm-global.txt")
+    else
+        log_warn "manifests/npm-global.txt or npm not found, skipping"
+    fi
+}
+
+install_claude() {
+    if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
+        log_skip "Claude Code installation skipped (SKIP_CLAUDE_CODE=1)"
+        return 0
+    fi
+    log_step "Installing Claude Code and config"
+    if command -v claude >/dev/null 2>&1; then
+        log_skip "Claude Code already installed"
+    else
+        retry_curl https://claude.ai/install.sh | bash
+        log_ok "Claude Code installed"
+    fi
+
+    if ! is_dry_run; then
+        mkdir -p "$CLAUDE_DIR"
+    fi
+    local settings_src="$ROOT/config/claude/settings.json" settings_dst="$CLAUDE_DIR/settings.json"
+    if [[ -f "$settings_src" ]]; then
+        backup_existing "$settings_dst"
+        if is_dry_run; then
+            log_skip "Would merge $settings_src -> $settings_dst"
+        elif [[ -f "$settings_dst" ]] && command -v jq >/dev/null 2>&1; then
+            local tmp
+            tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+            if jq -s '.[0] * .[1]' "$settings_dst" "$settings_src" > "$tmp" && [[ -s "$tmp" ]]; then
+                mv "$tmp" "$settings_dst"
+                log_ok "Merged settings.json"
+            else
+                log_warn "jq merge failed, keeping existing settings.json"
             fi
         else
-            cp -f "$SETTINGS_SRC" "$SETTINGS_DST"
-            echo "    Copied settings.json"
+            copy_managed_file "$settings_src" "$settings_dst"
         fi
-    else
-        echo "    [!] config/claude/settings.json not found"
     fi
+    copy_managed_file "$ROOT/config/claude/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+}
 
-    CLAUDE_MD_SRC="$ROOT/config/claude/CLAUDE.md"
-    if [[ -f "$CLAUDE_MD_SRC" ]]; then
-        cp -f "$CLAUDE_MD_SRC" "$CLAUDE_DIR/CLAUDE.md"
-        echo "    Copied CLAUDE.md"
-    else
-        echo "    [!] config/claude/CLAUDE.md not found"
+install_rtk() {
+    if [[ "${SKIP_RTK:-0}" == "1" ]]; then
+        log_skip "RTK installation skipped (SKIP_RTK=1)"
+        return 0
     fi
-fi
-
-# =============================================
-# 3-2. RTK (Rust Token Killer) + Claude hook
-# =============================================
-echo
-if [[ "${SKIP_RTK:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping RTK installation (SKIP_RTK=1)"
-else
-    echo "==> Installing RTK (Rust Token Killer)..."
+    log_step "Installing RTK"
     if command -v rtk >/dev/null 2>&1; then
-        echo "    RTK already installed: $(rtk --version 2>/dev/null | head -1 || echo unknown)"
+        log_skip "RTK already installed"
     else
-        # 공식 install.sh — ~/.local/bin 에 binary 배치
-        if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh; then
-            echo "    RTK installed."
-        else
-            echo "    [!] RTK install failed. Manual: cargo install --git https://github.com/rtk-ai/rtk"
-        fi
+        retry_curl https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh || log_warn "RTK install failed"
     fi
+}
 
-    # Claude hook 등록은 config/claude/settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 jq deep-merge로 ~/.claude/settings.json에 반영됨
-fi
-
-# =============================================
-# 4. bash 프로파일 설정 (~/.bashrc, ~/.inputrc, 마커 방식)
-# =============================================
-echo
-echo "==> Updating bash profile..."
-for _profile in bashrc inputrc; do
-    _src="$ROOT/config/bash/$_profile"
-    if [[ -f "$_src" ]]; then
-        set_profile_block "$HOME/.$_profile" "$(cat "$_src")"
-    elif [[ "$_profile" == "bashrc" ]]; then
-        echo "    [!] config/bash/bashrc not found, skipping bashrc."
+install_skills() {
+    if [[ "${SKIP_SKILLS:-0}" == "1" ]]; then
+        log_skip "Claude Code skills skipped (SKIP_SKILLS=1)"
+        return 0
     fi
-done
-
-# =============================================
-# 6. Claude Code skills 설치 (manifests/skills.txt)
-# =============================================
-echo
-if [[ "${SKIP_SKILLS:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping Claude Code skills (SKIP_SKILLS=1)"
-else
-    echo "==> Restoring Claude Code skills..."
-    SKILLS_FILE="$ROOT/manifests/skills.txt"
-    if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
+    log_step "Restoring Claude Code skills"
+    if [[ -f "$ROOT/manifests/skills.txt" ]] && command -v npx >/dev/null 2>&1; then
         while IFS= read -r line; do
             [[ "$line" =~ ^([^@]+)@(.+)$ ]] || continue
             repo="${BASH_REMATCH[1]}"
             skill="${BASH_REMATCH[2]}"
-            echo "    Adding skill: $skill from $repo..."
-            if ! npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
-                echo "    [!] Failed: $repo@$skill"
+            if is_dry_run; then
+                log_skip "Would add skill $repo@$skill"
+            elif npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+                log_ok "Added $repo@$skill"
+            else
+                log_warn "Failed: $repo@$skill"
             fi
-        done < <(manifest_lines "$SKILLS_FILE")
-        echo "    Skills restored."
+        done < <(manifest_lines "$ROOT/manifests/skills.txt")
     else
-        echo "    [!] manifests/skills.txt or npx not found, skipping skills."
+        log_warn "manifests/skills.txt or npx not found, skipping"
     fi
+}
+
+if should_run_step packages; then
+    install_packages
+    install_official_scripts
+    install_github_releases
+else
+    log_skip "packages step skipped"
 fi
 
-echo
-echo "==> Done! Restart your terminal and Claude Code to apply all changes."
+if should_run_step configs; then deploy_configs; else log_skip "configs step skipped"; fi
+if should_run_step node; then install_node; else log_skip "node step skipped"; fi
+if should_run_step claude; then install_claude; else log_skip "claude step skipped"; fi
+if should_run_step rtk; then install_rtk; else log_skip "rtk step skipped"; fi
+if should_run_step skills; then install_skills; else log_skip "skills step skipped"; fi
+
+log_step "Done"
+log_ok "Restart your terminal and Claude Code to apply all changes."

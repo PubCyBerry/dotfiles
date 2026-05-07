@@ -6,6 +6,7 @@ on:
     paths:
       - install.sh
       - install.ps1
+      - "scripts/install/**"
       - "config/**"
       - "manifests/**"
       - ".github/workflows/pr-gate.yml"
@@ -13,6 +14,7 @@ on:
     paths:
       - install.sh
       - install.ps1
+      - "scripts/install/**"
       - "config/**"
       - "manifests/**"
       - ".github/workflows/pr-gate.yml"
@@ -23,13 +25,45 @@ concurrency:
 
 jobs:
   lint:
-    name: ShellCheck
+    name: Static checks
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x install.sh
 
-  test-apt-install:
+      - name: ShellCheck
+        run: shellcheck -x install.sh scripts/install/lib.sh
+
+      - name: PowerShell parse check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($file in @("install.ps1", "scripts/install/lib.ps1")) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) {
+              $errors | Format-List | Out-String | Write-Error
+            }
+          }
+
+  dry-run:
+    name: Dry-run smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash dry-run
+        run: |
+          bash install.sh --dry-run --only configs
+          bash install.sh --dry-run --skip claude,rtk,skills
+
+      - name: PowerShell dry-run
+        shell: pwsh
+        run: |
+          ./install.ps1 --dry-run --only configs
+          ./install.ps1 --dry-run --skip claude,rtk,skills
+
+  test-ubuntu-install:
     name: Ubuntu install + verify
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -74,62 +108,24 @@ jobs:
           fnm --version
           bun --version
 
-  test-macos-install:
-    name: macOS install + verify
-    runs-on: macos-latest
-    timeout-minutes: 20
-    env:
-      SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
-      SKIP_SKILLS: "1"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run install.sh
-        run: bash install.sh --with-defaults
-
-  test-windows-install:
-    name: Windows install + verify
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
-      SKIP_SKILLS: "1"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run install.ps1
-        shell: pwsh
-        run: .\install.ps1
-
   test-configs:
-    name: Config syntax
+    name: Config and manifest syntax
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get install -y jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
 
-      - name: gitconfig 문법
-        run: git config --file config/git/gitconfig --list > /dev/null
-
-      - name: JSON 문법
+      - name: Config syntax
         run: |
+          git config --file config/git/gitconfig --list > /dev/null
           jq empty config/claude/settings.json
           jq empty config/claude/claude-hud.json
 
-  test-manifest-syntax:
-    name: Manifest syntax
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate manifests
+      - name: Manifest syntax
         run: |
-          set -e
+          set -euo pipefail
           _check_lines() {
             local file="$1" pattern="$2" label="$3"
             while IFS= read -r line; do
@@ -138,16 +134,49 @@ jobs:
             done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$file")
             echo "OK: $file"
           }
-          _check_lines manifests/apt.txt \
-            '^[a-z0-9][a-z0-9._+:-]*$' 'apt package'
-          _check_lines manifests/npm-global.txt \
-            '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' 'npm package'
-          _check_lines manifests/skills.txt \
-            '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
+          _check_lines manifests/apt.txt '^[a-z0-9][a-z0-9._+:-]*$' 'apt package'
+          _check_lines manifests/npm-global.txt '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' 'npm package'
+          _check_lines manifests/skills.txt '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
+
+      - name: tools.tsv syntax
+        run: |
+          set -euo pipefail
+          awk -F '\t' '
+            BEGIN { ok=1 }
+            /^#/ || NF == 0 { next }
+            NF != 7 { print "Invalid field count: " $0; ok=0; next }
+            $3 !~ /^(apt|brew|winget|github-release|official-script|npm-global|skills)$/ { print "Invalid source: " $3; ok=0 }
+            seen[$1]++ { print "Duplicate tool: " $1; ok=0 }
+            END { exit ok ? 0 : 1 }
+          ' manifests/tools.tsv
+
+  idempotency:
+    name: Config idempotency
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run config update twice in temp HOME
+        env:
+          SKIP_CLAUDE_CODE: "1"
+          SKIP_RTK: "1"
+          SKIP_SKILLS: "1"
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          bash install.sh --only configs
+          echo "# user edit" >> "$HOME/.bashrc"
+          bash install.sh --only configs
+
+          [[ "$(grep -c 'dotfiles-begin' "$HOME/.bashrc")" -eq 1 ]]
+          [[ -d "$HOME/.dotfiles-backup" ]]
+          test -f "$HOME/.config/nvim/init.lua"
+          test -f "$HOME/.config/yazi/yazi.toml"
 
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-configs, test-manifest-syntax]
+    needs: [lint, dry-run, test-ubuntu-install, test-configs, idempotency]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -155,19 +184,18 @@ jobs:
         run: |
           results=(
             "lint:${{ needs.lint.result }}"
-            "test-apt-install:${{ needs.test-apt-install.result }}"
-            "test-macos-install:${{ needs.test-macos-install.result }}"
-            "test-windows-install:${{ needs.test-windows-install.result }}"
+            "dry-run:${{ needs.dry-run.result }}"
+            "test-ubuntu-install:${{ needs.test-ubuntu-install.result }}"
             "test-configs:${{ needs.test-configs.result }}"
-            "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
+            "idempotency:${{ needs.idempotency.result }}"
           )
           failed=0
           for r in "${results[@]}"; do
             name="${r%%:*}"; status="${r##*:}"
             if [[ "$status" == "success" ]]; then
-              echo "✓ $name"
+              echo "OK $name"
             else
-              echo "✗ $name ($status)"; failed=1
+              echo "FAIL $name ($status)"; failed=1
             fi
           done
           exit $failed

@@ -1,19 +1,74 @@
-# Windows dotfiles 설치 진입점 (all-in-one)
-# 실행: pwsh -ExecutionPolicy Bypass -File .\install.ps1
+# Windows dotfiles installer/updater.
+# Usage: pwsh -ExecutionPolicy Bypass -File .\install.ps1 [-Profile default] [-Only configs] [-Skip claude,rtk,skills] [-DryRun]
 
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
 $ROOT = $PSScriptRoot
+$Profile = "default"
+$Only = ""
+$Skip = ""
+$script:DryRun = $false
 
-# =============================================
-# 경로 상수
-# =============================================
-$ClaudeDir     = Join-Path $env:USERPROFILE ".claude"
-$LocalBin      = Join-Path $env:USERPROFILE ".local\bin"
+$i = 0
+while ($i -lt $args.Count) {
+    $arg = [string]$args[$i]
+    if ($arg -eq "--profile" -or $arg -eq "-Profile") {
+        $i++
+        $Profile = [string]$args[$i]
+    } elseif ($arg.StartsWith("--profile=")) {
+        $Profile = $arg.Substring("--profile=".Length)
+    } elseif ($arg -eq "--only" -or $arg -eq "-Only") {
+        $i++
+        $Only = [string]$args[$i]
+    } elseif ($arg.StartsWith("--only=")) {
+        $Only = $arg.Substring("--only=".Length)
+    } elseif ($arg -eq "--skip" -or $arg -eq "-Skip") {
+        $i++
+        $Skip = [string]$args[$i]
+    } elseif ($arg.StartsWith("--skip=")) {
+        $Skip = $arg.Substring("--skip=".Length)
+    } elseif ($arg -eq "--dry-run" -or $arg -eq "-DryRun") {
+        $script:DryRun = $true
+    } elseif ($arg -eq "--help" -or $arg -eq "-h") {
+        Write-Host "Usage: .\install.ps1 [--profile minimal|default|full] [--only steps] [--skip steps] [--dry-run]"
+        exit 0
+    } else {
+        throw "Unknown option: $arg"
+    }
+    $i++
+}
+
+if (@("minimal", "default", "full") -notcontains $Profile) {
+    throw "Invalid profile: $Profile"
+}
+$script:OnlySteps = @()
+$script:SkipSteps = @()
+$script:OnlyCsv = $Only
+$script:SkipCsv = $Skip
+if ($Only) { $script:OnlySteps = $Only -split '[,\s]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+if ($Skip) { $script:SkipSteps = $Skip -split '[,\s]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+if ($Profile -eq "minimal" -and $script:OnlySteps.Count -eq 0) {
+    $script:OnlySteps = @("packages", "configs")
+}
+
+. (Join-Path $ROOT "scripts\install\lib.ps1")
+
+function Is-StepEnabled([string]$Step) {
+    $onlyItems = @()
+    $skipItems = @()
+    if ($Only) { $onlyItems = $Only -split '[,\s]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+    if ($Skip) { $skipItems = $Skip -split '[,\s]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
+    if ($onlyItems.Count -gt 0 -and -not ($onlyItems -contains $Step)) { return $false }
+    if ($skipItems -contains $Step) { return $false }
+    return $true
+}
+
+$ClaudeDir = Join-Path $env:USERPROFILE ".claude"
+$LocalBin = Join-Path $env:USERPROFILE ".local\bin"
 $NvimConfigDir = Join-Path $env:LOCALAPPDATA "nvim"
-$NvimBin       = "C:\Program Files\Neovim\bin"
-$GitBashPaths  = @(
+$NvimBin = "C:\Program Files\Neovim\bin"
+$GitBashPaths = @(
     "C:\Program Files\Git\bin\bash.exe",
     "C:\Program Files (x86)\Git\bin\bash.exe"
 )
@@ -22,387 +77,265 @@ $GitFileExePaths = @(
     "C:\Program Files (x86)\Git\usr\bin\file.exe"
 )
 
-# =============================================
-# 헬퍼 함수
-# =============================================
-function Get-ManifestLines([string]$Path) {
-    Get-Content $Path |
-        Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') } |
-        ForEach-Object {
-            $line = $_.Trim()
-            if ($line -match '^([^#]+)#') { $Matches[1].Trim() } else { $line }
-        }
-}
+Write-Step "Windows dotfiles setup starting"
+Write-Host "    Source:  $ROOT"
+Write-Host "    Profile: $Profile"
+if (Test-DryRun) { Write-Host "    Mode:    dry-run" }
+Write-Host "    Backup:  $script:DotfilesBackupRoot"
 
-function Add-ToUserPath([string]$Dir) {
-    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    if ($userPath -notlike "*$Dir*") {
-        [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$Dir", "User")
-        $env:PATH = "$env:PATH;$Dir"
-        return $true
-    }
-    return $false
-}
-
-function Set-ProfileBlock([string]$FilePath, [string]$Content) {
-    $begin = "# ===== dotfiles-begin ====="
-    $end   = "# ===== dotfiles-end ====="
-    $block = "$begin`n$Content`n$end"
-    New-Item -ItemType File -Force -Path $FilePath | Out-Null
-
-    $existing = Get-Content $FilePath -Raw -ErrorAction SilentlyContinue
-    if (-not $existing) { $existing = "" }
-
-    # 기존 마커 블록을 정규식으로 완전 교체 (Singleline으로 개행 포함 매칭)
-    $pattern    = [regex]::Escape($begin) + ".*?" + [regex]::Escape($end)
-    $newContent = [regex]::Replace($existing, $pattern, $block,
-                      [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-    if ($newContent -eq $existing) {
-        $newContent = "$existing`n$block"
-        Write-Host "    Appended dotfiles block to $FilePath"
-    } else {
-        Write-Host "    Updated dotfiles block in $FilePath"
-    }
-    $newContent | Out-File -FilePath $FilePath -Encoding utf8 -NoNewline
-}
-
-function Merge-GitConfig([string]$FilePath) {
-    if (-not (Test-Path $FilePath)) {
-        Write-Host "    [!] $FilePath not found, skipping."
+function Install-Packages {
+    Write-Step "Installing packages via winget"
+    $wingetFile = Join-Path $ROOT "manifests\winget.txt"
+    if (-not (Test-Path $wingetFile)) {
+        Write-Warn "manifests\winget.txt not found, skipping"
         return
     }
-    # 기존 global git 설정을 해시테이블로 로드 (중복 방지용)
-    $existingConfig = @{}
-    git config --global --list 2>$null | ForEach-Object {
-        if ($_ -match '^([^=]+)=(.*)$') { $existingConfig[$Matches[1]] = $Matches[2] }
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Warn "winget not found, skipping package installation"
+        return
     }
-    $currentSection = $null
-    foreach ($line in (Get-Content $FilePath)) {
-        $trimmed = $line.Trim()
-        # [section] 헤더 감지
-        if ($trimmed -match '^\[(.+)\]$') {
-            $currentSection = $Matches[1]
-        # 주석·빈 줄 제외, key = value 항목만 처리
-        } elseif ($trimmed -and -not $trimmed.StartsWith('#') -and $currentSection) {
-            if ($trimmed -match '^(\S+)\s*=\s*(.*)$') {
-                $key   = $Matches[1]
-                $value = $Matches[2].Trim()
-                # 이미 설정된 항목은 건너뜀 (사용자 커스텀 설정 보존)
-                if (-not $existingConfig.ContainsKey("$currentSection.$key")) {
-                    git config --global "$currentSection.$key" $value
-                    Write-Host "    Added [$currentSection] $key = $value"
-                } else {
-                    Write-Host "    Skip  [$currentSection] $key (already set)"
-                }
-            }
+
+    foreach ($package in (Get-ManifestLines $wingetFile)) {
+        if (Test-DryRun) {
+            Write-Skip "Would winget install --id $package"
+            continue
         }
-    }
-    Write-Host "    gitconfig merged."
-}
-
-Write-Host "==> Windows dotfiles setup starting..."
-Write-Host "    Source: $ROOT"
-
-# =============================================
-# 1. winget 패키지 설치 (manifests/winget.txt)
-# =============================================
-Write-Host ""
-Write-Host "==> Installing packages via winget..."
-$wingetFile = Join-Path $ROOT "manifests\winget.txt"
-if (Test-Path $wingetFile) {
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
-            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-            $package = $_
-            $alreadyInstalled = @(0x8A150015, 43, -1978335189)
-            winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "    Installed $package"
-            } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
-                Write-Host "    Already installed $package"
-            } else {
-                Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
-            }
-        } -ThrottleLimit 4
-    } else {
-        Write-Host "    [!] winget not found. Skipping package installation."
-    }
-} else {
-    Write-Host "    [!] manifests\winget.txt not found, skipping."
-}
-
-# =============================================
-# 1-1. gitconfig 설정 병합 (config/git/gitconfig)
-# =============================================
-Write-Host ""
-Write-Host "==> Merging git config..."
-Merge-GitConfig (Join-Path $ROOT "config\git\gitconfig")
-
-# Windows 전용 git 설정 주입 (공유 gitconfig는 OS-중립)
-git config --global core.autocrlf true
-git config --global core.fileMode false
-Write-Host "    Set core.autocrlf=true, core.fileMode=false (Windows)"
-
-# =============================================
-# 1-2. tmux 설정 복사
-# =============================================
-Write-Host ""
-$tmuxSrc = Join-Path $ROOT "config\tmux\tmux.windows.conf"
-if (Test-Path $tmuxSrc) {
-    Copy-Item $tmuxSrc (Join-Path $env:USERPROFILE ".tmux.conf") -Force
-    Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)"
-}
-
-# =============================================
-# 1-3. YAZI_FILE_ONE 환경 변수 설정 (Git file.exe)
-# =============================================
-Write-Host ""
-Write-Host "==> Setting YAZI_FILE_ONE environment variable..."
-$gitFileExe = $GitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-if ($gitFileExe) {
-    [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
-    $env:YAZI_FILE_ONE = $gitFileExe
-    Write-Host "    YAZI_FILE_ONE = $gitFileExe"
-} else {
-    Write-Host "    [!] Git file.exe not found. Install Git for Windows first."
-    Write-Host "        winget install --id Git.Git"
-}
-
-# =============================================
-# 1-4. yazi 설정 파일 배포
-# =============================================
-Write-Host ""
-Write-Host "==> Deploying yazi config..."
-$yaziConfigSrc = Join-Path $ROOT "config\yazi"
-$yaziConfigDst = Join-Path $env:APPDATA "yazi\config"
-if (Test-Path $yaziConfigSrc) {
-    New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
-    Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
-    Write-Host "    yazi config deployed to $yaziConfigDst"
-} else {
-    Write-Host "    [!] config\yazi not found, skipping."
-}
-
-# =============================================
-# 1-5. Neovim PATH 환경변수 설정
-# =============================================
-Write-Host ""
-Write-Host "==> Adding Neovim to PATH..."
-if (Test-Path $NvimBin) {
-    if (Add-ToUserPath $NvimBin) { Write-Host "    Added Neovim to PATH: $NvimBin" }
-    else { Write-Host "    Neovim already in PATH." }
-} else {
-    Write-Host "    [!] Neovim not found at $NvimBin. Install via winget: Neovim.Neovim"
-}
-
-# =============================================
-# 1-6. lazy.nvim Structured Setup
-# =============================================
-Write-Host ""
-Write-Host "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
-$nvimSrc = Join-Path $ROOT "config\nvim"
-
-if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
-    Write-Host "    [!] config\nvim\init.lua not found, skipping."
-} else {
-    New-Item -ItemType Directory -Force -Path $NvimConfigDir | Out-Null
-    Copy-Item "$nvimSrc\*" $NvimConfigDir -Recurse -Force
-    Write-Host "    lazy.nvim config deployed to $NvimConfigDir"
-    Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
-}
-
-# =============================================
-# 2. Node.js LTS 설치 (fnm)
-# =============================================
-Write-Host ""
-Write-Host "==> Installing Node.js LTS..."
-if (Get-Command fnm -ErrorAction SilentlyContinue) {
-    fnm env --shell powershell | Out-String | Invoke-Expression
-    fnm install --lts
-    fnm default lts-latest
-    fnm use lts-latest
-    Write-Host "    Node.js LTS installed."
-} else {
-    Write-Host "    [!] fnm not found. Restart terminal and run:"
-    Write-Host "        fnm install --lts && fnm default lts-latest"
-}
-
-# =============================================
-# 2-1. npm 전역 패키지 설치 (manifests/npm-global.txt)
-# =============================================
-Write-Host ""
-Write-Host "==> Installing global npm packages..."
-$npmFile = Join-Path $ROOT "manifests\npm-global.txt"
-if (Test-Path $npmFile) {
-    Get-ManifestLines $npmFile | ForEach-Object -Parallel {
-        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $package = $_
-        npm install -g $package 2>&1 | Out-Null
+        $alreadyInstalled = @(0x8A150015, 43, -1978335189)
+        winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "    Installed $package"
+            Write-Ok "Installed $package"
+        } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
+            Write-Skip "Already installed $package"
         } else {
-            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+            Write-Warn "Failed: $package (exit: $LASTEXITCODE)"
         }
-    } -ThrottleLimit 4
-} else {
-    Write-Host "    [!] manifests\npm-global.txt not found, skipping."
-}
-
-# =============================================
-# 3. Claude Code 설치 (native)
-# =============================================
-Write-Host ""
-Write-Host "==> Installing Claude Code (native)..."
-if (Get-Command claude -ErrorAction SilentlyContinue) {
-    Write-Host "    Claude Code already installed: $(claude --version)"
-} else {
-    Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
-    Write-Host "    Claude Code installed."
-}
-
-# =============================================
-# 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
-# =============================================
-Write-Host ""
-Write-Host "==> Deploying Claude Code config..."
-New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
-
-# settings.json: 병합 (기존에 없는 키 보존 — claude-hud의 statusLine 등)
-$settingsSrc = Join-Path $ROOT "config\claude\settings.json"
-$settingsDst = Join-Path $ClaudeDir "settings.json"
-if (Test-Path $settingsSrc) {
-    $newSettings = Get-Content $settingsSrc -Raw | ConvertFrom-Json
-    if (Test-Path $settingsDst) {
-        $existing = Get-Content $settingsDst -Raw | ConvertFrom-Json
-        foreach ($prop in $newSettings.PSObject.Properties) {
-            $existing | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
-        }
-        $existing | ConvertTo-Json -Depth 10 | Out-File $settingsDst -Encoding utf8 -NoNewline
-        Write-Host "    Merged settings.json"
-    } else {
-        Copy-Item $settingsSrc $settingsDst -Force
-        Write-Host "    Copied settings.json"
     }
-} else {
-    Write-Host "    [!] config\claude\settings.json not found"
 }
 
-# CLAUDE.md: 단순 복사
-$claudeMdSrc = Join-Path $ROOT "config\claude\CLAUDE.md"
-if (Test-Path $claudeMdSrc) {
-    Copy-Item $claudeMdSrc (Join-Path $ClaudeDir "CLAUDE.md") -Force
-    Write-Host "    Copied CLAUDE.md"
-} else {
-    Write-Host "    [!] config\claude\CLAUDE.md not found"
+function Deploy-Configs {
+    Write-Step "Deploying config files"
+    Merge-GitConfig (Join-Path $ROOT "config\git\gitconfig")
+    Invoke-DotfilesCommand -Description "git config --global core.autocrlf true" -ScriptBlock {
+        git config --global core.autocrlf true
+    }
+    Invoke-DotfilesCommand -Description "git config --global core.fileMode false" -ScriptBlock {
+        git config --global core.fileMode false
+    }
+
+    Copy-ManagedFile (Join-Path $ROOT "config\tmux\tmux.windows.conf") (Join-Path $env:USERPROFILE ".tmux.conf")
+
+    Write-Step "Setting YAZI_FILE_ONE"
+    $gitFileExe = $GitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($gitFileExe) {
+        Invoke-DotfilesCommand -Description "Set YAZI_FILE_ONE=$gitFileExe" -ScriptBlock {
+            [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
+            $env:YAZI_FILE_ONE = $gitFileExe
+        }
+        Write-Ok "YAZI_FILE_ONE = $gitFileExe"
+    } else {
+        Write-Warn "Git file.exe not found. Install Git for Windows first."
+    }
+
+    Copy-ManagedDirectory (Join-Path $ROOT "config\yazi") (Join-Path $env:APPDATA "yazi\config")
+    if (Test-Path $NvimBin) {
+        Add-ToUserPath $NvimBin
+    } else {
+        Write-Warn "Neovim not found at $NvimBin"
+    }
+    Copy-ManagedDirectory (Join-Path $ROOT "config\nvim") $NvimConfigDir
 }
 
-# =============================================
-# 3-2. RTK (Rust Token Killer) 설치
-# =============================================
-Write-Host ""
-Write-Host "==> Installing RTK (Rust Token Killer)..."
-New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
+function Install-NodeAndNpm {
+    Write-Step "Installing Node.js LTS"
+    if (Get-Command fnm -ErrorAction SilentlyContinue) {
+        if (Test-DryRun) {
+            Write-Skip "Would install/use Node.js LTS via fnm"
+        } else {
+            fnm env --shell powershell | Out-String | Invoke-Expression
+            fnm install --lts
+            fnm default lts-latest
+            fnm use lts-latest
+            Write-Ok "Node.js LTS installed"
+        }
+    } else {
+        Write-Warn "fnm not found. Restart terminal and run: fnm install --lts"
+    }
 
-if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
+    Write-Step "Installing global npm packages"
+    $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
+    if (-not (Test-Path $npmFile)) {
+        Write-Warn "manifests\npm-global.txt not found, skipping"
+        return
+    }
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Warn "npm not found, skipping"
+        return
+    }
+    foreach ($package in (Get-ManifestLines $npmFile)) {
+        if (Test-DryRun) {
+            Write-Skip "Would npm install -g $package"
+            continue
+        }
+        npm install -g $package 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { Write-Ok "Installed $package" } else { Write-Warn "Failed: $package" }
+    }
+}
 
-if (Get-Command rtk -ErrorAction SilentlyContinue) {
-    Write-Host "    RTK already installed."
-} else {
+function Install-Claude {
+    if ($env:SKIP_CLAUDE_CODE -eq "1") {
+        Write-Skip "Claude Code installation skipped (SKIP_CLAUDE_CODE=1)"
+        return
+    }
+
+    Write-Step "Installing Claude Code and config"
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        Write-Skip "Claude Code already installed"
+    } elseif (Test-DryRun) {
+        Write-Skip "Would install Claude Code"
+    } else {
+        Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
+        Write-Ok "Claude Code installed"
+    }
+
+    if (-not (Test-DryRun)) { New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null }
+    $settingsSrc = Join-Path $ROOT "config\claude\settings.json"
+    $settingsDst = Join-Path $ClaudeDir "settings.json"
+    if (Test-Path $settingsSrc) {
+        Backup-Existing $settingsDst
+        if (Test-DryRun) {
+            Write-Skip "Would merge $settingsSrc -> $settingsDst"
+        } else {
+            $newSettings = Get-Content $settingsSrc -Raw | ConvertFrom-Json
+            if (Test-Path $settingsDst) {
+                $existing = Get-Content $settingsDst -Raw | ConvertFrom-Json
+                foreach ($prop in $newSettings.PSObject.Properties) {
+                    $existing | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
+                }
+                $existing | ConvertTo-Json -Depth 10 | Out-File $settingsDst -Encoding utf8 -NoNewline
+                Write-Ok "Merged settings.json"
+            } else {
+                Copy-Item $settingsSrc $settingsDst -Force
+                Write-Ok "Copied settings.json"
+            }
+        }
+    }
+    Copy-ManagedFile (Join-Path $ROOT "config\claude\CLAUDE.md") (Join-Path $ClaudeDir "CLAUDE.md")
+}
+
+function Install-RTK {
+    if ($env:SKIP_RTK -eq "1") {
+        Write-Skip "RTK installation skipped (SKIP_RTK=1)"
+        return
+    }
+
+    Write-Step "Installing RTK"
+    if (-not (Test-DryRun)) { New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null }
+    Add-ToUserPath $LocalBin
+    if (Get-Command rtk -ErrorAction SilentlyContinue) {
+        Write-Skip "RTK already installed"
+        return
+    }
+    if (Test-DryRun) {
+        Write-Skip "Would install RTK from GitHub releases"
+        return
+    }
     try {
         $release = Invoke-RestMethod "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
         $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "\.zip$" } | Select-Object -First 1
         if ($asset) {
-            $tmpZip = "$env:TEMP\rtk-windows.zip"
+            $tmpZip = Join-Path $env:TEMP "rtk-windows.zip"
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
             Expand-Archive -Path $tmpZip -DestinationPath $LocalBin -Force
             Remove-Item $tmpZip -Force
-            Write-Host "    RTK installed."
+            Write-Ok "RTK installed"
         } else {
-            Write-Host "    [!] RTK Windows 바이너리를 찾을 수 없음. 수동 설치: cargo install rtk"
+            Write-Warn "RTK Windows binary not found. Manual: cargo install rtk"
         }
     } catch {
-        Write-Host "    [!] RTK 설치 실패: $_"
+        Write-Warn "RTK install failed: $_"
     }
 }
 
-# Claude hook 등록은 config\claude\settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 settings.json 병합으로 반영됨
-
-# =============================================
-# 4. PowerShell 프로파일 설정 (마커 방식)
-# =============================================
-Write-Host ""
-Write-Host "==> Updating PowerShell profiles..."
-$profileSrc = Join-Path $ROOT "config\powershell\profile.ps1"
-if (Test-Path $profileSrc) {
-    $profileContent = Get-Content $profileSrc -Raw
-    $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
-    $block = "$profileContent`n$claudeAlias"
-
-    $profilePaths = @("$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
-    foreach ($prof in $profilePaths) {
-        New-Item -ItemType Directory -Force -Path (Split-Path $prof) | Out-Null
-        Set-ProfileBlock $prof $block
-    }
-} else {
-    Write-Host "    [!] config\windows\profile.ps1 not found, skipping profile setup."
-}
-
-# =============================================
-# 5. Git Bash 프로파일 설정 (마커 방식)
-# =============================================
-Write-Host ""
-Write-Host "==> Updating Git Bash profile..."
-$bashrcSrc = Join-Path $ROOT "config\bash\bashrc"
-if (Test-Path $bashrcSrc) {
-    $gitBashFound = $GitBashPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-    if (-not $gitBashFound) {
-        Write-Host "    [!] Git Bash not found. Install Git for Windows first."
-        Write-Host "        winget install --id Git.Git"
+function Update-Profiles {
+    Write-Step "Updating PowerShell profile"
+    $profileSrc = Join-Path $ROOT "config\powershell\profile.ps1"
+    if (Test-Path $profileSrc) {
+        $profileContent = Get-Content $profileSrc -Raw
+        $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
+        $block = "$profileContent`n$claudeAlias"
+        Set-ProfileBlock "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1" $block
     } else {
-        $bashrcContent = Get-Content $bashrcSrc -Raw
-        $bashrcPath = Join-Path $env:USERPROFILE ".bashrc"
-        Set-ProfileBlock $bashrcPath $bashrcContent
+        Write-Warn "config\powershell\profile.ps1 not found, skipping"
+    }
 
-        # .inputrc 배포 (마커 방식)
-        $inputrcSrc = Join-Path $ROOT "config\bash\inputrc"
-        if (Test-Path $inputrcSrc) {
-            $inputrcContent = Get-Content $inputrcSrc -Raw
-            $inputrcPath = Join-Path $env:USERPROFILE ".inputrc"
-            Set-ProfileBlock $inputrcPath $inputrcContent
-        }
-
-        # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
-        $bashProfilePath = Join-Path $env:USERPROFILE ".bash_profile"
-        if (-not (Test-Path $bashProfilePath)) {
+    Write-Step "Updating Git Bash profile"
+    $bashrcSrc = Join-Path $ROOT "config\bash\bashrc"
+    if (-not (Test-Path $bashrcSrc)) {
+        Write-Warn "config\bash\bashrc not found, skipping"
+        return
+    }
+    $gitBashFound = $GitBashPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $gitBashFound) {
+        Write-Warn "Git Bash not found. Install Git for Windows first."
+        return
+    }
+    Set-ProfileBlock (Join-Path $env:USERPROFILE ".bashrc") (Get-Content $bashrcSrc -Raw)
+    $inputrcSrc = Join-Path $ROOT "config\bash\inputrc"
+    if (Test-Path $inputrcSrc) {
+        Set-ProfileBlock (Join-Path $env:USERPROFILE ".inputrc") (Get-Content $inputrcSrc -Raw)
+    }
+    $bashProfilePath = Join-Path $env:USERPROFILE ".bash_profile"
+    if (-not (Test-Path $bashProfilePath)) {
+        if (Test-DryRun) {
+            Write-Skip "Would create $bashProfilePath"
+        } else {
             Set-Content $bashProfilePath "[[ -f ~/.bashrc ]] && . ~/.bashrc" -Encoding utf8
-            Write-Host "    Created $bashProfilePath"
+            Write-Ok "Created $bashProfilePath"
         }
     }
-} else {
-    Write-Host "    [!] config\bash\bashrc not found, skipping Git Bash setup."
 }
 
-# =============================================
-# 6. Claude skills 설치 (manifests/skills.txt)
-# =============================================
-Write-Host ""
-Write-Host "==> Restoring Claude Code skills..."
-$skillsFile = Join-Path $ROOT "manifests\skills.txt"
-if (Test-Path $skillsFile) {
-    Get-ManifestLines $skillsFile | ForEach-Object {
-        if ($_ -match '^([^@]+)@(.+)$') {
-            $repoSlug  = $Matches[1]
+function Install-Skills {
+    if ($env:SKIP_SKILLS -eq "1") {
+        Write-Skip "Claude Code skills skipped (SKIP_SKILLS=1)"
+        return
+    }
+
+    Write-Step "Restoring Claude Code skills"
+    $skillsFile = Join-Path $ROOT "manifests\skills.txt"
+    if (-not (Test-Path $skillsFile)) {
+        Write-Warn "manifests\skills.txt not found, skipping"
+        return
+    }
+    if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+        Write-Warn "npx not found, skipping"
+        return
+    }
+    foreach ($line in (Get-ManifestLines $skillsFile)) {
+        if ($line -match '^([^@]+)@(.+)$') {
+            $repoSlug = $Matches[1]
             $skillName = $Matches[2]
-            Write-Host "    Adding skill: $skillName from $repoSlug..."
-            npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
+            if (Test-DryRun) {
+                Write-Skip "Would add skill $repoSlug@$skillName"
+            } else {
+                npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { Write-Ok "Added $repoSlug@$skillName" } else { Write-Warn "Failed: $repoSlug@$skillName" }
+            }
         }
     }
-    Write-Host "    Skills restored."
-} else {
-    Write-Host "    [!] manifests\skills.txt not found, skipping skills."
 }
 
-Write-Host ""
-Write-Host "==> Done! Restart your terminal and Claude Code to apply all changes."
+if (Is-StepEnabled "packages") { Install-Packages } else { Write-Skip "packages step skipped" }
+if (Is-StepEnabled "configs") {
+    Deploy-Configs
+    Update-Profiles
+} else {
+    Write-Skip "configs step skipped"
+}
+if (Is-StepEnabled "node") { Install-NodeAndNpm } else { Write-Skip "node step skipped" }
+if (Is-StepEnabled "claude") { Install-Claude } else { Write-Skip "claude step skipped" }
+if (Is-StepEnabled "rtk") { Install-RTK } else { Write-Skip "rtk step skipped" }
+if (Is-StepEnabled "skills") { Install-Skills } else { Write-Skip "skills step skipped" }
+
+Write-Step "Done"
+Write-Ok "Restart your terminal and Claude Code to apply all changes."

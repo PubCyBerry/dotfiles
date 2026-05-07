@@ -1,0 +1,15 @@
+# name	platforms	source	min_version	repo	asset_pattern	verify_command
+zoxide	linux,macos	official-script		ajeetdsouza/zoxide		zoxide --version
+starship	linux,macos	official-script		starship/starship		starship --version
+atuin	linux,macos	official-script		atuinsh/atuin		atuin --version
+fnm	linux,macos	official-script		Schniz/fnm		fnm --version
+bun	linux,macos	official-script		oven-sh/bun		bun --version
+yazi	linux	github-release		sxyazi/yazi	yazi-{triple}.deb	yazi --version
+lazygit	linux	github-release		jesseduffield/lazygit	lazygit_{version}_{arch}.tar.gz	lazygit --version
+neovim	linux	github-release	0.10.0	neovim/neovim	nvim-linux-{arch}.tar.gz	nvim --version
+git-delta	linux	github-release		dandavison/delta	git-delta_{version}_{arch}.deb	delta --version
+fzf	linux	github-release	0.40.0	junegunn/fzf	fzf-{version}-{arch}.tar.gz	fzf --version
+eza	linux	github-release		eza-community/eza	eza_{triple}.tar.gz	eza --version
+yq	linux,generic	github-release		mikefarah/yq	yq_{arch}	yq --version
+codexbar	linux	github-release		steipete/CodexBar	CodexBarCLI-{tag}-linux-{arch}.tar.gz	codexbar --version
+rtk	linux,macos,windows	github-release		rtk-ai/rtk		rtk --version
