@@ -306,24 +306,20 @@ New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
 
 if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
 
-if (Get-Command rtk -ErrorAction SilentlyContinue) {
-    Write-Host "    RTK already installed."
-} else {
-    try {
-        $release = Invoke-RestMethod "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
-        $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "\.zip$" } | Select-Object -First 1
-        if ($asset) {
-            $tmpZip = "$env:TEMP\rtk-windows.zip"
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
-            Expand-Archive -Path $tmpZip -DestinationPath $LocalBin -Force
-            Remove-Item $tmpZip -Force
-            Write-Host "    RTK installed."
-        } else {
-            Write-Host "    [!] RTK Windows 바이너리를 찾을 수 없음. 수동 설치: cargo install rtk"
-        }
-    } catch {
-        Write-Host "    [!] RTK 설치 실패: $_"
+try {
+    $release = Invoke-RestMethod "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
+    $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "\.zip$" } | Select-Object -First 1
+    if ($asset) {
+        $tmpZip = "$env:TEMP\rtk-windows.zip"
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
+        Expand-Archive -Path $tmpZip -DestinationPath $LocalBin -Force
+        Remove-Item $tmpZip -Force
+        Write-Host "    RTK installed."
+    } else {
+        Write-Host "    [!] RTK Windows 바이너리를 찾을 수 없음. 수동 설치: cargo install rtk"
     }
+} catch {
+    Write-Host "    [!] RTK 설치 실패: $_"
 }
 
 # Claude hook 등록은 config\claude\settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 settings.json 병합으로 반영됨

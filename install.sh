@@ -614,15 +614,11 @@ if [[ "${SKIP_RTK:-0}" == "1" ]]; then
     echo "==> [CI] Skipping RTK installation (SKIP_RTK=1)"
 else
     echo "==> Installing RTK (Rust Token Killer)..."
-    if command -v rtk >/dev/null 2>&1; then
-        echo "    RTK already installed: $(rtk --version 2>/dev/null | head -1 || echo unknown)"
+    # 공식 install.sh — ~/.local/bin 에 binary 배치
+    if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh; then
+        echo "    RTK installed."
     else
-        # 공식 install.sh — ~/.local/bin 에 binary 배치
-        if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh; then
-            echo "    RTK installed."
-        else
-            echo "    [!] RTK install failed. Manual: cargo install --git https://github.com/rtk-ai/rtk"
-        fi
+        echo "    [!] RTK install failed. Manual: cargo install --git https://github.com/rtk-ai/rtk"
     fi
 
     # Claude hook 등록은 config/claude/settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 jq deep-merge로 ~/.claude/settings.json에 반영됨
