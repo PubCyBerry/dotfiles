@@ -444,8 +444,8 @@ fi
 
 echo
 echo "==> Installing fzf from GitHub releases..."
-# 22.04 apt의 fzf는 0.29 → 본 dotfiles 키바인딩/preview 옵션 호환을 위해 0.40+ 강제
-FZF_MIN_VER="0.40.0"
+# 22.04 apt의 fzf는 0.29, --bash 플래그는 0.48.0+ 필요 → 0.48.0+ 강제
+FZF_MIN_VER="0.48.0"
 fzf_needs_install=true
 if command -v fzf >/dev/null 2>&1; then
     fzf_cur_ver="$(fzf --version 2>/dev/null \
@@ -516,21 +516,24 @@ fi
     echo "==> Installing Node.js LTS via fnm..."
     if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
         eval "$(fnm env --shell bash)"
-        fnm install --lts
-        # fnm uses the exact version number, but we can set default to the installed lts
-        LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
-        if [[ -z "$LTS_VER" ]]; then
-            LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
-        fi
-        if [[ -n "$LTS_VER" ]]; then
-            fnm default "$LTS_VER"
-            fnm use "$LTS_VER"
+        if fnm install --lts; then
+            # fnm uses the exact version number, but we can set default to the installed lts
+            LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
+            if [[ -z "$LTS_VER" ]]; then
+                LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
+            fi
+            if [[ -n "$LTS_VER" ]]; then
+                fnm default "$LTS_VER"
+                fnm use "$LTS_VER"
+            else
+                # fallback
+                fnm default lts-latest || true
+                fnm use lts-latest || true
+            fi
+            echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
         else
-            # fallback
-            fnm default lts-latest || true
-            fnm use lts-latest || true
+            echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
         fi
-        echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
     else
         echo "    [!] fnm not found. Restart terminal and run:"
         echo "        fnm install --lts"
