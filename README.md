@@ -150,6 +150,7 @@ dotfiles/
 | [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles) | dotfiles 구성 참고 | <img src="https://img.shields.io/github/stars/mathiasbynens/dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
 | [gpakosz/.tmux](https://github.com/gpakosz/.tmux) | tmux 설정 레퍼런스 | <img src="https://img.shields.io/github/stars/gpakosz/.tmux?style=flat&label=%E2%AD%90" alt="stars"> |
 | [citypaul/.dotfiles](https://github.com/citypaul/.dotfiles) | dotfiles 구성 참고 | <img src="https://img.shields.io/github/stars/citypaul/.dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
+| [SeniorMars/dotfiles](https://github.com/SeniorMars/dotfiles) | Neovim 중심 rice 설정 dotfiles | <img src="https://img.shields.io/github/stars/SeniorMars/dotfiles?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Agent
 
@@ -180,6 +181,13 @@ dotfiles/
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 디자인 관련 스킬 | <img src="https://img.shields.io/github/stars/pbakaus/impeccable?style=flat&label=%E2%AD%90" alt="stars"> |
 | [safishamsi/graphify](https://github.com/safishamsi/graphify) | 코드·문서를 queryable knowledge graph로 변환하는 AI 어시스턴트 스킬 | <img src="https://img.shields.io/github/stars/safishamsi/graphify?style=flat&label=%E2%AD%90" alt="stars"> |
 | [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) | Obsidian 노트 작성을 위한 Skills 모음 | <img src="https://img.shields.io/github/stars/kepano/obsidian-skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [anthropics/skills](https://github.com/anthropics/skills) | Anthropic 공식 Agent Skills 저장소 | <img src="https://img.shields.io/github/stars/anthropics/skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [openai/skills](https://github.com/openai/skills) | OpenAI Codex Skills 카탈로그 | <img src="https://img.shields.io/github/stars/openai/skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) | Karpathy의 LLM 코딩 인사이트 기반 CLAUDE.md | <img src="https://img.shields.io/github/stars/multica-ai/andrej-karpathy-skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | 실무 엔지니어용 Claude Code Skills | <img src="https://img.shields.io/github/stars/mattpocock/skills?style=flat&label=%E2%AD%90" alt="stars"> |
+| [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | 토큰 65% 절감하는 원시인 말투 Claude Code 스킬 | <img src="https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&label=%E2%AD%90" alt="stars"> |
+| [nexu-io/open-design](https://github.com/nexu-io/open-design) | 19개 Skills·71개 디자인 시스템을 포함한 로컬 오픈소스 AI 디자인 도구 | <img src="https://img.shields.io/github/stars/nexu-io/open-design?style=flat&label=%E2%AD%90" alt="stars"> |
+| [NomaDamas/k-skill](https://github.com/NomaDamas/k-skill) | 한국형 서비스 전용 Skills 모음 (SRT, KTX, 카카오톡, 주식 등) | <img src="https://img.shields.io/github/stars/NomaDamas/k-skill?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tools
 
