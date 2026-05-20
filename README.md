@@ -198,6 +198,7 @@ dotfiles/
 | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | 토큰 65% 절감하는 원시인 말투 Claude Code 스킬 | <img src="https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&label=%E2%AD%90" alt="stars"> |
 | [nexu-io/open-design](https://github.com/nexu-io/open-design) | 19개 Skills·71개 디자인 시스템을 포함한 로컬 오픈소스 AI 디자인 도구 | <img src="https://img.shields.io/github/stars/nexu-io/open-design?style=flat&label=%E2%AD%90" alt="stars"> |
 | [NomaDamas/k-skill](https://github.com/NomaDamas/k-skill) | 한국형 서비스 전용 Skills 모음 (SRT, KTX, 카카오톡, 주식 등) | <img src="https://img.shields.io/github/stars/NomaDamas/k-skill?style=flat&label=%E2%AD%90" alt="stars"> |
+| [chojondocho/vowline](https://github.com/chojondocho/vowline) | 에이전트 작업 범위·근거·검증 기준을 고정하는 휴대용 운영 규약 skill | <img src="https://img.shields.io/github/stars/chojondocho/vowline?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tools
 
