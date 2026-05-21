@@ -38,4 +38,4 @@ astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks
 # httpie.httpie
 
 # AI 도구 사용량 모니터
-Finesssee.Win-CodexBar          # AI 코딩 도구 사용량/쿼터 트레이 모니터 (Windows 포트)
+# Finesssee.Win-CodexBar          # Claude Enterprise 요금제에서 에러 발생으로 제외
