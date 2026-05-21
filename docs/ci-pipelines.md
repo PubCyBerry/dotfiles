@@ -43,6 +43,7 @@ test-apt-install (전체 install.sh, CI 모드)   test-configs    test-manifest-
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
 - `jq empty config/claude/*.json`: JSON 파일 문법 검증
+- Python `tomllib`: `config/codex/config.toml` TOML 문법 검증
 
 **test-manifest-syntax**
 - `manifests/apt.txt`: 각 줄이 유효한 apt 패키지명 패턴인지 확인

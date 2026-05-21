@@ -10,6 +10,7 @@ $ROOT = $PSScriptRoot
 # 경로 상수
 # =============================================
 $ClaudeDir     = Join-Path $env:USERPROFILE ".claude"
+$CodexDir      = Join-Path $env:USERPROFILE ".codex"
 $LocalBin      = Join-Path $env:USERPROFILE ".local\bin"
 $NvimConfigDir = Join-Path $env:LOCALAPPDATA "nvim"
 $NvimBin       = "C:\Program Files\Neovim\bin"
@@ -99,6 +100,49 @@ function Merge-GitConfig([string]$FilePath) {
         }
     }
     Write-Host "    gitconfig merged."
+}
+
+function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
+    if (-not (Test-Path $SourcePath)) {
+        Write-Host "    [!] $SourcePath not found, skipping."
+        return
+    }
+
+    if (-not (Test-Path $DestPath)) {
+        Copy-Item $SourcePath $DestPath -Force
+        Write-Host "    Copied config.toml"
+        return
+    }
+
+    $source = Get-Content $SourcePath -Raw
+    $dest = Get-Content $DestPath -Raw
+    $newDefaults = @()
+
+    foreach ($key in @("model", "model_reasoning_effort")) {
+        if ($dest -notmatch "(?m)^\s*$([regex]::Escape($key))\s*=") {
+            $lineMatch = [regex]::Match($source, "(?m)^\s*$([regex]::Escape($key))\s*=.*$")
+            if ($lineMatch.Success) { $newDefaults += $lineMatch.Value.Trim() }
+        }
+    }
+
+    if ($newDefaults.Count -gt 0) {
+        $dest = "$($newDefaults -join "`n")`n`n$dest"
+        Write-Host "    Added missing Codex defaults: $($newDefaults -join ', ')"
+    }
+
+    if ($dest -notmatch "(?m)^\s*\[mcp_servers\.openaiDeveloperDocs\]\s*$") {
+        $mcpMatch = [regex]::Match(
+            $source,
+            "(?ms)^\[mcp_servers\.openaiDeveloperDocs\]\s*\r?\n.*?(?=^\[|\z)"
+        )
+        if ($mcpMatch.Success) {
+            $dest = "$($dest.TrimEnd())`n`n$($mcpMatch.Value.TrimEnd())`n"
+            Write-Host "    Added OpenAI developer docs MCP server"
+        }
+    }
+
+    $dest | Out-File $DestPath -Encoding utf8 -NoNewline
+    Write-Host "    Merged config.toml without replacing Codex state"
 }
 
 Write-Host "==> Windows dotfiles setup starting..."
@@ -247,6 +291,25 @@ if (Test-Path $npmFile) {
     } -ThrottleLimit 4
 } else {
     Write-Host "    [!] manifests\npm-global.txt not found, skipping."
+}
+
+# =============================================
+# 2-2. Codex 설정 배포 (config/codex/ → ~/.codex/)
+# =============================================
+Write-Host ""
+Write-Host "==> Deploying Codex config..."
+New-Item -ItemType Directory -Force -Path $CodexDir | Out-Null
+
+Merge-CodexConfig `
+    (Join-Path $ROOT "config\codex\config.toml") `
+    (Join-Path $CodexDir "config.toml")
+
+$codexAgentsSrc = Join-Path $ROOT "config\codex\AGENTS.md"
+if (Test-Path $codexAgentsSrc) {
+    Copy-Item $codexAgentsSrc (Join-Path $CodexDir "AGENTS.md") -Force
+    Write-Host "    Copied AGENTS.md"
+} else {
+    Write-Host "    [!] config\codex\AGENTS.md not found"
 }
 
 # =============================================
@@ -401,4 +464,4 @@ if (Test-Path $skillsFile) {
 }
 
 Write-Host ""
-Write-Host "==> Done! Restart your terminal and Claude Code to apply all changes."
+Write-Host "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."

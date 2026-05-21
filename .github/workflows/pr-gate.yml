@@ -121,6 +121,9 @@ jobs:
           jq empty config/claude/settings.json
           jq empty config/claude/claude-hud.json
 
+      - name: TOML 문법
+        run: python3 -c 'import tomllib; tomllib.load(open("config/codex/config.toml", "rb"))'
+
   test-manifest-syntax:
     name: Manifest syntax
     runs-on: ubuntu-24.04

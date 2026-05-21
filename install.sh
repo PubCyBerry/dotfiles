@@ -17,6 +17,7 @@ done
 # 경로 상수
 # =============================================
 CLAUDE_DIR="$HOME/.claude"
+CODEX_DIR="$HOME/.codex"
 LOCAL_BIN="$HOME/.local/bin"
 NVIM_CONFIG_DIR="$HOME/.config/nvim"
 YAZI_CONFIG_DIR="$HOME/.config/yazi"
@@ -92,6 +93,49 @@ merge_gitconfig() {
         fi
     done < "$path"
     echo "    gitconfig merged."
+}
+
+merge_codex_config() {
+    local src="$1" dst="$2" key line table tmp
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] $src not found, skipping."
+        return 0
+    fi
+
+    if [[ ! -f "$dst" ]]; then
+        cp -f "$src" "$dst"
+        echo "    Copied config.toml"
+        return 0
+    fi
+
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    : > "$tmp"
+    for key in model model_reasoning_effort; do
+        if ! grep -qE "^[[:space:]]*$key[[:space:]]*=" "$dst"; then
+            line="$(grep -m 1 -E "^[[:space:]]*$key[[:space:]]*=" "$src" || true)"
+            if [[ -n "$line" ]]; then
+                printf '%s\n' "$line" >> "$tmp"
+                echo "    Added missing Codex default: $key"
+            fi
+        fi
+    done
+    [[ ! -s "$tmp" ]] || printf '\n' >> "$tmp"
+    cat "$dst" >> "$tmp"
+
+    if ! grep -qE '^[[:space:]]*\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$' "$tmp"; then
+        table="$(awk '
+            /^\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$/ { in_table = 1 }
+            in_table && /^\[/ && $0 !~ /^\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$/ { exit }
+            in_table { print }
+        ' "$src")"
+        if [[ -n "$table" ]]; then
+            printf '\n%s\n' "$table" >> "$tmp"
+            echo "    Added OpenAI developer docs MCP server"
+        fi
+    fi
+
+    mv "$tmp" "$dst"
+    echo "    Merged config.toml without replacing Codex state"
 }
 
 add_to_path_runtime() {
@@ -558,6 +602,22 @@ else
 fi
 
 # =============================================
+# 2-2. Codex 설정 배포 (config/codex/ → ~/.codex/)
+# =============================================
+echo
+echo "==> Deploying Codex config..."
+mkdir -p "$CODEX_DIR"
+merge_codex_config "$ROOT/config/codex/config.toml" "$CODEX_DIR/config.toml"
+
+CODEX_AGENTS_SRC="$ROOT/config/codex/AGENTS.md"
+if [[ -f "$CODEX_AGENTS_SRC" ]]; then
+    cp -f "$CODEX_AGENTS_SRC" "$CODEX_DIR/AGENTS.md"
+    echo "    Copied AGENTS.md"
+else
+    echo "    [!] config/codex/AGENTS.md not found"
+fi
+
+# =============================================
 # 3. Claude Code 네이티브 설치
 # =============================================
 echo
@@ -667,4 +727,4 @@ else
 fi
 
 echo
-echo "==> Done! Restart your terminal and Claude Code to apply all changes."
+echo "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."

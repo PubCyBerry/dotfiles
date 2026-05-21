@@ -45,6 +45,7 @@ dotfiles/
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc, inputrc) — Git Bash + Linux 공통, 마커 방식 삽입
 │   ├── claude/          # Claude Code 설정 (settings.json, CLAUDE.md)
+│   ├── codex/           # Codex 설정 (config.toml 기본값, AGENTS.md 전역 지침)
 │   ├── git/
 │   │   └── gitconfig    # OS-중립. autocrlf/fileMode은 install 스크립트가 OS별 주입
 │   ├── nvim/            # Neovim 설정 (lazy.nvim + yazi.nvim)
@@ -81,6 +82,7 @@ dotfiles/
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, AGENTS.md 단순 복사)
 3. Claude Code native 설치
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, CLAUDE.md 단순 복사)
    3-2. RTK 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 등록 사용
@@ -99,6 +101,7 @@ dotfiles/
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, AGENTS.md 단순 복사)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
    3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
@@ -117,6 +120,7 @@ dotfiles/
    1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf(tar.gz), eza(tar.gz), yq(단일 바이너리)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, AGENTS.md 단순 복사)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, CLAUDE.md 단순 복사)
    3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
