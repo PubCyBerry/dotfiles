@@ -359,6 +359,26 @@ if (Test-Path $codexAgentsSrc) {
     Write-Host "    [!] config\codex\AGENTS.md not found"
 }
 
+# hooks.json: 단순 복사
+$codexHooksJsonSrc = Join-Path $ROOT "config\codex\hooks.json"
+if (Test-Path $codexHooksJsonSrc) {
+    Copy-Item $codexHooksJsonSrc (Join-Path $CodexDir "hooks.json") -Force
+    Write-Host "    Copied hooks.json"
+} else {
+    Write-Host "    [!] config\codex\hooks.json not found"
+}
+
+# hooks/temporal-context.sh 배포
+$codexHooksDir = Join-Path $CodexDir "hooks"
+$temporalSrc   = Join-Path $ROOT "config\claude\hooks\temporal-context.sh"
+if (Test-Path $temporalSrc) {
+    New-Item -ItemType Directory -Force -Path $codexHooksDir | Out-Null
+    Copy-Item $temporalSrc $codexHooksDir -Force
+    Write-Host "    Copied temporal-context.sh to ~/.codex/hooks/"
+} else {
+    Write-Host "    [!] config\claude\hooks\temporal-context.sh not found, skipping."
+}
+
 # =============================================
 # 3. Claude Code 설치 (native)
 # =============================================

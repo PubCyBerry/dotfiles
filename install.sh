@@ -672,6 +672,27 @@ else
     echo "    [!] config/codex/AGENTS.md not found"
 fi
 
+# hooks.json: 단순 복사
+CODEX_HOOKS_JSON_SRC="$ROOT/config/codex/hooks.json"
+if [[ -f "$CODEX_HOOKS_JSON_SRC" ]]; then
+    cp -f "$CODEX_HOOKS_JSON_SRC" "$CODEX_DIR/hooks.json"
+    echo "    Copied hooks.json"
+else
+    echo "    [!] config/codex/hooks.json not found"
+fi
+
+# hooks/temporal-context.sh 배포
+CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
+TEMPORAL_SRC="$ROOT/config/claude/hooks/temporal-context.sh"
+if [[ -f "$TEMPORAL_SRC" ]]; then
+    mkdir -p "$CODEX_HOOKS_DIR"
+    cp -f "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh"
+    chmod +x "$CODEX_HOOKS_DIR/temporal-context.sh"
+    echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
+else
+    echo "    [!] config/claude/hooks/temporal-context.sh not found, skipping."
+fi
+
 # =============================================
 # 3. Claude Code 네이티브 설치
 # =============================================
