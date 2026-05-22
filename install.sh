@@ -111,8 +111,8 @@ merge_codex_config() {
     tmp="$(mktemp)"; _TMPFILES+=("$tmp")
     : > "$tmp"
     for key in model model_reasoning_effort; do
-        if ! grep -qE "^[[:space:]]*$key[[:space:]]*=" "$dst"; then
-            line="$(grep -m 1 -E "^[[:space:]]*$key[[:space:]]*=" "$src" || true)"
+        if ! grep -qE "^[[:space:]]*${key}[[:space:]]*=" "$dst"; then
+            line="$(grep -m 1 -E "^[[:space:]]*${key}[[:space:]]*=" "$src" || true)"
             if [[ -n "$line" ]]; then
                 printf '%s\n' "$line" >> "$tmp"
                 echo "    Added missing Codex default: $key"
