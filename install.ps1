@@ -314,6 +314,24 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     fnm default lts-latest
     fnm use lts-latest
     Write-Host "    Node.js LTS installed."
+
+    # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
+    $nodeVer = "v$((node --version 2>$null).TrimStart('v'))"
+    $settingsPath = Join-Path $ClaudeDir "settings.json"
+    if ((Test-Path $settingsPath) -and $nodeVer -match '^v\d') {
+        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        $cmd = $settings.statusLine.command
+        if ($cmd -match '/fnm/node-versions/(v[\d.]+)/installation/node') {
+            $oldVer = $Matches[1]
+            if ($oldVer -ne $nodeVer) {
+                $settings.statusLine.command = $cmd -replace [regex]::Escape("/fnm/node-versions/$oldVer/installation/node"), "/fnm/node-versions/$nodeVer/installation/node"
+                $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
+                Write-Host "    Patched statusLine node path: $oldVer → $nodeVer"
+            } else {
+                Write-Host "    statusLine node path already up to date ($nodeVer)"
+            }
+        }
+    }
 } else {
     Write-Host "    [!] fnm not found. Restart terminal and run:"
     Write-Host "        fnm install --lts && fnm default lts-latest"

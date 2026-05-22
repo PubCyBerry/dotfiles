@@ -630,6 +630,23 @@ fi
                 fnm use lts-latest || true
             fi
             echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
+
+            # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
+            if [[ -f "$CLAUDE_DIR/settings.json" ]] && command -v jq >/dev/null 2>&1; then
+                _node_ver="$(node --version 2>/dev/null || true)"
+                _old_ver="$(jq -r '.statusLine.command // ""' "$CLAUDE_DIR/settings.json" \
+                    | grep -oE 'fnm/node-versions/v[0-9]+\.[0-9]+\.[0-9]+' | head -1 \
+                    | sed 's|fnm/node-versions/||')"
+                if [[ -n "$_old_ver" && "$_old_ver" != "$_node_ver" ]]; then
+                    _tmp="$(mktemp)"; _TMPFILES+=("$_tmp")
+                    jq --arg old "$_old_ver" --arg new "$_node_ver" \
+                        '.statusLine.command |= gsub("/fnm/node-versions/" + $old + "/installation/node"; "/fnm/node-versions/" + $new + "/installation/node")' \
+                        "$CLAUDE_DIR/settings.json" > "$_tmp" && mv "$_tmp" "$CLAUDE_DIR/settings.json"
+                    echo "    Patched statusLine node path: $_old_ver → $_node_ver"
+                elif [[ -n "$_old_ver" ]]; then
+                    echo "    statusLine node path already up to date ($_node_ver)"
+                fi
+            fi
         else
             echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
         fi
