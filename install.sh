@@ -636,7 +636,7 @@ fi
                 _node_ver="$(node --version 2>/dev/null || true)"
                 _old_ver="$(jq -r '.statusLine.command // ""' "$CLAUDE_DIR/settings.json" \
                     | grep -oE 'fnm/node-versions/v[0-9]+\.[0-9]+\.[0-9]+' | head -1 \
-                    | sed 's|fnm/node-versions/||')"
+                    | sed 's|fnm/node-versions/||' || true)"
                 if [[ -n "$_old_ver" && "$_old_ver" != "$_node_ver" ]]; then
                     _tmp="$(mktemp)"; _TMPFILES+=("$_tmp")
                     jq --arg old "$_old_ver" --arg new "$_node_ver" \
