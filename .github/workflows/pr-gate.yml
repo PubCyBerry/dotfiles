@@ -104,6 +104,48 @@ jobs:
         shell: pwsh
         run: .\install.ps1
 
+  test-idempotent:
+    name: Ubuntu idempotent (update path)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_RTK: "1"
+      SKIP_SKILLS: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu-24.04-${{ hashFiles('manifests/apt.txt') }}
+          restore-keys: apt-ubuntu-24.04-
+
+      - name: First install (fresh environment)
+        run: bash install.sh
+
+      # Bug 재현 조건 준비:
+      # - ~/.codex/config.toml 은 first install에서 이미 생성됨 → merge 경로 진입
+      # - ~/.claude/settings.json 은 SKIP_CLAUDE_CODE=1로 생성 안 됨 → 수동으로 생성해야
+      #   statusLine grep 파이프라인(pipefail 버그)이 실행됨
+      - name: Seed ~/.claude/settings.json with fnm statusLine (simulates existing install)
+        run: |
+          mkdir -p "$HOME/.claude"
+          node_ver="$(~/.local/share/fnm/fnm ls 2>/dev/null \
+            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || echo 'v22.0.0')"
+          cat > "$HOME/.claude/settings.json" <<EOF
+          {
+            "statusLine": {
+              "command": "$HOME/.local/share/fnm/node-versions/${node_ver}/installation/node /mock/claude-hud"
+            }
+          }
+          EOF
+
+      - name: Second install (idempotent / update path)
+        run: bash install.sh
+
   test-configs:
     name: Config syntax
     runs-on: ubuntu-24.04
@@ -150,7 +192,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-configs, test-manifest-syntax]
+    needs: [lint, test-apt-install, test-idempotent, test-macos-install, test-windows-install, test-configs, test-manifest-syntax]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -159,6 +201,7 @@ jobs:
           results=(
             "lint:${{ needs.lint.result }}"
             "test-apt-install:${{ needs.test-apt-install.result }}"
+            "test-idempotent:${{ needs.test-idempotent.result }}"
             "test-macos-install:${{ needs.test-macos-install.result }}"
             "test-windows-install:${{ needs.test-windows-install.result }}"
             "test-configs:${{ needs.test-configs.result }}"
