@@ -114,35 +114,82 @@ function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
         return
     }
 
-    $source = Get-Content $SourcePath -Raw
-    $dest = Get-Content $DestPath -Raw
-    $newDefaults = @()
-
-    foreach ($key in @("model", "model_reasoning_effort")) {
-        if ($dest -notmatch "(?m)^\s*$([regex]::Escape($key))\s*=") {
-            $lineMatch = [regex]::Match($source, "(?m)^\s*$([regex]::Escape($key))\s*=.*$")
-            if ($lineMatch.Success) { $newDefaults += $lineMatch.Value.Trim() }
+    # Parse source: srcData[section][key] = rawLine ("" = top-level)
+    $srcData = [ordered]@{ "" = [ordered]@{} }
+    $curSec  = ""
+    foreach ($line in (Get-Content $SourcePath)) {
+        $t = $line.Trim()
+        if ($t -match '^\[(.+)\]$') {
+            $curSec = $Matches[1]
+            if (-not $srcData.Contains($curSec)) { $srcData[$curSec] = [ordered]@{} }
+        } elseif ($t -and -not $t.StartsWith('#') -and $t -match '^([^=\s]+)\s*=') {
+            $srcData[$curSec][$Matches[1]] = $line
         }
     }
 
-    if ($newDefaults.Count -gt 0) {
-        $dest = "$($newDefaults -join "`n")`n`n$dest"
-        Write-Host "    Added missing Codex defaults: $($newDefaults -join ', ')"
-    }
+    # Walk destination: override matching keys, flush missing keys on section boundary
+    $out     = [System.Collections.Generic.List[string]]::new()
+    $seen    = @{ "" = [System.Collections.Generic.HashSet[string]]::new() }
+    $seenSec = [System.Collections.Generic.HashSet[string]]@("")
+    $curSec  = ""
 
-    if ($dest -notmatch "(?m)^\s*\[mcp_servers\.openaiDeveloperDocs\]\s*$") {
-        $mcpMatch = [regex]::Match(
-            $source,
-            "(?ms)^\[mcp_servers\.openaiDeveloperDocs\]\s*\r?\n.*?(?=^\[|\z)"
-        )
-        if ($mcpMatch.Success) {
-            $dest = "$($dest.TrimEnd())`n`n$($mcpMatch.Value.TrimEnd())`n"
-            Write-Host "    Added OpenAI developer docs MCP server"
+    $flushMissing = {
+        param($sec)
+        if ($srcData.Contains($sec)) {
+            foreach ($k in $srcData[$sec].Keys) {
+                if (-not $seen[$sec].Contains($k)) {
+                    $out.Add($srcData[$sec][$k])
+                    Write-Host "    Added [$sec] $k"
+                }
+            }
         }
     }
 
-    $dest | Out-File $DestPath -Encoding utf8 -NoNewline
-    Write-Host "    Merged config.toml without replacing Codex state"
+    foreach ($line in (Get-Content $DestPath)) {
+        $t = $line.Trim()
+        if ($t -match '^\[(.+)\]$') {
+            & $flushMissing $curSec
+            $curSec = $Matches[1]
+            $seenSec.Add($curSec) | Out-Null
+            if (-not $seen.ContainsKey($curSec)) { $seen[$curSec] = [System.Collections.Generic.HashSet[string]]::new() }
+            $out.Add($line)
+        } elseif ($t -and -not $t.StartsWith('#') -and $t -match '^([^=\s]+)\s*=') {
+            $key = $Matches[1]
+            if (-not $seen.ContainsKey($curSec)) { $seen[$curSec] = [System.Collections.Generic.HashSet[string]]::new() }
+            $seen[$curSec].Add($key) | Out-Null
+            if ($srcData.Contains($curSec) -and $srcData[$curSec].Contains($key)) {
+                $out.Add($srcData[$curSec][$key])
+                if ($srcData[$curSec][$key] -ne $line) { Write-Host "    Override [$curSec] $key" }
+            } else {
+                $out.Add($line)
+            }
+        } else {
+            $out.Add($line)
+        }
+    }
+    & $flushMissing $curSec
+
+    # Prepend missing top-level keys
+    $topMissing = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in $srcData[""].Keys) {
+        if (-not $seen[""].Contains($k)) {
+            $topMissing.Add($srcData[""][$k])
+            Write-Host "    Added top-level $k"
+        }
+    }
+    if ($topMissing.Count -gt 0) { $out.InsertRange(0, $topMissing) }
+
+    # Append missing sections
+    foreach ($s in $srcData.Keys) {
+        if ($s -eq "" -or $seenSec.Contains($s)) { continue }
+        $out.Add("")
+        $out.Add("[$s]")
+        foreach ($k in $srcData[$s].Keys) { $out.Add($srcData[$s][$k]) }
+        Write-Host "    Added section [$s]"
+    }
+
+    ($out -join "`n") | Out-File $DestPath -Encoding utf8 -NoNewline
+    Write-Host "    Merged config.toml (source overrides destination)"
 }
 
 Write-Host "==> Windows dotfiles setup starting..."

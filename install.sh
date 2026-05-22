@@ -96,46 +96,101 @@ merge_gitconfig() {
 }
 
 merge_codex_config() {
-    local src="$1" dst="$2" key line table tmp
+    local src="$1" dst="$2"
+    local curSec="" line t key mapKey k sec_part
+
     if [[ ! -f "$src" ]]; then
         echo "    [!] $src not found, skipping."
         return 0
     fi
-
     if [[ ! -f "$dst" ]]; then
         cp -f "$src" "$dst"
         echo "    Copied config.toml"
         return 0
     fi
 
-    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
-    : > "$tmp"
-    for key in model model_reasoning_effort; do
-        if ! grep -qE "^[[:space:]]*${key}[[:space:]]*=" "$dst"; then
-            line="$(grep -m 1 -E "^[[:space:]]*${key}[[:space:]]*=" "$src" || true)"
-            if [[ -n "$line" ]]; then
-                printf '%s\n' "$line" >> "$tmp"
-                echo "    Added missing Codex default: $key"
-            fi
-        fi
-    done
-    [[ ! -s "$tmp" ]] || printf '\n' >> "$tmp"
-    cat "$dst" >> "$tmp"
+    # Parse source: srcKeys["sec\x1fkey"] = rawLine; srcSecOrder tracks section order
+    declare -A srcKeys doneKeys seenSec
+    local srcSecOrder=("")
+    curSec=""
 
-    if ! grep -qE '^[[:space:]]*\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$' "$tmp"; then
-        table="$(awk '
-            /^\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$/ { in_table = 1 }
-            in_table && /^\[/ && $0 !~ /^\[mcp_servers\.openaiDeveloperDocs\][[:space:]]*$/ { exit }
-            in_table { print }
-        ' "$src")"
-        if [[ -n "$table" ]]; then
-            printf '\n%s\n' "$table" >> "$tmp"
-            echo "    Added OpenAI developer docs MCP server"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        t="${line#"${line%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+        if [[ "$t" =~ ^\[(.+)\]$ ]]; then
+            curSec="${BASH_REMATCH[1]}"
+            local _f=0
+            for _s in "${srcSecOrder[@]}"; do [[ "$_s" == "$curSec" ]] && _f=1 && break; done
+            [[ $_f -eq 0 ]] && srcSecOrder+=("$curSec")
+        elif [[ -n "$t" && "${t:0:1}" != "#" && "$t" =~ ^([^[:space:]=]+)[[:space:]]*= ]]; then
+            srcKeys["${curSec}"$'\x1f'"${BASH_REMATCH[1]}"]="$line"
         fi
+    done < "$src"
+
+    local tmp; tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    seenSec[""]="1"; curSec=""
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        t="${line#"${line%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+        if [[ "$t" =~ ^\[(.+)\]$ ]]; then
+            # Flush source keys missing from outgoing section
+            for k in "${!srcKeys[@]}"; do
+                sec_part="${k%%$'\x1f'*}"
+                [[ "$sec_part" != "$curSec" || -n "${doneKeys[$k]+x}" ]] && continue
+                printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
+                echo "    Added [${curSec}] ${k#*$'\x1f'}"
+            done
+            curSec="${BASH_REMATCH[1]}"; seenSec["$curSec"]="1"
+            printf '%s\n' "$line" >> "$tmp"
+        elif [[ -n "$t" && "${t:0:1}" != "#" && "$t" =~ ^([^[:space:]=]+)[[:space:]]*= ]]; then
+            key="${BASH_REMATCH[1]}"; mapKey="${curSec}"$'\x1f'"${key}"
+            doneKeys["$mapKey"]="1"
+            if [[ -n "${srcKeys[$mapKey]+x}" ]]; then
+                printf '%s\n' "${srcKeys[$mapKey]}" >> "$tmp"
+                [[ "${srcKeys[$mapKey]}" != "$line" ]] && echo "    Override [${curSec}] ${key}"
+            else
+                printf '%s\n' "$line" >> "$tmp"
+            fi
+        else
+            printf '%s\n' "$line" >> "$tmp"
+        fi
+    done < "$dst"
+
+    # Flush missing keys for last section
+    for k in "${!srcKeys[@]}"; do
+        sec_part="${k%%$'\x1f'*}"
+        [[ "$sec_part" != "$curSec" || -n "${doneKeys[$k]+x}" ]] && continue
+        printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
+        echo "    Added [${curSec}] ${k#*$'\x1f'}"
+    done
+
+    # Prepend missing top-level keys
+    local topMissing=()
+    for k in "${!srcKeys[@]}"; do
+        [[ "${k%%$'\x1f'*}" != "" || -n "${doneKeys[$k]+x}" ]] && continue
+        topMissing+=("${srcKeys[$k]}")
+        echo "    Added top-level ${k#*$'\x1f'}"
+    done
+    if [[ ${#topMissing[@]} -gt 0 ]]; then
+        local tmpTop; tmpTop="$(mktemp)"; _TMPFILES+=("$tmpTop")
+        printf '%s\n' "${topMissing[@]}" > "$tmpTop"
+        printf '\n' >> "$tmpTop"
+        cat "$tmp" >> "$tmpTop"
+        mv "$tmpTop" "$tmp"
     fi
 
+    # Append entirely missing sections
+    local sec
+    for sec in "${srcSecOrder[@]}"; do
+        [[ "$sec" == "" || -n "${seenSec[$sec]+x}" ]] && continue
+        printf '\n[%s]\n' "$sec" >> "$tmp"
+        for k in "${!srcKeys[@]}"; do
+            [[ "${k%%$'\x1f'*}" == "$sec" ]] && printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
+        done
+        echo "    Added section [$sec]"
+    done
+
     mv "$tmp" "$dst"
-    echo "    Merged config.toml without replacing Codex state"
+    echo "    Merged config.toml (source overrides destination)"
 }
 
 add_to_path_runtime() {
