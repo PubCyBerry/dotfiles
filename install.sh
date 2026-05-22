@@ -667,6 +667,18 @@ else
     else
         echo "    [!] config/claude/CLAUDE.md not found"
     fi
+
+    # hooks/: 배포 (temporal-context.sh 등) + 실행 권한
+    HOOKS_SRC="$ROOT/config/claude/hooks"
+    HOOKS_DST="$CLAUDE_DIR/hooks"
+    if [[ -d "$HOOKS_SRC" ]]; then
+        mkdir -p "$HOOKS_DST"
+        cp -rf "$HOOKS_SRC/." "$HOOKS_DST/"
+        chmod +x "$HOOKS_DST"/*.sh 2>/dev/null || true
+        echo "    Copied hooks/ and set +x"
+    else
+        echo "    [!] config/claude/hooks not found, skipping."
+    fi
 fi
 
 # =============================================

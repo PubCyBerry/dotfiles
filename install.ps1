@@ -360,6 +360,17 @@ if (Test-Path $claudeMdSrc) {
     Write-Host "    [!] config\claude\CLAUDE.md not found"
 }
 
+# hooks/: 배포 (temporal-context.sh 등)
+$hooksSrc = Join-Path $ROOT "config\claude\hooks"
+$hooksDst = Join-Path $ClaudeDir "hooks"
+if (Test-Path $hooksSrc) {
+    New-Item -ItemType Directory -Force -Path $hooksDst | Out-Null
+    Copy-Item "$hooksSrc\*" $hooksDst -Recurse -Force
+    Write-Host "    Copied hooks/"
+} else {
+    Write-Host "    [!] config\claude\hooks not found, skipping."
+}
+
 # =============================================
 # 3-2. RTK (Rust Token Killer) 설치
 # =============================================
