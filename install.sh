@@ -127,7 +127,7 @@ merge_codex_config() {
     done < "$src"
 
     local tmp; tmp="$(mktemp)"; _TMPFILES+=("$tmp")
-    seenSec[""]="1"; curSec=""
+    curSec=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         t="${line#"${line%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
