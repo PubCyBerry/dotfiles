@@ -131,27 +131,9 @@ dotfiles/
 
 `manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지한다. 새 skill 추가 시 manifest에만 추가 후 install 스크립트를 다시 실행한다.
 
-## Worktree 작업 지침
+## 설치/언인스톨 변경 지침
 
-worktree 세션에서 작업 완료 후 main에 합칠 때 커밋 성격에 따라 전략을 선택한다.
-
-- **wip/임시 커밋이 많은 경우** → Squash Merge: 브랜치 전체를 커밋 하나로 압축
-  ```bash
-  git switch main
-  git merge --squash <브랜치명>
-  git commit -m "<의미 있는 커밋 메시지>"
-  git branch -d <브랜치명>
-  ```
-- **독립적인 의미를 가진 커밋이 여러 개인 경우** → Rebase + FF: 커밋 이력을 보존하며 선형화
-  ```bash
-  git switch <브랜치명>
-  git rebase main
-  git switch main
-  git merge --ff-only <브랜치명>
-  git branch -d <브랜치명>
-  ```
-
-자세한 워크플로우와 Before/After 예시는 [`docs/worktree-git-workflows.md`](docs/worktree-git-workflows.md) 참고.
+설치 스크립트나 에이전트 설정을 변경할 때는 Safe-Clean-Install과 Safe-Clean-Uninstall이 가능한지 검토한다. 설치가 idempotent한지, 기존 사용자 설정을 보존하는지, 재설치 전에 안전하게 정리할 수 있는지, 그리고 언인스톨이 dotfiles가 관리한 side effect만 제거하거나 명시적으로 의도한 범위만 제거하는지 확인한다.
 
 ## 주의사항
 

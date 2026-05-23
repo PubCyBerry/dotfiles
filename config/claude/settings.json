@@ -25,6 +25,17 @@
             "command": "bash ~/.claude/hooks/temporal-context.sh"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'CAVEMAN MODE ACTIVE. Keep configured response language. Goal: fewer output tokens, same technical accuracy. Drop filler, pleasantries, hedging, repeated explanations. Use short direct sentences or fragments. Prefer: thing, action, reason, next step. Code, commands, commits, security warnings, and destructive confirmations: write normal and clear. If user says stop caveman or normal mode, stop using this style.'",
+            "timeout": 5,
+            "statusMessage": "Loading caveman mode"
+          }
+        ]
       }
     ],
     "PreToolUse": [

@@ -3,3 +3,4 @@ model_reasoning_effort = "xhigh"
 
 [features]
 remote_control = true
+hooks = true
