@@ -1,6 +1,13 @@
 model = "gpt-5.5"
 model_reasoning_effort = "xhigh"
 
+[windows]
+sandbox = "elevated"
+
+[desktop]
+followUpQueueMode = "steer"
+
 [features]
-remote_control = true
+js_repl = false
 hooks = true
+remote_control = true
