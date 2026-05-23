@@ -1,0 +1,398 @@
+name: Uninstall Validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - install.sh
+      - install.ps1
+      - "config/**"
+      - docs/uninstall.md
+      - ".github/workflows/uninstall-validation.yml"
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - "config/**"
+      - docs/uninstall.md
+      - ".github/workflows/uninstall-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uninstall-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu-safe-clean-uninstall:
+    name: Ubuntu Safe-Clean-Uninstall contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+
+      - name: Seed managed side effects
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/safe-clean-home"
+          mkdir -p "$HOME"
+
+          add_marker_block() {
+            local target="$1" source="$2" before="$3" after="$4"
+            {
+              echo "$before"
+              echo "# ===== dotfiles-begin ====="
+              cat "$source"
+              echo "# ===== dotfiles-end ====="
+              echo "$after"
+            } > "$target"
+          }
+
+          mkdir -p \
+            "$HOME/.config/yazi" \
+            "$HOME/.config/nvim" \
+            "$HOME/.config" \
+            "$HOME/.codex/hooks" \
+            "$HOME/.claude/hooks" \
+            "$HOME/.local/bin"
+
+          git config --global user.name "Keep User"
+          git config --global core.editor "nvim"
+          git config --global core.pager "delta"
+          git config --global interactive.diffFilter "delta --color-only"
+          git config --global delta.navigate true
+
+          add_marker_block "$HOME/.bashrc" config/bash/bashrc \
+            "# user bash before" "# user bash after"
+          add_marker_block "$HOME/.inputrc" config/bash/inputrc \
+            "# user input before" "# user input after"
+
+          cp config/tmux/tmux.linux.conf "$HOME/.tmux.conf"
+          cp config/yazi/yazi.toml "$HOME/.config/yazi/yazi.toml"
+          echo "keep = true" > "$HOME/.config/yazi/user.toml"
+          cp -r config/nvim/. "$HOME/.config/nvim/"
+          cp config/starship.toml "$HOME/.config/starship.toml"
+
+          cp config/agents/global.md "$HOME/.codex/AGENTS.md"
+          cp config/codex/hooks.json "$HOME/.codex/hooks.json"
+          cp config/claude/hooks/temporal-context.sh "$HOME/.codex/hooks/temporal-context.sh"
+          cat config/codex/config.toml > "$HOME/.codex/config.toml"
+          printf '\n[user]\nkeep = true\n' >> "$HOME/.codex/config.toml"
+
+          cp config/agents/global.md "$HOME/.claude/CLAUDE.md"
+          cp config/claude/hooks/temporal-context.sh "$HOME/.claude/hooks/temporal-context.sh"
+          cat > "$HOME/.claude/settings.json" <<'JSON'
+          {
+            "statusLine": {
+              "command": "keep-me"
+            }
+          }
+          JSON
+          tmp="$(mktemp)"
+          jq -s '.[0] * .[1]' "$HOME/.claude/settings.json" config/claude/settings.json > "$tmp"
+          mv "$tmp" "$HOME/.claude/settings.json"
+
+      - name: Run uninstall cleanup contract
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/safe-clean-home"
+
+          unset_git_key() {
+            git config --global --unset "$1" 2>/dev/null || true
+          }
+
+          remove_marker_block() {
+            local file="$1"
+            [[ -f "$file" ]] || return 0
+            sed -i '/# ===== dotfiles-begin =====/,/# ===== dotfiles-end =====/d' "$file"
+          }
+
+          remove_if_same() {
+            local target="$1" source="$2"
+            [[ -f "$target" && -f "$source" ]] || return 0
+            cmp -s "$target" "$source" && rm -f "$target"
+          }
+
+          for key in \
+            core.pager core.editor core.fileMode core.autocrlf core.eol \
+            interactive.diffFilter delta.navigate delta.dark \
+            delta.side-by-side delta.line-numbers merge.conflictStyle
+          do
+            unset_git_key "$key"
+          done
+
+          rm -f "$HOME/.tmux.conf"
+          remove_if_same "$HOME/.config/yazi/yazi.toml" config/yazi/yazi.toml
+          rm -rf "$HOME/.config/nvim"
+          remove_if_same "$HOME/.config/starship.toml" config/starship.toml
+
+          rm -f "$HOME/.codex/AGENTS.md" "$HOME/.codex/hooks.json"
+          rm -rf "$HOME/.codex/hooks"
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path.home() / ".codex" / "config.toml"
+          if path.exists():
+              managed_top = {"model", "model_reasoning_effort"}
+              managed_sections = {"windows", "desktop", "features"}
+              out = []
+              current = ""
+              skip = False
+              for line in path.read_text(encoding="utf-8").splitlines():
+                  stripped = line.strip()
+                  if stripped.startswith("[") and stripped.endswith("]"):
+                      current = stripped[1:-1]
+                      skip = current in managed_sections
+                      if not skip:
+                          out.append(line)
+                      continue
+                  if skip:
+                      continue
+                  if not current and "=" in stripped:
+                      key = stripped.split("=", 1)[0].strip()
+                      if key in managed_top:
+                          continue
+                  out.append(line)
+
+              text = "\n".join(out).strip()
+              if text:
+                  path.write_text(text + "\n", encoding="utf-8")
+              else:
+                  path.unlink()
+          PY
+
+          rm -f "$HOME/.claude/CLAUDE.md"
+          rm -rf "$HOME/.claude/hooks"
+          tmp="$(mktemp)"
+          jq 'del(
+            .hooks,
+            .env,
+            .language,
+            .permissions,
+            .attribution,
+            .autoUpdatesChannel,
+            .skipDangerousModePermissionPrompt
+          )' "$HOME/.claude/settings.json" > "$tmp"
+          mv "$tmp" "$HOME/.claude/settings.json"
+
+          remove_marker_block "$HOME/.bashrc"
+          remove_marker_block "$HOME/.inputrc"
+
+      - name: Assert user data preserved and managed files removed
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/safe-clean-home"
+
+          [[ "$(git config --global user.name)" == "Keep User" ]]
+          ! git config --global core.editor >/dev/null 2>&1
+          ! git config --global interactive.diffFilter >/dev/null 2>&1
+
+          grep -q "# user bash before" "$HOME/.bashrc"
+          grep -q "# user bash after" "$HOME/.bashrc"
+          ! grep -q "dotfiles-begin" "$HOME/.bashrc"
+          grep -q "# user input before" "$HOME/.inputrc"
+          grep -q "# user input after" "$HOME/.inputrc"
+          ! grep -q "dotfiles-begin" "$HOME/.inputrc"
+
+          [[ ! -e "$HOME/.tmux.conf" ]]
+          [[ ! -e "$HOME/.config/yazi/yazi.toml" ]]
+          [[ -f "$HOME/.config/yazi/user.toml" ]]
+          [[ ! -e "$HOME/.config/nvim" ]]
+          [[ ! -e "$HOME/.config/starship.toml" ]]
+
+          [[ ! -e "$HOME/.codex/AGENTS.md" ]]
+          [[ ! -e "$HOME/.codex/hooks.json" ]]
+          [[ ! -e "$HOME/.codex/hooks" ]]
+          grep -q '\[user\]' "$HOME/.codex/config.toml"
+          ! grep -q '^model' "$HOME/.codex/config.toml"
+          ! grep -q '\[features\]' "$HOME/.codex/config.toml"
+
+          [[ ! -e "$HOME/.claude/CLAUDE.md" ]]
+          [[ ! -e "$HOME/.claude/hooks" ]]
+          jq -e '
+            .statusLine.command == "keep-me"
+            and (has("hooks") | not)
+            and (has("env") | not)
+          ' "$HOME/.claude/settings.json"
+
+  windows-safe-clean-uninstall:
+    name: Windows Safe-Clean-Uninstall contract
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seed managed side effects and run cleanup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $HomeRoot = Join-Path $env:RUNNER_TEMP "safe-clean-home"
+          $env:USERPROFILE = $HomeRoot
+          $env:APPDATA = Join-Path $HomeRoot "AppData\Roaming"
+          $env:LOCALAPPDATA = Join-Path $HomeRoot "AppData\Local"
+
+          $ClaudeDir = Join-Path $HomeRoot ".claude"
+          $CodexDir = Join-Path $HomeRoot ".codex"
+          $ProfilePath = Join-Path $HomeRoot "Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+          $BashRc = Join-Path $HomeRoot ".bashrc"
+          $InputRc = Join-Path $HomeRoot ".inputrc"
+          $YaziDir = Join-Path $env:APPDATA "yazi\config"
+          $NvimDir = Join-Path $env:LOCALAPPDATA "nvim"
+
+          New-Item -ItemType Directory -Force -Path `
+            $ClaudeDir, `
+            (Join-Path $ClaudeDir "hooks"), `
+            $CodexDir, `
+            (Join-Path $CodexDir "hooks"), `
+            (Split-Path $ProfilePath), `
+            $YaziDir, `
+            $NvimDir | Out-Null
+
+          function Set-TextFile($Path, $Content) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
+            [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+          }
+
+          function Add-MarkerBlock($Path, $Source, $Before, $After) {
+            $content = @(
+              $Before
+              "# ===== dotfiles-begin ====="
+              (Get-Content -LiteralPath $Source -Raw)
+              "# ===== dotfiles-end ====="
+              $After
+            ) -join "`n"
+            Set-TextFile $Path $content
+          }
+
+          Add-MarkerBlock $ProfilePath "config/powershell/profile.ps1" `
+            "# user pwsh before" "# user pwsh after"
+          Add-MarkerBlock $BashRc "config/bash/bashrc" `
+            "# user bash before" "# user bash after"
+          Add-MarkerBlock $InputRc "config/bash/inputrc" `
+            "# user input before" "# user input after"
+
+          Copy-Item "config/agents/global.md" (Join-Path $ClaudeDir "CLAUDE.md") -Force
+          Copy-Item "config/agents/global.md" (Join-Path $CodexDir "AGENTS.md") -Force
+          Copy-Item "config/claude/hooks/temporal-context.sh" (Join-Path $ClaudeDir "hooks") -Force
+          Copy-Item "config/claude/hooks/temporal-context.sh" (Join-Path $CodexDir "hooks") -Force
+          Copy-Item "config/codex/hooks.json" (Join-Path $CodexDir "hooks.json") -Force
+          Copy-Item "config/yazi/yazi.toml" (Join-Path $YaziDir "yazi.toml") -Force
+          Set-TextFile (Join-Path $YaziDir "user.toml") "keep = true`n"
+          Copy-Item "config/nvim/*" $NvimDir -Recurse -Force
+          Copy-Item "config/tmux/tmux.windows.conf" (Join-Path $HomeRoot ".tmux.conf") -Force
+
+          $CodexConfig = Join-Path $CodexDir "config.toml"
+          Set-TextFile $CodexConfig ((Get-Content "config/codex/config.toml" -Raw) + "`n[user]`nkeep = true`n")
+
+          $SettingsPath = Join-Path $ClaudeDir "settings.json"
+          $settings = Get-Content "config/claude/settings.json" -Raw | ConvertFrom-Json
+          $settings | Add-Member -NotePropertyName "statusLine" -NotePropertyValue @{ command = "keep-me" } -Force
+          $settings | ConvertTo-Json -Depth 20 | Set-Content $SettingsPath -Encoding utf8
+
+          function Remove-MarkerBlock($Path) {
+            if (Test-Path $Path) {
+              $content = Get-Content $Path -Raw
+              $content = $content -replace '(?s)\r?\n?# ===== dotfiles-begin =====(.*?)# ===== dotfiles-end =====\r?\n?', "`n"
+              Set-TextFile $Path $content
+            }
+          }
+
+          function Remove-IfSame($Target, $Source) {
+            if ((Test-Path $Target) -and (Test-Path $Source)) {
+              if ((Get-FileHash $Target).Hash -eq (Get-FileHash $Source).Hash) {
+                Remove-Item $Target -Force
+              }
+            }
+          }
+
+          Remove-Item (Join-Path $HomeRoot ".tmux.conf") -Force
+          Remove-IfSame (Join-Path $YaziDir "yazi.toml") "config/yazi/yazi.toml"
+          Remove-Item $NvimDir -Recurse -Force
+
+          Remove-Item (Join-Path $ClaudeDir "CLAUDE.md") -Force
+          Remove-Item (Join-Path $ClaudeDir "hooks") -Recurse -Force
+          $settings = Get-Content $SettingsPath -Raw | ConvertFrom-Json
+          foreach ($key in @(
+            "hooks",
+            "env",
+            "language",
+            "permissions",
+            "attribution",
+            "autoUpdatesChannel",
+            "skipDangerousModePermissionPrompt"
+          )) {
+            $settings.PSObject.Properties.Remove($key)
+          }
+          $settings | ConvertTo-Json -Depth 20 | Set-Content $SettingsPath -Encoding utf8
+
+          Remove-Item (Join-Path $CodexDir "AGENTS.md") -Force
+          Remove-Item (Join-Path $CodexDir "hooks.json") -Force
+          Remove-Item (Join-Path $CodexDir "hooks") -Recurse -Force
+          $managedTop = @("model", "model_reasoning_effort")
+          $managedSections = @("windows", "desktop", "features")
+          $current = ""
+          $skip = $false
+          $out = [System.Collections.Generic.List[string]]::new()
+          foreach ($line in Get-Content $CodexConfig) {
+            $trimmed = $line.Trim()
+            if ($trimmed -match '^\[(.+)\]$') {
+              $current = $Matches[1]
+              $skip = $managedSections -contains $current
+              if (-not $skip) { $out.Add($line) }
+              continue
+            }
+            if ($skip) { continue }
+            if (-not $current -and $trimmed -match '^([^=\s]+)\s*=') {
+              if ($managedTop -contains $Matches[1]) { continue }
+            }
+            $out.Add($line)
+          }
+          Set-TextFile $CodexConfig (($out -join "`n").Trim() + "`n")
+
+          Remove-MarkerBlock $ProfilePath
+          Remove-MarkerBlock $BashRc
+          Remove-MarkerBlock $InputRc
+
+          function Assert-True($Condition, $Message) {
+            if (-not $Condition) { throw $Message }
+          }
+
+          Assert-True (!(Test-Path (Join-Path $ClaudeDir "CLAUDE.md"))) "CLAUDE.md should be removed"
+          Assert-True (!(Test-Path (Join-Path $ClaudeDir "hooks"))) "Claude hooks should be removed"
+          Assert-True (!(Test-Path (Join-Path $CodexDir "AGENTS.md"))) "AGENTS.md should be removed"
+          Assert-True (!(Test-Path (Join-Path $CodexDir "hooks.json"))) "Codex hooks.json should be removed"
+          Assert-True (!(Test-Path (Join-Path $CodexDir "hooks"))) "Codex hooks should be removed"
+          Assert-True (!(Test-Path (Join-Path $YaziDir "yazi.toml"))) "managed yazi.toml should be removed"
+          Assert-True ((Test-Path (Join-Path $YaziDir "user.toml"))) "user yazi file should remain"
+          Assert-True (!(Test-Path $NvimDir)) "managed nvim dir should be removed"
+
+          $profileContent = Get-Content $ProfilePath -Raw
+          Assert-True ($profileContent.Contains("# user pwsh before")) "PowerShell user content before should remain"
+          Assert-True ($profileContent.Contains("# user pwsh after")) "PowerShell user content after should remain"
+          Assert-True (!$profileContent.Contains("dotfiles-begin")) "PowerShell marker should be removed"
+
+          $bashContent = Get-Content $BashRc -Raw
+          Assert-True ($bashContent.Contains("# user bash before")) "bash user content before should remain"
+          Assert-True ($bashContent.Contains("# user bash after")) "bash user content after should remain"
+          Assert-True (!$bashContent.Contains("dotfiles-begin")) "bash marker should be removed"
+
+          $inputContent = Get-Content $InputRc -Raw
+          Assert-True ($inputContent.Contains("# user input before")) "inputrc user content before should remain"
+          Assert-True ($inputContent.Contains("# user input after")) "inputrc user content after should remain"
+          Assert-True (!$inputContent.Contains("dotfiles-begin")) "inputrc marker should be removed"
+
+          $settings = Get-Content $SettingsPath -Raw | ConvertFrom-Json
+          Assert-True ($settings.statusLine.command -eq "keep-me") "Claude user statusLine should remain"
+          Assert-True (-not $settings.PSObject.Properties["hooks"]) "Claude hooks should be removed"
+          Assert-True (-not $settings.PSObject.Properties["env"]) "Claude env should be removed"
+
+          $codexText = Get-Content $CodexConfig -Raw
+          Assert-True ($codexText.Contains("[user]")) "Codex user section should remain"
+          Assert-True (!$codexText.Contains("model_reasoning_effort")) "Codex managed keys should be removed"
+          Assert-True (!$codexText.Contains("[features]")) "Codex managed sections should be removed"

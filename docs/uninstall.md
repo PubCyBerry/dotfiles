@@ -161,6 +161,59 @@ Remove-Item "$env:LOCALAPPDATA\fnm" -Recurse -Force
 
 ---
 
+### 2-2. Codex 설정 제거
+
+선택적 제거 (권장):
+
+```powershell
+# dotfiles가 복사한 공통 지침과 hooks 제거
+Remove-Item "$env:USERPROFILE\.codex\AGENTS.md" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\.codex\hooks.json" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\.codex\hooks" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+`config.toml`에는 프로젝트 trust, 플러그인, Desktop 상태, 머신별 경로처럼 Codex가 직접 관리하는 값이 함께 들어갈 수 있다. 전체 삭제보다 dotfiles 기본값만 제거한다.
+
+```powershell
+$configPath = "$env:USERPROFILE\.codex\config.toml"
+if (Test-Path $configPath) {
+    $managedTop = @("model", "model_reasoning_effort")
+    $managedSections = @("windows", "desktop", "features")
+    $current = ""
+    $skip = $false
+    $out = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($line in Get-Content $configPath) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match '^\[(.+)\]$') {
+            $current = $Matches[1]
+            $skip = $managedSections -contains $current
+            if (-not $skip) { $out.Add($line) }
+            continue
+        }
+        if ($skip) { continue }
+        if (-not $current -and $trimmed -match '^([^=\s]+)\s*=') {
+            if ($managedTop -contains $Matches[1]) { continue }
+        }
+        $out.Add($line)
+    }
+
+    $newContent = (($out -join "`n").Trim() + "`n")
+    if ($newContent.Trim()) {
+        $newContent | Out-File $configPath -Encoding utf8 -NoNewline
+    } else {
+        Remove-Item $configPath -Force
+    }
+}
+```
+
+> **전체 삭제** (Codex trust, 플러그인, Desktop 상태까지 함께 삭제될 수 있음):
+> ```powershell
+> Remove-Item "$env:USERPROFILE\.codex" -Recurse -Force
+> ```
+
+---
+
 ### 3. Claude Code 제거
 
 Windows 설정 > 앱에서 "Claude Code" 검색 후 제거, 또는:
@@ -301,16 +354,17 @@ npx skills list -g
 2. **3-2** — RTK 제거
 3. **3-1** — Claude Code 설정 제거
 4. **3** — Claude Code 제거
-5. **4** — PowerShell 프로파일 정리
-6. **5** — Git Bash 프로파일 정리
-7. **1-6** — Neovim 설정 제거
-8. **1-5** — Neovim PATH 제거
-9. **1-4** — Yazi 설정 제거
-10. **1-3** — YAZI_FILE_ONE 환경 변수 제거
-11. **1-2** — tmux 설정 제거
-12. **1-1** — Git 전역 설정 제거
-13. **2** — Node.js (fnm) 제거
-14. **1** — winget 패키지 제거
+5. **2-2** — Codex 설정 제거
+6. **4** — PowerShell 프로파일 정리
+7. **5** — Git Bash 프로파일 정리
+8. **1-6** — Neovim 설정 제거
+9. **1-5** — Neovim PATH 제거
+10. **1-4** — Yazi 설정 제거
+11. **1-3** — YAZI_FILE_ONE 환경 변수 제거
+12. **1-2** — tmux 설정 제거
+13. **1-1** — Git 전역 설정 제거
+14. **2** — Node.js (fnm) 제거
+15. **1** — winget 패키지 제거
 
 ---
 

@@ -19,6 +19,11 @@
 - JSON 출력을 지원하는 CLI는 `--json` 옵션을 우선한다.
 - 사용자에게 CLI 명령어를 안내할 때 Windows는 Git Bash, Linux는 Bash 기준으로 작성한다.
 
+## 설명 방식
+- 내용이나 개념을 설명할 때 텍스트만 나열하기보다 한눈에 구조가 보이는 형식을 우선한다.
+- 관계, 흐름, 단계, 계층, 비교가 있는 내용은 표, 목록, 트리, 다이어그램, Mermaid 중 적합한 형식을 사용한다.
+- 단순한 답변은 과하게 시각화하지 않는다. 이해 속도가 빨라지는 경우에만 구조화한다.
+
 ## 개발 환경 변경
 - 원칙: 호스트 환경을 직접 변경하지 않는다. 프로젝트 로컬, 일회성, 격리된 실행 환경을 우선한다.
 - 명시 요청이 없으면 전역 설치를 하지 않는다. 예: `pip install`, `npm install -g`, `gem install`, `cargo install`, `go install`, `brew install`, `apt install`, `winget install`.

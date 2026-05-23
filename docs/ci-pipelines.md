@@ -1,6 +1,6 @@
 # CI 파이프라인 가이드
 
-이 저장소는 `install.sh`(Ubuntu 설치 스크립트)의 동작을 검증하는 세 가지 GitHub Actions 파이프라인을 운영한다.
+이 저장소는 설치, 설정, 언인스톨 계약을 검증하는 네 가지 GitHub Actions 파이프라인을 운영한다.
 
 ---
 
@@ -11,6 +11,7 @@
 | **PR Gate** | `pr-gate.yml` | push/PR 자동 | 빠른 피드백 | ~15분 |
 | **Precision Validation** | `precision-validation.yml` | 수동 또는 PR | 단계별 세부 검증 | ~30-40분 |
 | **Freshness Check** | `freshness-check.yml` | 매주 월요일 | 업스트림 변경 감지 | ~5분 |
+| **Uninstall Validation** | `uninstall-validation.yml` | push/PR 자동, 수동 | Safe-Clean-Uninstall 계약 검증 | ~10분 |
 
 ---
 
@@ -129,6 +130,34 @@ neovim     v0.10.1
 git-delta  0.17.0
 fzf        v0.53.0
 ```
+
+---
+
+## 파이프라인 4: Uninstall Validation
+
+`install.sh`, `install.ps1`, `config/`, `docs/uninstall.md` 변경 시 자동 실행되는 언인스톨 계약 검증 파이프라인이다.
+
+### 검증 방식
+
+GitHub Actions runner의 실제 사용자 환경을 지우지 않고, 격리된 fake HOME/USERPROFILE 아래에 dotfiles가 만드는 대표 side effect를 심은 뒤 제거한다.
+
+검증 대상:
+
+- dotfiles 마커 블록 제거 후 사용자 profile 내용 보존
+- `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, hooks 파일 제거
+- Claude `settings.json`에서 dotfiles 관리 키 제거 후 사용자 `statusLine` 보존
+- Codex `config.toml`에서 dotfiles 기본값 제거 후 사용자 섹션 보존
+- yazi/nvim/starship/tmux 설정 제거 시 사용자 파일 보존
+- git 전역 설정에서 dotfiles 관리 키만 제거하고 사용자 키 보존
+
+### Job 상세
+
+| Job | 검증 내용 |
+|---|---|
+| ubuntu-safe-clean-uninstall | Linux/macOS 계열 경로와 bash profile 마커 정리 검증 |
+| windows-safe-clean-uninstall | Windows 경로와 PowerShell/Git Bash profile 마커 정리 검증 |
+
+패키지 매니저의 실제 uninstall은 runner가 일회용 환경이라 검증하지 않는다. 대신 dotfiles가 관리한 설정 side effect만 안전하게 되돌릴 수 있는지 검증한다.
 
 ---
 
