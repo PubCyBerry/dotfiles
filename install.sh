@@ -674,19 +674,19 @@ else
 fi
 
 # =============================================
-# 2-2. Codex 설정 배포 (config/codex/ → ~/.codex/)
+# 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)
 # =============================================
 echo
 echo "==> Deploying Codex config..."
 mkdir -p "$CODEX_DIR"
 merge_codex_config "$ROOT/config/codex/config.toml" "$CODEX_DIR/config.toml"
 
-CODEX_AGENTS_SRC="$ROOT/config/codex/AGENTS.md"
-if [[ -f "$CODEX_AGENTS_SRC" ]]; then
-    cp -f "$CODEX_AGENTS_SRC" "$CODEX_DIR/AGENTS.md"
-    echo "    Copied AGENTS.md"
+AGENTS_GLOBAL_SRC="$ROOT/config/agents/global.md"
+if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+    cp -f "$AGENTS_GLOBAL_SRC" "$CODEX_DIR/AGENTS.md"
+    echo "    Copied global agent instructions to AGENTS.md"
 else
-    echo "    [!] config/codex/AGENTS.md not found"
+    echo "    [!] config/agents/global.md not found"
 fi
 
 # hooks.json: 단순 복사
@@ -726,7 +726,7 @@ else
     fi
 
     # =============================================
-    # 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
+    # 3-1. Claude Code 설정 배포 (config/claude/ + config/agents/global.md → ~/.claude/)
     # =============================================
     echo
     echo "==> Deploying Claude Code config..."
@@ -753,12 +753,11 @@ else
         echo "    [!] config/claude/settings.json not found"
     fi
 
-    CLAUDE_MD_SRC="$ROOT/config/claude/CLAUDE.md"
-    if [[ -f "$CLAUDE_MD_SRC" ]]; then
-        cp -f "$CLAUDE_MD_SRC" "$CLAUDE_DIR/CLAUDE.md"
-        echo "    Copied CLAUDE.md"
+    if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+        cp -f "$AGENTS_GLOBAL_SRC" "$CLAUDE_DIR/CLAUDE.md"
+        echo "    Copied global agent instructions to CLAUDE.md"
     else
-        echo "    [!] config/claude/CLAUDE.md not found"
+        echo "    [!] config/agents/global.md not found"
     fi
 
     # hooks/: 배포 (temporal-context.sh 등) + 실행 권한

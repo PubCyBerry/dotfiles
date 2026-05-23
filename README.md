@@ -96,10 +96,14 @@ dotfiles/
   install.ps1                      # 설치 스크립트 (Windows 11)
   install.sh                       # 설치 스크립트 (Ubuntu / macOS)
   config/
+    agents/
+      global.md                    # Codex/Claude 공통 전역 지침 원본
     claude/
       claude-hud.json              # claude-hud 설정
-      CLAUDE.md                    # Claude 전역 지침 설정
       settings.json                # Claude Code 설정 (`rtk hook claude`, env, permissions)
+    codex/
+      config.toml                  # Codex 모델 기본값
+      hooks.json                   # Codex hook 설정
     git/
       gitconfig                    # git 설정 (delta pager 포함, OS-중립)
     powershell/

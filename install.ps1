@@ -359,7 +359,7 @@ if (Test-Path $npmFile) {
 }
 
 # =============================================
-# 2-2. Codex 설정 배포 (config/codex/ → ~/.codex/)
+# 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)
 # =============================================
 Write-Host ""
 Write-Host "==> Deploying Codex config..."
@@ -369,12 +369,12 @@ Merge-CodexConfig `
     (Join-Path $ROOT "config\codex\config.toml") `
     (Join-Path $CodexDir "config.toml")
 
-$codexAgentsSrc = Join-Path $ROOT "config\codex\AGENTS.md"
-if (Test-Path $codexAgentsSrc) {
-    Copy-Item $codexAgentsSrc (Join-Path $CodexDir "AGENTS.md") -Force
-    Write-Host "    Copied AGENTS.md"
+$agentsGlobalSrc = Join-Path $ROOT "config\agents\global.md"
+if (Test-Path $agentsGlobalSrc) {
+    Copy-Item $agentsGlobalSrc (Join-Path $CodexDir "AGENTS.md") -Force
+    Write-Host "    Copied global agent instructions to AGENTS.md"
 } else {
-    Write-Host "    [!] config\codex\AGENTS.md not found"
+    Write-Host "    [!] config\agents\global.md not found"
 }
 
 # hooks.json: 단순 복사
@@ -410,7 +410,7 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 }
 
 # =============================================
-# 3-1. Claude Code 설정 배포 (config/claude/ → ~/.claude/)
+# 3-1. Claude Code 설정 배포 (config/claude/ + config/agents/global.md → ~/.claude/)
 # =============================================
 Write-Host ""
 Write-Host "==> Deploying Claude Code config..."
@@ -436,13 +436,11 @@ if (Test-Path $settingsSrc) {
     Write-Host "    [!] config\claude\settings.json not found"
 }
 
-# CLAUDE.md: 단순 복사
-$claudeMdSrc = Join-Path $ROOT "config\claude\CLAUDE.md"
-if (Test-Path $claudeMdSrc) {
-    Copy-Item $claudeMdSrc (Join-Path $ClaudeDir "CLAUDE.md") -Force
-    Write-Host "    Copied CLAUDE.md"
+if (Test-Path $agentsGlobalSrc) {
+    Copy-Item $agentsGlobalSrc (Join-Path $ClaudeDir "CLAUDE.md") -Force
+    Write-Host "    Copied global agent instructions to CLAUDE.md"
 } else {
-    Write-Host "    [!] config\claude\CLAUDE.md not found"
+    Write-Host "    [!] config\agents\global.md not found"
 }
 
 # hooks/: 배포 (temporal-context.sh 등)
