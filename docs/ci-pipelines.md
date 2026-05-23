@@ -159,6 +159,10 @@ GitHub Actions runner의 실제 사용자 환경을 지우지 않고, 격리된 
 
 패키지 매니저의 실제 uninstall은 runner가 일회용 환경이라 검증하지 않는다. 대신 dotfiles가 관리한 설정 side effect만 안전하게 되돌릴 수 있는지 검증한다.
 
+### 수동 실행 방법
+
+Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
+
 ---
 
 ## install.sh CI 모드
@@ -192,6 +196,9 @@ curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo ba
 
 # pr-gate workflow 로컬 실행
 act push --workflows .github/workflows/pr-gate.yml
+
+# uninstall-validation workflow 로컬 실행
+act push --workflows .github/workflows/uninstall-validation.yml
 
 # 특정 job만 실행
 act push --job lint
