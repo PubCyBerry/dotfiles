@@ -32,7 +32,6 @@ Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합, 
 
 | 패키지 | 설명 |
 |--------|------|
-| `@google/gemini-cli` | Google Gemini CLI — Gemini 모델과 터미널에서 대화 |
 | `@openai/codex` | OpenAI Codex CLI — 코드 생성/수정 에이전트 |
 
 ## npx skills

@@ -58,7 +58,7 @@ dotfiles/
 │   ├── winget.txt       # Windows winget 패키지 ID
 │   ├── apt.txt          # Ubuntu apt 패키지
 │   ├── Brewfile         # macOS Homebrew 패키지
-│   ├── npm-global.txt   # npm 전역 패키지 (@google/gemini-cli, @openai/codex)
+│   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex)
 │   └── skills.txt       # Claude Code skills (owner/repo@skill-name)
 └── docs/
     ├── tools.md                   # CLI 도구 사용법 cheatsheet
