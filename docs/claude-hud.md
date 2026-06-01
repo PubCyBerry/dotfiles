@@ -28,11 +28,10 @@ node --version
 
 ## 설치
 
-Claude Code 세션 내에서 순서대로 실행한다.
-
-```
-/plugin marketplace add jarrodwatts/claude-hud
-/plugin install claude-hud
+```bash
+claude plugin marketplace add jarrodwatts/claude-hud
+claude plugin install --scope user claude-hud
+# Claude Session
 /claude-hud:setup
 ```
 

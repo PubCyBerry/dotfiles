@@ -40,6 +40,10 @@ jq
 # lazygit # X, PPA 추가 혹은 바이너리 다운로드 필요
 
 
+# 폰트
+fonts-firacode                  # Fira Code (ligature 지원 개발자 폰트)
+fonts-powerline                 # Powerline 심볼 폰트 (starship 등 프롬프트 의존성)
+
 # 동영상/미디어/문서 (yazi preview 의존성)
 ffmpeg                          # 비디오
 poppler-utils                   # PDF

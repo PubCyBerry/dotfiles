@@ -327,6 +327,9 @@ elif [[ "$OS" == "Linux" ]]; then
     run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
     echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
 
+    echo "    Refreshing font cache..."
+    fc-cache -vf
+
     # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
     if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
         ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
@@ -464,7 +467,6 @@ _TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
 gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit"   &
 gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"     &
 gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"       &
-gh_release_tag steipete/CodexBar     > "$_TAG_DIR/codexbar"  &
 wait
 
 echo
@@ -593,18 +595,6 @@ if [[ -n "$YQ_ARCH" ]]; then
     else
     echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
     fi
-
-echo
-echo "==> Installing codexbar (CLI) from GitHub releases..."
-CB_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
-if [[ -n "$CB_ARCH" ]]; then
-    CB_TAG="$(cat "$_TAG_DIR/codexbar")"
-    install_gh_tar "codexbar" \
-        "https://github.com/steipete/CodexBar/releases/latest/download/CodexBarCLI-${CB_TAG}-linux-${CB_ARCH}.tar.gz" \
-        "codexbar"
-else
-    echo "    [!] Unsupported arch for codexbar: $ARCH (skipping)"
-fi
 
     fi
 
