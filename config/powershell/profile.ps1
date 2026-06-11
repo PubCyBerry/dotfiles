@@ -45,6 +45,11 @@ if (Get-Command bat -ErrorAction SilentlyContinue) {
     function global:cat { bat @args }
 }
 
+# Claude Code 단축 별칭
+if (Get-Command claude -ErrorAction SilentlyContinue) {
+    function global:ccd { claude --dangerously-skip-permissions @args }
+}
+
 # RTK PATH (install.ps1이 $USERPROFILE\rtk에 설치)
 $rtkPath = "$env:USERPROFILE\rtk"
 if ((Test-Path $rtkPath) -and ($env:PATH -notlike "*$rtkPath*")) {
