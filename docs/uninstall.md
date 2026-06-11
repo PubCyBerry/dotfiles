@@ -328,7 +328,15 @@ Remove-Item "$env:USERPROFILE\.bash_profile" -Force
 
 ### 6. Claude Code Skills 제거
 
-개별 제거:
+dotfiles 로컬 skill(저장소 소유, `config/claude/skills/`에서 배포) 제거:
+
+```powershell
+Remove-Item "$env:USERPROFILE\.claude\skills\subagent-creator" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+> dotfiles가 만든 로컬 skill 디렉터리만 제거하며, 아래 원격 skill과 사용자가 만든 subagent는 보존한다.
+
+원격 skill 개별 제거:
 
 ```powershell
 npx skills remove anthropics/skills --skill skill-creator -g

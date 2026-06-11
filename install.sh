@@ -761,6 +761,17 @@ else
     else
         echo "    [!] config/claude/hooks not found, skipping."
     fi
+
+    # 로컬 skills/: dotfiles 소유 skill만 디렉터리 단위 배포 (원격 npx skill 보존)
+    SKILLS_LOCAL_SRC="$ROOT/config/claude/skills"
+    if [[ -d "$SKILLS_LOCAL_SRC" ]]; then
+        mkdir -p "$CLAUDE_DIR/skills"
+        for d in "$SKILLS_LOCAL_SRC"/*/; do
+            [[ -d "$d" ]] || continue
+            cp -rf "$d" "$CLAUDE_DIR/skills/"
+            echo "    Deployed local skill: $(basename "$d")"
+        done
+    fi
 fi
 
 # =============================================

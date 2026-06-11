@@ -454,6 +454,17 @@ if (Test-Path $hooksSrc) {
     Write-Host "    [!] config\claude\hooks not found, skipping."
 }
 
+# 로컬 skills/: dotfiles 소유 skill만 디렉터리 단위 배포 (원격 npx skill 보존)
+$skillsLocalSrc = Join-Path $ROOT "config\claude\skills"
+if (Test-Path $skillsLocalSrc) {
+    $skillsDst = Join-Path $ClaudeDir "skills"
+    New-Item -ItemType Directory -Force -Path $skillsDst | Out-Null
+    Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
+        Copy-Item $_.FullName $skillsDst -Recurse -Force
+        Write-Host "    Deployed local skill: $($_.Name)"
+    }
+}
+
 # =============================================
 # 3-2. RTK (Rust Token Killer) 설치
 # =============================================
