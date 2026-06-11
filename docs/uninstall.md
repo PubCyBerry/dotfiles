@@ -159,6 +159,15 @@ fnm 데이터 디렉토리 제거:
 Remove-Item "$env:LOCALAPPDATA\fnm" -Recurse -Force
 ```
 
+User PATH에서 fnm aliases/default 제거:
+
+```powershell
+$fnmDefault = "$env:APPDATA\fnm\aliases\default"
+$userPath   = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+$newPath    = ($userPath -split ';' | Where-Object { $_ -ne $fnmDefault }) -join ';'
+[System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+```
+
 ---
 
 ### 2-2. Codex 설정 제거

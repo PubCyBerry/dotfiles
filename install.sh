@@ -637,6 +637,20 @@ if [[ -n "$YQ_ARCH" ]]; then
                     echo "    statusLine node path already up to date ($_node_ver)"
                 fi
             fi
+        # fnm aliases/default → ~/.local/bin symlink (MCP 서버 등 비쉘 프로세스에서 npx 접근 가능)
+        FNM_DEFAULT_PATH="${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default"
+        if [[ -e "$FNM_DEFAULT_PATH" ]]; then
+            for _bin in node npm npx; do
+                if [[ ! -e "$LOCAL_BIN/$_bin" ]]; then
+                    ln -sf "$FNM_DEFAULT_PATH/$_bin" "$LOCAL_BIN/$_bin"
+                    echo "    Linked $LOCAL_BIN/$_bin -> fnm default"
+                else
+                    echo "    $LOCAL_BIN/$_bin already exists, skipping."
+                fi
+            done
+        else
+            echo "    [!] fnm aliases/default not found at $FNM_DEFAULT_PATH"
+        fi
         else
             echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
         fi

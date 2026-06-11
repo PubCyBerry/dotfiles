@@ -315,6 +315,15 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     fnm use lts-latest
     Write-Host "    Node.js LTS installed."
 
+    # fnm aliases\default → User PATH 영구 등록 (MCP 서버 등 비쉘 프로세스에서 npx 접근 가능)
+    $fnmDefaultPath = Join-Path $env:APPDATA "fnm\aliases\default"
+    if (Test-Path $fnmDefaultPath) {
+        if (Add-ToUserPath $fnmDefaultPath) { Write-Host "    Added fnm aliases\default to User PATH: $fnmDefaultPath" }
+        else { Write-Host "    fnm aliases\default already in User PATH." }
+    } else {
+        Write-Host "    [!] fnm aliases\default not found. Run: fnm default lts-latest"
+    }
+
     # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
     $nodeVer = "v$((node --version 2>$null).TrimStart('v'))"
     $settingsPath = Join-Path $ClaudeDir "settings.json"
