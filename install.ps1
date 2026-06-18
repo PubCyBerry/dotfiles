@@ -206,14 +206,28 @@ if (Test-Path $wingetFile) {
         Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
             $package = $_
-            $alreadyInstalled = @(0x8A150015, 43, -1978335189)
-            winget install --id $package --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "    Installed $package"
-            } elseif ($alreadyInstalled -contains $LASTEXITCODE) {
-                Write-Host "    Already installed $package"
+            $upToDate = @(-1978335189, 0x8A150109)  # NO_APPLICABLE_UPDATE
+
+            # 설치 여부 확인 후 install/upgrade 분기
+            winget list --id $package --exact --accept-source-agreements 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                # 신규 설치
+                winget install --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "    [install]  $package"
+                } else {
+                    Write-Host "    [!] install failed: $package (exit: $LASTEXITCODE)"
+                }
             } else {
-                Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+                # 이미 설치됨 → 업그레이드 시도
+                winget upgrade --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "    [upgrade]  $package"
+                } elseif ($upToDate -contains $LASTEXITCODE) {
+                    Write-Host "    [current]  $package"
+                } else {
+                    Write-Host "    [!] upgrade failed: $package (exit: $LASTEXITCODE)"
+                }
             }
         } -ThrottleLimit 4
     } else {
