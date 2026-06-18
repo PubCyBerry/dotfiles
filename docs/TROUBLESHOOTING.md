@@ -29,6 +29,19 @@ WinGet으로 설치한 CLI 도구는 모두 `%LOCALAPPDATA%\Microsoft\WinGet\Lin
 
 별도 조치 불필요. 진단 단서: `whoami /groups`에 `NT AUTHORITY\NETWORK`가 포함되고 `INTERACTIVE`가 빠져 있으면 이 케이스다.
 
+### tmux(psmux) / node 가 SSH에서 안 되는 경우 — 같은 reparse 차단의 변종
+
+위 WinGet 우회로도 안 잡히는 두 케이스가 있다. 둘 다 원인은 동일(NETWORK 토큰의 reparse 차단)이지만, reparse **종류**가 달라 우회 대상이 다르다.
+
+- **tmux (`marlocarlo.psmux`)**: WinGet **symbolic link**지만 패키지 디렉토리가 PATH에 없으면 Links 심링크에만 의존해 깨진다. 증상: PowerShell `이 작업을 하기 위해 지정된 파일로 아무 응용 프로그램도 연결되어 있지 않습니다` / Git Bash `Permission denied`. → `bashrc` 그룹 A와 `profile.ps1`에 psmux 패키지 디렉토리를 등록해 실경로로 해석.
+- **node / npm (fnm)**: fnm은 node를 **junction 체인**(`multishell → aliases/default → lts-latest → version`)으로 노출하는데, NETWORK 토큰은 이 junction traversal도 거부한다(R2L 심링크 정책과 무관). 증상: Claude Code 등의 hook이 `bash -c node`를 실행할 때 `node: command not found` → `UserPromptSubmit hook error`. → 실제 설치 디렉토리(`AppData/Roaming/fnm/node-versions/<ver>/installation`, reparse 아님)를 PATH에 직접 추가.
+  - `bashrc`에서는 **가드 위**(비대화형에서도 적용되는 구간)에 추가해야 한다. 가드 아래의 `fnm env`는 hook 같은 비대화형 셸이 실행 전에 `return`하므로 효과가 없다.
+  - `profile.ps1`에서는 `fnm env` 직후 설치 디렉토리를 PATH에 prepend (`fnm current`는 비대화형에서 `none`을 반환하므로 `node-versions` 디렉토리를 직접 스캔).
+
+> **`fsutil behavior set SymlinkEvaluation R2L:1`은 답이 아니다.** R2L은 심링크 "따라가기"만 허용하고, 그 위에 "untrusted mount point"(`경로에 신뢰할 수 없는 탑재 지점이 포함되어 있기 때문에 경로를 통과할 수 없습니다`) 게이트가 별도로 막아 실행이 여전히 거부된다. junction은 R2L 적용 대상도 아니다. 정책 완화는 보안만 약화시키고 효과가 없으므로 기본값(R2L:0) 유지. 해결은 항상 **실경로를 PATH에 추가**하는 쪽이다.
+
+> **tmux attach 렌더링**: SSH 세션은 콘솔 핸들이 없어(`[Console]::WindowWidth` → "핸들이 잘못되었습니다") psmux의 TUI attach가 깨질 수 있다. 이건 PATH로 해결되는 문제가 아니므로 풀 화면이 필요하면 RDP/로컬 데스크탑을 쓴다.
+
 ## SSH 비대화형 세션에서 scp/rsync/git 깨짐
 
 `ssh host 'cmd'`, scp, rsync, git over ssh 등 비대화형 세션도 `~/.bashrc`를 source한다. starship/fzf의 `eval` 초기화가 stderr를 출력하면 파일 전송 프로토콜이 깨지거나 git이 비정상 종료된다.

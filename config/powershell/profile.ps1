@@ -14,6 +14,27 @@ function private:Resolve-ExePath($Name) {
 $fnmExe = Resolve-ExePath 'fnm'
 if ($fnmExe) {
     & $fnmExe env --use-on-cd --shell powershell | Out-String | Invoke-Expression
+
+    # SSH(원격 로그온)에서는 fnm이 node를 노출하는 junction/reparse 경로 탐색이
+    # 막혀 bash hook 등 자식 프로세스에서 `node`를 못 찾는다. 실제 설치 디렉터리
+    # (reparse 아님)를 PATH에 직접 prepend 해서 어디서든 node를 찾도록 한다.
+    $fnmRoot = if ($env:FNM_DIR) { $env:FNM_DIR } else { "$env:APPDATA\fnm" }
+    $nodeVerDir = Get-ChildItem "$fnmRoot\node-versions" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path "$($_.FullName)\installation\node.exe" } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($nodeVerDir) {
+        $nodeDir = "$($nodeVerDir.FullName)\installation"
+        if ($env:PATH -notlike "*$nodeDir*") { $env:PATH = "$nodeDir;$env:PATH" }
+    }
+}
+
+# tmux/psmux (Windows): WinGet Links 심링크는 SSH(원격 로그온)에서 "untrusted
+# mount point"로 실행이 막힌다(R2L 정책으로도 안 풀림). 실제 패키지 디렉터리를
+# PATH에 추가해 pwsh/bash 모두에서 tmux가 실경로로 해석되게 한다.
+$tmuxExe = Resolve-ExePath 'tmux'
+if ($tmuxExe) {
+    $tmuxDir = Split-Path $tmuxExe
+    if ($env:PATH -notlike "*$tmuxDir*") { $env:PATH = "$tmuxDir;$env:PATH" }
 }
 
 # zoxide (스마트 cd — z 명령어)

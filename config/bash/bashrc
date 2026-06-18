@@ -18,7 +18,7 @@ fi
 _winget_pkgs="$HOME/AppData/Local/Microsoft/WinGet/Packages"
 if [[ -d "$_winget_pkgs" ]]; then
     # 그룹 A: exe가 패키지 디렉토리 직속
-    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza,jqlang.jq,MikeFarah.yq,JesseDuffield.lazygit}_Microsoft.Winget.Source_*; do
+    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza,jqlang.jq,MikeFarah.yq,JesseDuffield.lazygit,marlocarlo.psmux}_Microsoft.Winget.Source_*; do
         [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
     done
     # 그룹 B: exe가 버전/아키텍처 서브 디렉토리 안
@@ -34,6 +34,22 @@ if [[ -d "$_winget_pkgs" ]]; then
     unset _d
 fi
 unset _winget_pkgs
+
+# === Windows: fnm node 실경로 (junction 우회) ===
+# fnm은 node를 junction 체인(multishell→aliases→version)으로 노출하는데, NETWORK
+# 토큰에서는 그 traversal이 막혀 `node`를 못 찾는다 (Claude Code 등의 hook이
+# `bash -c node`로 실행될 때 "node: command not found"). 가드 아래의 `fnm env`는
+# 비대화형에서 실행 전에 return되므로, 실제 설치 디렉토리(reparse 아님)를 여기서
+# PATH에 직접 추가해 비대화형 hook에서도 node/npm을 찾게 한다.
+_fnm_versions="$HOME/AppData/Roaming/fnm/node-versions"
+if [[ -d "$_fnm_versions" ]]; then
+    _node_dir=$(ls -d "$_fnm_versions"/*/installation 2>/dev/null | sort -V | tail -1)
+    if [[ -n "$_node_dir" ]] && [[ -e "$_node_dir/node.exe" ]] && [[ ":$PATH:" != *":$_node_dir:"* ]]; then
+        export PATH="$_node_dir:$PATH"
+    fi
+    unset _node_dir
+fi
+unset _fnm_versions
 
 # === 비대화형 셸은 여기서 종료 ===
 # SSH 명령 실행, scp, rsync, git over ssh 등에서 prompt/eval 초기화가
