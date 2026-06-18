@@ -50,6 +50,12 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
     function global:ccd { claude --dangerously-skip-permissions @args }
 }
 
+# bash → Git Bash 고정 (PATH 순서 상관없이. tmux pane은 WSL bash.exe가 먼저 잡혀서 명시 고정 필요)
+$gitBash = "$env:ProgramFiles\Git\bin\bash.exe"
+if (Test-Path $gitBash) {
+    function global:bash { & $gitBash @args }
+}
+
 # RTK PATH (install.ps1이 $USERPROFILE\rtk에 설치)
 $rtkPath = "$env:USERPROFILE\rtk"
 if ((Test-Path $rtkPath) -and ($env:PATH -notlike "*$rtkPath*")) {
