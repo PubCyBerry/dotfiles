@@ -704,14 +704,14 @@ fi
 
 # hooks/temporal-context.sh 배포
 CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
-TEMPORAL_SRC="$ROOT/config/claude/hooks/temporal-context.sh"
+TEMPORAL_SRC="$ROOT/config/codex/hooks/temporal-context.sh"
 if [[ -f "$TEMPORAL_SRC" ]]; then
     mkdir -p "$CODEX_HOOKS_DIR"
     cp -f "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh"
     chmod +x "$CODEX_HOOKS_DIR/temporal-context.sh"
     echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
 else
-    echo "    [!] config/claude/hooks/temporal-context.sh not found, skipping."
+    echo "    [!] config/codex/hooks/temporal-context.sh not found, skipping."
 fi
 
 # =============================================

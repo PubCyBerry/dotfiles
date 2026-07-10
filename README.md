@@ -104,6 +104,8 @@ dotfiles/
     codex/
       config.toml                  # Codex 모델 기본값
       hooks.json                   # Codex hook 설정
+      hooks/
+        temporal-context.sh         # Codex SessionStart 시간 컨텍스트 hook
     git/
       gitconfig                    # git 설정 (delta pager 포함, OS-중립)
     powershell/

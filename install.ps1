@@ -411,13 +411,13 @@ if (Test-Path $codexHooksJsonSrc) {
 
 # hooks/temporal-context.sh 배포
 $codexHooksDir = Join-Path $CodexDir "hooks"
-$temporalSrc   = Join-Path $ROOT "config\claude\hooks\temporal-context.sh"
+$temporalSrc   = Join-Path $ROOT "config\codex\hooks\temporal-context.sh"
 if (Test-Path $temporalSrc) {
     New-Item -ItemType Directory -Force -Path $codexHooksDir | Out-Null
     Copy-Item $temporalSrc $codexHooksDir -Force
     Write-Host "    Copied temporal-context.sh to ~/.codex/hooks/"
 } else {
-    Write-Host "    [!] config\claude\hooks\temporal-context.sh not found, skipping."
+    Write-Host "    [!] config\codex\hooks\temporal-context.sh not found, skipping."
 }
 
 # =============================================
