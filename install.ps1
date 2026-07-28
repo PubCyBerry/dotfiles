@@ -393,11 +393,30 @@ Merge-CodexConfig `
     (Join-Path $CodexDir "config.toml")
 
 $agentsGlobalSrc = Join-Path $ROOT "config\agents\global.md"
+$rolesSrc = Join-Path $ROOT "config\agents\roles"
 if (Test-Path $agentsGlobalSrc) {
     Copy-Item $agentsGlobalSrc (Join-Path $CodexDir "AGENTS.md") -Force
     Write-Host "    Copied global agent instructions to AGENTS.md"
 } else {
     Write-Host "    [!] config\agents\global.md not found"
+}
+
+# 공용 role: config\agents\roles\<name>\ = codex.frontmatter + body.md 조립
+# → ~\.codex\skills\<name>\SKILL.md (Codex는 subagent가 없어 skill로 배포)
+if (Test-Path $rolesSrc) {
+    Get-ChildItem $rolesSrc -Directory | ForEach-Object {
+        $fm = Join-Path $_.FullName "codex.frontmatter"
+        $body = Join-Path $_.FullName "body.md"
+        if ((Test-Path $fm) -and (Test-Path $body)) {
+            $skillDst = Join-Path $CodexDir "skills\$($_.Name)"
+            New-Item -ItemType Directory -Force -Path (Join-Path $skillDst "agents") | Out-Null
+            $content = (Get-Content $fm -Raw) + (Get-Content $body -Raw)
+            Set-Content -Path (Join-Path $skillDst "SKILL.md") -Value $content -NoNewline -Encoding utf8
+            $oy = Join-Path $_.FullName "openai.yaml"
+            if (Test-Path $oy) { Copy-Item $oy (Join-Path $skillDst "agents\openai.yaml") -Force }
+            Write-Host "    Deployed skill: $($_.Name)"
+        }
+    }
 }
 
 # hooks.json: 단순 복사
@@ -485,6 +504,22 @@ if (Test-Path $skillsLocalSrc) {
     Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
         Copy-Item $_.FullName $skillsDst -Recurse -Force
         Write-Host "    Deployed local skill: $($_.Name)"
+    }
+}
+
+# 공용 role: config\agents\roles\<name>\ = claude.frontmatter + body.md 조립
+# → ~\.claude\agents\<name>.md (사용자가 직접 만든 다른 agent 파일은 보존)
+if (Test-Path $rolesSrc) {
+    $agentsDst = Join-Path $ClaudeDir "agents"
+    New-Item -ItemType Directory -Force -Path $agentsDst | Out-Null
+    Get-ChildItem $rolesSrc -Directory | ForEach-Object {
+        $fm = Join-Path $_.FullName "claude.frontmatter"
+        $body = Join-Path $_.FullName "body.md"
+        if ((Test-Path $fm) -and (Test-Path $body)) {
+            $content = (Get-Content $fm -Raw) + (Get-Content $body -Raw)
+            Set-Content -Path (Join-Path $agentsDst "$($_.Name).md") -Value $content -NoNewline -Encoding utf8
+            Write-Host "    Deployed agent: $($_.Name)"
+        }
     }
 }
 

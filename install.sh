@@ -686,11 +686,26 @@ mkdir -p "$CODEX_DIR"
 merge_codex_config "$ROOT/config/codex/config.toml" "$CODEX_DIR/config.toml"
 
 AGENTS_GLOBAL_SRC="$ROOT/config/agents/global.md"
+ROLES_SRC="$ROOT/config/agents/roles"
 if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
     cp -f "$AGENTS_GLOBAL_SRC" "$CODEX_DIR/AGENTS.md"
     echo "    Copied global agent instructions to AGENTS.md"
 else
     echo "    [!] config/agents/global.md not found"
+fi
+
+# 공용 role: config/agents/roles/<name>/ = codex.frontmatter + body.md 조립
+# → ~/.codex/skills/<name>/SKILL.md (Codex는 subagent가 없어 skill로 배포)
+if [[ -d "$ROLES_SRC" ]]; then
+    for d in "$ROLES_SRC"/*/; do
+        [[ -f "$d/codex.frontmatter" && -f "$d/body.md" ]] || continue
+        name="$(basename "$d")"
+        skill_dst="$CODEX_DIR/skills/$name"
+        mkdir -p "$skill_dst/agents"
+        cat "$d/codex.frontmatter" "$d/body.md" > "$skill_dst/SKILL.md"
+        [[ -f "$d/openai.yaml" ]] && cp -f "$d/openai.yaml" "$skill_dst/agents/openai.yaml"
+        echo "    Deployed skill: $name"
+    done
 fi
 
 # hooks.json: 단순 복사
@@ -784,6 +799,18 @@ else
             [[ -d "$d" ]] || continue
             cp -rf "$d" "$CLAUDE_DIR/skills/"
             echo "    Deployed local skill: $(basename "$d")"
+        done
+    fi
+
+    # 공용 role: config/agents/roles/<name>/ = claude.frontmatter + body.md 조립
+    # → ~/.claude/agents/<name>.md (사용자가 직접 만든 다른 agent 파일은 보존)
+    if [[ -d "$ROLES_SRC" ]]; then
+        mkdir -p "$CLAUDE_DIR/agents"
+        for d in "$ROLES_SRC"/*/; do
+            [[ -f "$d/claude.frontmatter" && -f "$d/body.md" ]] || continue
+            name="$(basename "$d")"
+            cat "$d/claude.frontmatter" "$d/body.md" > "$CLAUDE_DIR/agents/$name.md"
+            echo "    Deployed agent: $name"
         done
     fi
 fi

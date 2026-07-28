@@ -17,18 +17,18 @@
 
 ## 파이프라인 1: PR Gate
 
-`install.sh`, `config/`, `manifests/` 변경 시 자동 실행되는 게이트 파이프라인이다.
+`install.sh`, `config/`, `manifests/`, `scripts/` 변경 시 자동 실행되는 게이트 파이프라인이다.
 
 ### 실행 흐름
 
 ```
 lint (ShellCheck)
-test-apt-install (전체 install.sh, CI 모드)   test-configs    test-manifest-syntax
-                      ↓                              ↓                  ↓
-                                      summary (항상 실행)
+test-apt-install (전체 install.sh, CI 모드)   test-configs    test-manifest-syntax    test-agent-roles
+                      ↓                              ↓                  ↓                     ↓
+                                            summary (항상 실행)
 ```
 
-4개 job이 병렬로 실행되어 전체 소요 시간을 줄인다.
+job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 
 ### Job 상세
 
@@ -40,6 +40,7 @@ test-apt-install (전체 install.sh, CI 모드)   test-configs    test-manifest-
 - apt 패키지 캐시 복원 후 `install.sh` 실행
 - Claude Code, RTK, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
+- `config/agents/roles/`가 `~/.codex/skills/<name>/`으로 실제 조립 배포됐는지 확인 (`SKIP_CLAUDE_CODE=1`이라 Claude 쪽 배포는 이 job에서 검증하지 않는다)
 
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
@@ -50,6 +51,11 @@ test-apt-install (전체 install.sh, CI 모드)   test-configs    test-manifest-
 - `manifests/apt.txt`: 각 줄이 유효한 apt 패키지명 패턴인지 확인
 - `manifests/npm-global.txt`: `@scope/package` 형식 확인
 - `manifests/skills.txt`: `owner/repo@skill-name` 형식 확인
+
+**test-agent-roles**
+- `scripts/validate-agent-roles.py`: `config/agents/roles/` 소스 검증. frontmatter를 body와 조립한 뒤 파싱하므로, 조립 후에야 드러나는 오류(예: `body.md`가 `---`로 시작해 frontmatter 경계가 깨지는 경우)를 잡는다
+- 검사 항목: 필수 파일 4종, `name`과 디렉터리명 일치, Claude 쪽 허용 키/model 값, Codex 쪽 `metadata.short-description` 존재와 미지원 키(`tools`/`model`) 부재, `openai.yaml`의 `interface` 필드와 `default_prompt`의 `$<name>` 언급
+- `body.md`에 subagent 전용 표현(`메인 스레드`, `서브에이전트`, `subagent`)이 없는지 확인. Codex에는 위임 프리미티브가 없어 같은 문장이 양쪽에서 성립해야 한다
 
 ### apt 캐시 전략
 
@@ -135,7 +141,7 @@ fzf        v0.53.0
 
 ## 파이프라인 4: Uninstall Validation
 
-`install.sh`, `install.ps1`, `config/`, `docs/uninstall.md` 변경 시 자동 실행되는 언인스톨 계약 검증 파이프라인이다.
+`install.sh`, `install.ps1`, `config/`, `scripts/`, `docs/uninstall.md` 변경 시 자동 실행되는 언인스톨 계약 검증 파이프라인이다.
 
 ### 검증 방식
 
@@ -145,6 +151,9 @@ GitHub Actions runner의 실제 사용자 환경을 지우지 않고, 격리된 
 
 - dotfiles 마커 블록 제거 후 사용자 profile 내용 보존
 - `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, hooks 파일 제거
+- dotfiles agent role 제거: `~/.claude/agents/<name>.md`와 `~/.codex/skills/<name>/`
+- dotfiles 로컬 skill 제거: `~/.claude/skills/<name>/`
+- 사용자 소유 agent/skill과 Codex 번들 skill(`~/.codex/skills/.system/`) 보존
 - Claude `settings.json`에서 dotfiles 관리 키 제거 후 사용자 `statusLine` 보존
 - Codex `config.toml`에서 dotfiles 기본값 제거 후 사용자 섹션 보존
 - yazi/nvim/starship/tmux 설정 제거 시 사용자 파일 보존

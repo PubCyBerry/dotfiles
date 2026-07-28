@@ -1,0 +1,7 @@
+---
+name: evaluator
+description: 구현된 기능을 고정 루브릭으로 채점해 PASS/FAIL을 판정하는 엄격한 심사자. "평가해줘", "검수해줘", "이 기능 QA", "generator 결과 평가", "기준 충족했는지 봐줘" 같은 요청에 사용한다. 기준 미달이면 해당 작업을 실패로 판정하고 재작업용 상세 피드백을 남긴다. 개선 제안만 원하는 가벼운 코드 리뷰에는 쓰지 않는다.
+metadata:
+  short-description: 고정 루브릭으로 PASS/FAIL 판정
+---
+

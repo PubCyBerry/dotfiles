@@ -8,6 +8,7 @@ on:
       - install.ps1
       - "config/**"
       - "manifests/**"
+      - "scripts/**"
       - ".github/workflows/pr-gate.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - install.ps1
       - "config/**"
       - "manifests/**"
+      - "scripts/**"
       - ".github/workflows/pr-gate.yml"
 
 concurrency:
@@ -73,6 +75,30 @@ jobs:
           starship --version
           fnm --version
           bun --version
+
+      # SKIP_CLAUDE_CODE=1이라 ~/.claude 배포는 건너뛴다. Codex 쪽은 항상 실행되므로
+      # install.sh의 실제 role 조립 로직을 여기서 검증한다.
+      - name: Verify Codex agent roles deployed
+        run: |
+          set -euo pipefail
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            skill="$HOME/.codex/skills/$name"
+            [[ -f "$skill/SKILL.md" ]] || { echo "missing SKILL.md: $name"; exit 1; }
+            [[ -f "$skill/agents/openai.yaml" ]] || { echo "missing openai.yaml: $name"; exit 1; }
+            head -1 "$skill/SKILL.md" | grep -qx -- '---' \
+              || { echo "SKILL.md frontmatter 손상: $name"; exit 1; }
+            grep -qx "name: $name" "$skill/SKILL.md" \
+              || { echo "SKILL.md name 불일치: $name"; exit 1; }
+            # 조립 결과에서 frontmatter를 걷어낸 본문이 소스 body.md와 같아야 한다
+            # (앞쪽 빈 줄은 frontmatter 파일 끝 개행이라 무시)
+            strip_fm() {
+              awk 'BEGIN{c=0} /^---$/ && c<2 {c++; next} c==2' "$1" | sed '/./,$!d'
+            }
+            diff <(strip_fm "$skill/SKILL.md") <(sed '/./,$!d' "$d/body.md") \
+              || { echo "body drift: $name"; exit 1; }
+            echo "OK: $name"
+          done
 
   test-macos-install:
     name: macOS install + verify
@@ -190,9 +216,31 @@ jobs:
           _check_lines manifests/skills.txt \
             '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
 
+  test-agent-roles:
+    name: Agent role sources + composition
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: python3 -m pip install --break-system-packages --quiet pyyaml
+
+      - name: Validate role sources and composed frontmatter
+        run: python3 scripts/validate-agent-roles.py
+
+      - name: Assert body stays platform-neutral
+        run: |
+          set -euo pipefail
+          # Codex에는 subagent가 없다 — 위임 전용 표현이 body에 남으면 Codex 쪽에서 말이 안 된다.
+          if grep -rnE '메인 스레드|서브에이전트|subagent' config/agents/roles/*/body.md; then
+            echo "body.md는 플랫폼 중립 표현이어야 한다 (frontmatter로 분리할 것)"
+            exit 1
+          fi
+          echo "OK: platform-neutral"
+
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-idempotent, test-macos-install, test-windows-install, test-configs, test-manifest-syntax]
+    needs: [lint, test-apt-install, test-idempotent, test-macos-install, test-windows-install, test-configs, test-manifest-syntax, test-agent-roles]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -206,6 +254,7 @@ jobs:
             "test-windows-install:${{ needs.test-windows-install.result }}"
             "test-configs:${{ needs.test-configs.result }}"
             "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
+            "test-agent-roles:${{ needs.test-agent-roles.result }}"
           )
           failed=0
           for r in "${results[@]}"; do
