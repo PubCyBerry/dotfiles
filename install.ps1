@@ -401,20 +401,30 @@ if (Test-Path $agentsGlobalSrc) {
     Write-Host "    [!] config\agents\global.md not found"
 }
 
-# 공용 role: config\agents\roles\<name>\ = codex.frontmatter + body.md 조립
-# → ~\.codex\skills\<name>\SKILL.md (Codex는 subagent가 없어 skill로 배포)
+# 공용 role: config\agents\roles\<name>\ = codex.toml + body.md 조립
+# → ~\.codex\agents\<name>.toml (Codex subagent. body.md는 developer_instructions 값이 된다)
 if (Test-Path $rolesSrc) {
+    $codexAgentsDst = Join-Path $CodexDir "agents"
+    New-Item -ItemType Directory -Force -Path $codexAgentsDst | Out-Null
     Get-ChildItem $rolesSrc -Directory | ForEach-Object {
-        $fm = Join-Path $_.FullName "codex.frontmatter"
+        $meta = Join-Path $_.FullName "codex.toml"
         $body = Join-Path $_.FullName "body.md"
-        if ((Test-Path $fm) -and (Test-Path $body)) {
-            $skillDst = Join-Path $CodexDir "skills\$($_.Name)"
-            New-Item -ItemType Directory -Force -Path (Join-Path $skillDst "agents") | Out-Null
-            $content = (Get-Content $fm -Raw) + (Get-Content $body -Raw)
-            Set-Content -Path (Join-Path $skillDst "SKILL.md") -Value $content -NoNewline -Encoding utf8
-            $oy = Join-Path $_.FullName "openai.yaml"
-            if (Test-Path $oy) { Copy-Item $oy (Join-Path $skillDst "agents\openai.yaml") -Force }
-            Write-Host "    Deployed skill: $($_.Name)"
+        if ((Test-Path $meta) -and (Test-Path $body)) {
+            $metaText = (Get-Content $meta -Raw)
+            $bodyText = (Get-Content $body -Raw)
+            if (-not $metaText.EndsWith("`n")) { $metaText += "`n" }
+            if (-not $bodyText.EndsWith("`n")) { $bodyText += "`n" }
+            # TOML literal multi-line string(''') — 이스케이프 해석이 없어 body를 그대로 담는다
+            $content = $metaText + "developer_instructions = '''`n" + $bodyText + "'''`n"
+            Set-Content -Path (Join-Path $codexAgentsDst "$($_.Name).toml") -Value $content -NoNewline -Encoding utf8
+            Write-Host "    Deployed agent: $($_.Name)"
+
+            # 구 배포물 정리: 이전에는 같은 role을 skill로 배포했다 (~\.codex\skills\<name>\)
+            $legacySkill = Join-Path $CodexDir "skills\$($_.Name)"
+            if (Test-Path (Join-Path $legacySkill "SKILL.md")) {
+                Remove-Item $legacySkill -Recurse -Force
+                Write-Host "    Removed legacy skill: $($_.Name)"
+            }
         }
     }
 }
@@ -624,6 +634,39 @@ if (Test-Path $skillsFile) {
     Write-Host "    Skills restored."
 } else {
     Write-Host "    [!] manifests\skills.txt not found, skipping skills."
+}
+
+# =============================================
+# 7. Claude Code 플러그인 설치 (manifests/plugins.txt)
+# =============================================
+Write-Host ""
+Write-Host "==> Restoring Claude Code plugins..."
+$pluginsFile = Join-Path $ROOT "manifests\plugins.txt"
+if ((Test-Path $pluginsFile) -and (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Get-ManifestLines $pluginsFile | ForEach-Object {
+        # <marketplace-source> <plugin>@<marketplace> [scope]
+        $fields = $_ -split '\s+'
+        if ($fields.Count -lt 2) { return }
+        $market = $fields[0]
+        $plugin = $fields[1]
+        $scope  = if ($fields.Count -ge 3 -and $fields[2]) { $fields[2] } else { "user" }
+
+        Write-Host "    Adding marketplace: $market (scope: $scope)..."
+        claude plugin marketplace add $market --scope $scope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Failed to add marketplace: $market"
+            return
+        }
+
+        Write-Host "    Installing plugin: $plugin (scope: $scope)..."
+        claude plugin install $plugin --scope $scope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Failed to install plugin: $plugin"
+        }
+    }
+    Write-Host "    Plugins restored."
+} else {
+    Write-Host "    [!] manifests\plugins.txt or claude not found, skipping plugins."
 }
 
 Write-Host ""

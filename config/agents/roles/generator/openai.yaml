@@ -1,6 +1,0 @@
-interface:
-  display_name: "Generator"
-  short_description: "Build one spec feature, hand off to QA"
-  default_prompt: "Use $generator to implement the next feature from this spec."
-policy:
-  allow_implicit_invocation: true

@@ -19,14 +19,31 @@ Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합�
 | `config/codex/config.toml` | `~/.codex/config.toml` | 모델 기본값 |
 | `config/codex/hooks.json` | `~/.codex/hooks.json` | Codex hook 등록 |
 | `config/codex/hooks/temporal-context.sh` | `~/.codex/hooks/temporal-context.sh` | SessionStart 시간 컨텍스트 주입 |
+| `config/agents/roles/<name>/` | `~/.codex/agents/<name>.toml` | subagent 정의 (`spawn_agent` 대상) |
 
 설치 스크립트는 `config.toml` 전체를 덮어쓰지 않는다. 기존 Codex 파일에 `model`, `model_reasoning_effort`가 없을 때만 dotfiles 기본값을 추가해 프로젝트 trust, 플러그인, Desktop 상태, 머신별 경로를 보존한다. `config/codex/config.toml`에 `[mcp_servers.openaiDeveloperDocs]`를 추가하면 같은 병합 경로로 Docs MCP 설정도 배포할 수 있다. `config/agents/global.md`는 Codex가 읽는 파일명에 맞춰 `~/.codex/AGENTS.md`로 복사된다. Codex hook은 Claude Code hook과 출력 포맷이 달라 `config/codex/hooks/`에서 별도로 관리한다.
 
-## claude-hud
+agent role은 Codex 0.145.0부터 subagent(`~/.codex/agents/<name>.toml`)로 배포한다. `codex.toml` 메타에 `body.md`가 `developer_instructions` 값으로 들어간다. 그 전에는 위임 프리미티브가 없어 같은 role을 skill(`~/.codex/skills/<name>/`)로 배포했고, install 스크립트가 그 구 경로를 이름 단위로 정리한다. 노출 확인:
 
-터미널 상태 표시줄에 Claude Code 세션 정보(모델, 컨텍스트, 토큰, git 상태 등)를 표시하는 플러그인.  
+```bash
+codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agent 이름만 나열해."
+```
+
+## 플러그인
+
+`manifests/plugins.txt`에 `<marketplace-source> <plugin>@<marketplace> [scope]` 형식으로 목록을 유지하고, install 스크립트가 `claude plugin marketplace add` → `claude plugin install`을 순서대로 실행한다. 두 명령 모두 멱등이라 반복 실행해도 안전하다.
+
+| 플러그인 | 마켓플레이스 | 설명 |
+|---|---|---|
+| `claude-hud` | `jarrodwatts/claude-hud` | statusline에 세션 정보(모델, 컨텍스트, 토큰, git 상태) 표시 |
+| `caveman` | `JuliusBrussee/caveman` | 응답 압축 모드 — 토큰 사용량 감소 |
+
+플러그인은 `~/.claude/plugins/`에 CLI가 직접 설치하므로, 저장소가 파일을 복사하지 않는다. 제거도 CLI로만 한다(`docs/uninstall.md` 7번 참고) — 디렉터리를 통째로 지우면 매니페스트 밖의 플러그인까지 사라진다.
+
+### claude-hud
+
 → 상세 설치/설정 가이드: [docs/claude-hud.md](claude-hud.md)  
-→ 기본 설정 파일: `config/claude/claude-hud.json`
+→ 기본 설정 파일: `config/claude/claude-hud.json` (템플릿. install 스크립트가 배포하지 않으며 `~/.claude/plugins/claude-hud/config.json`로 수동 복사한다)
 
 ## npm 전역 패키지
 

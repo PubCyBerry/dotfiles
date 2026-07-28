@@ -28,10 +28,16 @@ node --version
 
 ## 설치
 
+install 스크립트가 `manifests/plugins.txt`를 읽어 아래 두 줄을 이미 실행한다. 수동으로 할 때만 직접 친다.
+
 ```bash
-claude plugin marketplace add jarrodwatts/claude-hud
-claude plugin install --scope user claude-hud
-# Claude Session
+claude plugin marketplace add jarrodwatts/claude-hud --scope user
+claude plugin install claude-hud@claude-hud --scope user
+```
+
+설치 후 Claude Code 세션에서 statusline을 연결한다(이 단계는 스크립트가 하지 않는다).
+
+```
 /claude-hud:setup
 ```
 

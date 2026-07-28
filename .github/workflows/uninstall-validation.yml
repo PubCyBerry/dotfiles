@@ -89,14 +89,20 @@ jobs:
           cp config/agents/global.md "$HOME/.claude/CLAUDE.md"
           cp config/claude/hooks/temporal-context.sh "$HOME/.claude/hooks/temporal-context.sh"
 
-          # dotfiles 소유 agent role: Claude subagent + Codex skill 양쪽에 조립 배포
-          mkdir -p "$HOME/.claude/agents" "$HOME/.codex/skills"
+          # dotfiles 소유 agent role: Claude subagent + Codex subagent 양쪽에 조립 배포
+          mkdir -p "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.codex/skills"
           for d in config/agents/roles/*/; do
             name="$(basename "$d")"
             cat "$d/claude.frontmatter" "$d/body.md" > "$HOME/.claude/agents/$name.md"
+            {
+              cat "$d/codex.toml"
+              printf "developer_instructions = '''\n"
+              cat "$d/body.md"
+              printf "'''\n"
+            } > "$HOME/.codex/agents/$name.toml"
+            # 구버전 dotfiles가 남긴 skill 배포물 — 언인스톨이 이것도 걷어내야 한다
             mkdir -p "$HOME/.codex/skills/$name/agents"
-            cat "$d/codex.frontmatter" "$d/body.md" > "$HOME/.codex/skills/$name/SKILL.md"
-            cp "$d/openai.yaml" "$HOME/.codex/skills/$name/agents/openai.yaml"
+            echo "legacy" > "$HOME/.codex/skills/$name/SKILL.md"
           done
 
           # dotfiles 소유 로컬 skill
@@ -197,6 +203,8 @@ jobs:
           for d in config/agents/roles/*/; do
             name="$(basename "$d")"
             rm -f "$HOME/.claude/agents/$name.md"
+            rm -f "$HOME/.codex/agents/$name.toml"
+            # 구 배포 경로 (skill 시절)
             rm -rf "$HOME/.codex/skills/$name"
           done
           # dotfiles 소유 로컬 skill (config/claude/skills/ 에서 배포된 것만)
@@ -256,8 +264,10 @@ jobs:
             name="$(basename "$d")"
             [[ ! -e "$HOME/.claude/agents/$name.md" ]] \
               || { echo "claude agent 잔존: $name"; exit 1; }
+            [[ ! -e "$HOME/.codex/agents/$name.toml" ]] \
+              || { echo "codex agent 잔존: $name"; exit 1; }
             [[ ! -e "$HOME/.codex/skills/$name" ]] \
-              || { echo "codex skill 잔존: $name"; exit 1; }
+              || { echo "codex 구 skill 잔존: $name"; exit 1; }
           done
           for d in config/claude/skills/*/; do
             [[ ! -e "$HOME/.claude/skills/$(basename "$d")" ]] \
@@ -346,19 +356,21 @@ jobs:
           $CodexConfig = Join-Path $CodexDir "config.toml"
           Set-TextFile $CodexConfig ((Get-Content "config/codex/config.toml" -Raw) + "`n[user]`nkeep = true`n")
 
-          # dotfiles 소유 agent role: Claude subagent + Codex skill 양쪽에 조립 배포
+          # dotfiles 소유 agent role: Claude subagent + Codex subagent 양쪽에 조립 배포
           $ClaudeAgents = Join-Path $ClaudeDir "agents"
+          $CodexAgents = Join-Path $CodexDir "agents"
           $CodexSkills = Join-Path $CodexDir "skills"
-          New-Item -ItemType Directory -Force -Path $ClaudeAgents, $CodexSkills | Out-Null
+          New-Item -ItemType Directory -Force -Path $ClaudeAgents, $CodexAgents, $CodexSkills | Out-Null
           Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
             $body = Get-Content (Join-Path $_.FullName "body.md") -Raw
             Set-TextFile (Join-Path $ClaudeAgents "$($_.Name).md") `
               ((Get-Content (Join-Path $_.FullName "claude.frontmatter") -Raw) + $body)
+            Set-TextFile (Join-Path $CodexAgents "$($_.Name).toml") `
+              ((Get-Content (Join-Path $_.FullName "codex.toml") -Raw) + "developer_instructions = '''`n" + $body + "'''`n")
+            # 구버전 dotfiles가 남긴 skill 배포물 — 언인스톨이 이것도 걷어내야 한다
             $skillDir = Join-Path $CodexSkills $_.Name
-            New-Item -ItemType Directory -Force -Path (Join-Path $skillDir "agents") | Out-Null
-            Set-TextFile (Join-Path $skillDir "SKILL.md") `
-              ((Get-Content (Join-Path $_.FullName "codex.frontmatter") -Raw) + $body)
-            Copy-Item (Join-Path $_.FullName "openai.yaml") (Join-Path $skillDir "agents") -Force
+            New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+            Set-TextFile (Join-Path $skillDir "SKILL.md") "legacy`n"
           }
 
           # dotfiles 소유 로컬 skill
@@ -403,6 +415,8 @@ jobs:
           # docs/uninstall.md 의 role 제거 절차와 동일해야 한다 (이름 단위 제거)
           Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
             Remove-Item (Join-Path $ClaudeAgents "$($_.Name).md") -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $CodexAgents "$($_.Name).toml") -Force -ErrorAction SilentlyContinue
+            # 구 배포 경로 (skill 시절)
             Remove-Item (Join-Path $CodexSkills $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
           }
           Get-ChildItem "config/claude/skills" -Directory | ForEach-Object {
@@ -466,8 +480,10 @@ jobs:
           Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
             Assert-True (!(Test-Path (Join-Path $ClaudeAgents "$($_.Name).md"))) `
               "managed Claude agent should be removed: $($_.Name)"
+            Assert-True (!(Test-Path (Join-Path $CodexAgents "$($_.Name).toml"))) `
+              "managed Codex agent should be removed: $($_.Name)"
             Assert-True (!(Test-Path (Join-Path $CodexSkills $_.Name))) `
-              "managed Codex skill should be removed: $($_.Name)"
+              "legacy Codex skill should be removed: $($_.Name)"
           }
           Get-ChildItem "config/claude/skills" -Directory | ForEach-Object {
             Assert-True (!(Test-Path (Join-Path $ClaudeSkills $_.Name))) `

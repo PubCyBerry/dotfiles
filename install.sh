@@ -694,17 +694,27 @@ else
     echo "    [!] config/agents/global.md not found"
 fi
 
-# 공용 role: config/agents/roles/<name>/ = codex.frontmatter + body.md 조립
-# → ~/.codex/skills/<name>/SKILL.md (Codex는 subagent가 없어 skill로 배포)
+# 공용 role: config/agents/roles/<name>/ = codex.toml + body.md 조립
+# → ~/.codex/agents/<name>.toml (Codex subagent. body.md는 developer_instructions 값이 된다)
 if [[ -d "$ROLES_SRC" ]]; then
+    mkdir -p "$CODEX_DIR/agents"
     for d in "$ROLES_SRC"/*/; do
-        [[ -f "$d/codex.frontmatter" && -f "$d/body.md" ]] || continue
+        [[ -f "$d/codex.toml" && -f "$d/body.md" ]] || continue
         name="$(basename "$d")"
-        skill_dst="$CODEX_DIR/skills/$name"
-        mkdir -p "$skill_dst/agents"
-        cat "$d/codex.frontmatter" "$d/body.md" > "$skill_dst/SKILL.md"
-        [[ -f "$d/openai.yaml" ]] && cp -f "$d/openai.yaml" "$skill_dst/agents/openai.yaml"
-        echo "    Deployed skill: $name"
+        # TOML literal multi-line string(''') — 이스케이프 해석이 없어 body를 그대로 담는다
+        {
+            cat "$d/codex.toml"
+            printf "developer_instructions = '''\n"
+            cat "$d/body.md"
+            printf "'''\n"
+        } > "$CODEX_DIR/agents/$name.toml"
+        echo "    Deployed agent: $name"
+
+        # 구 배포물 정리: 이전에는 같은 role을 skill로 배포했다 (~/.codex/skills/<name>/)
+        if [[ -f "$CODEX_DIR/skills/$name/SKILL.md" ]]; then
+            rm -rf "${CODEX_DIR:?}/skills/$name"
+            echo "    Removed legacy skill: $name"
+        fi
     done
 fi
 
@@ -869,6 +879,39 @@ else
         echo "    Skills restored."
     else
         echo "    [!] manifests/skills.txt or npx not found, skipping skills."
+    fi
+fi
+
+# =============================================
+# 7. Claude Code 플러그인 설치 (manifests/plugins.txt)
+# =============================================
+echo
+if [[ "${SKIP_PLUGINS:-0}" == "1" ]]; then
+    echo "==> [CI] Skipping Claude Code plugins (SKIP_PLUGINS=1)"
+else
+    echo "==> Restoring Claude Code plugins..."
+    PLUGINS_FILE="$ROOT/manifests/plugins.txt"
+    if [[ -f "$PLUGINS_FILE" ]] && command -v claude >/dev/null 2>&1; then
+        while IFS= read -r line; do
+            # <marketplace-source> <plugin>@<marketplace> [scope]
+            read -r market plugin scope <<<"$line"
+            [[ -n "$market" && -n "$plugin" ]] || continue
+            scope="${scope:-user}"
+
+            echo "    Adding marketplace: $market (scope: $scope)..."
+            if ! claude plugin marketplace add "$market" --scope "$scope" </dev/null >/dev/null 2>&1; then
+                echo "    [!] Failed to add marketplace: $market"
+                continue
+            fi
+
+            echo "    Installing plugin: $plugin (scope: $scope)..."
+            if ! claude plugin install "$plugin" --scope "$scope" </dev/null >/dev/null 2>&1; then
+                echo "    [!] Failed to install plugin: $plugin"
+            fi
+        done < <(manifest_lines "$PLUGINS_FILE")
+        echo "    Plugins restored."
+    else
+        echo "    [!] manifests/plugins.txt or claude not found, skipping plugins."
     fi
 fi
 

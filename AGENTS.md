@@ -46,7 +46,7 @@ dotfiles/
 │   ├── bash/            # bash dotfiles (bashrc, inputrc) — Git Bash + Linux 공통, 마커 방식 삽입
 │   ├── agents/          # AI 에이전트 공통 자산
 │   │   ├── global.md    # Claude/Codex 공통 전역 지침
-│   │   └── roles/       # planner/generator/evaluator — 공용 body.md + 플랫폼별 frontmatter
+│   │   └── roles/       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
 │   ├── claude/          # Claude Code 설정 (settings.json, hooks, skills, claude-hud)
 │   ├── codex/           # Codex 설정 (config.toml, hooks.json, hooks/)
 │   ├── git/
@@ -57,12 +57,13 @@ dotfiles/
 │   ├── macos/           # macOS 전용 (.macos — 시스템 기본값 설정)
 │   ├── yazi/            # yazi 설정 (yazi.toml — nvim opener)
 │   └── starship.toml
-├── manifests/           # 패키지/스킬 목록
+├── manifests/           # 패키지/스킬/플러그인 목록
 │   ├── winget.txt       # Windows winget 패키지 ID
 │   ├── apt.txt          # Ubuntu apt 패키지
 │   ├── Brewfile         # macOS Homebrew 패키지
 │   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex)
-│   └── skills.txt       # Claude Code skills (owner/repo@skill-name)
+│   ├── skills.txt       # Claude Code skills (owner/repo@skill-name)
+│   └── plugins.txt      # Claude Code 플러그인 (marketplace + plugin@marketplace + scope)
 ├── scripts/
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
 └── docs/
@@ -87,13 +88,14 @@ dotfiles/
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
-   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/skills/` skill 조립 배포)
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
    3-2. RTK 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 등록 사용
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
 6. `manifests/skills.txt` → npx skills 설치
+7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### macOS install.sh 실행 순서
 
@@ -106,12 +108,13 @@ dotfiles/
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
-   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/skills/` skill 조립 배포)
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
    3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치
+6. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### Linux install.sh 실행 순서
 
@@ -125,12 +128,13 @@ dotfiles/
    1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf(tar.gz), eza(tar.gz), yq(단일 바이너리)
 2. fnm → Node.js LTS
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
-   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/skills/` skill 조립 배포)
+   2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
    3-2. RTK 공식 install.sh로 바이너리 설치 (`~/.local/bin/rtk`) + `settings.json`의 `rtk hook claude` hook 사용
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
+7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### skills 관리
 
@@ -139,28 +143,72 @@ skills는 두 경로로 관리한다.
 - **원격 skill**: `manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지한다. 새 skill 추가 시 manifest에만 추가 후 install 스크립트를 다시 실행하면 `npx skills add --global`로 설치된다.
 - **로컬 skill**: 이 저장소가 소유한 skill은 `config/claude/skills/<name>/`에 둔다. install 스크립트의 3-1 단계가 디렉터리 단위로 `~/.claude/skills/`에 배포하며, 원격 skill 경로는 건드리지 않는다. 예: `subagent-creator`(Claude Code subagent 정의 생성 skill).
 
+### plugin 관리
+
+Claude Code 플러그인은 `manifests/plugins.txt`에서 관리한다. skill과 달리 마켓플레이스 등록 → 설치 두 단계라, 한 줄에 세 필드를 둔다.
+
+```text
+<marketplace-source> <plugin>@<marketplace> [scope]
+```
+
+- `marketplace-source`: GitHub repo(`owner/name`), URL, 로컬 경로
+- `plugin@marketplace`: 마켓플레이스 이름까지 명시한 플러그인 ID
+- `scope`: `user`(기본) / `project` / `local`
+
+install 스크립트가 줄마다 아래를 실행한다. 둘 다 멱등이라 이미 등록·설치된 항목은 그대로 두고 exit 0으로 끝난다(`Marketplace 'x' already on disk`, `Plugin "x" is already installed`).
+
+```bash
+claude plugin marketplace add <marketplace-source> --scope <scope>
+claude plugin install <plugin>@<marketplace> --scope <scope>
+```
+
+현재 목록: `claude-hud`(statusline HUD), `caveman`(응답 압축 모드). 특정 프로젝트에만 쓰는 `project`/`local` scope 플러그인은 매니페스트에 넣지 않는다 — 머신 전역 설치가 아니라 프로젝트 소유이기 때문이다.
+
+CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 자동으로도 skip).
+
+플러그인은 skill·agent와 배포 경로가 다르다.
+
+| 구분 | 소스 | 배포 경로 | 설치 주체 |
+|---|---|---|---|
+| plugin | `manifests/plugins.txt` | `~/.claude/plugins/` | `claude plugin` CLI |
+| 원격 skill | `manifests/skills.txt` | `~/.claude/skills/` | `npx skills add` |
+| 로컬 skill | `config/claude/skills/` | `~/.claude/skills/` | 디렉터리 복사 |
+| agent | `config/agents/roles/` | `~/.claude/agents/`, `~/.codex/agents/` | 메타+body 조립 |
+| hook | `config/claude/hooks/`, `config/codex/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/` | 파일 복사 + settings.json 병합 |
+| MCP | (관리 안 함) | — | — |
+
 ### agent role 관리
 
-Claude Code와 Codex에 공통으로 배포하는 역할 정의는 `config/agents/roles/<name>/`에 둔다. 시스템 프롬프트 본문은 한 곳(`body.md`)에만 두고, 플랫폼 차이는 frontmatter로만 흡수한다 — 같은 지침을 두 벌 유지하면 반드시 어긋나기 때문이다.
+Claude Code와 Codex에 공통으로 배포하는 역할 정의는 `config/agents/roles/<name>/`에 둔다. 시스템 프롬프트 본문은 한 곳(`body.md`)에만 두고, 플랫폼 차이는 메타 파일로만 흡수한다 — 같은 지침을 두 벌 유지하면 반드시 어긋나기 때문이다.
 
 ```text
 config/agents/roles/<name>/
 ├── body.md              # 공용 시스템 프롬프트 (플랫폼 중립 표현으로 작성)
-├── claude.frontmatter   # name/description/tools/model
-├── codex.frontmatter    # name/description/metadata.short-description
-└── openai.yaml          # Codex UI 메타 (display_name, default_prompt, policy)
+├── claude.frontmatter   # YAML — name/description/tools/model
+└── codex.toml           # TOML — name/description/model_reasoning_effort/sandbox_mode
 ```
 
-install 스크립트가 frontmatter + body를 이어붙여 배포한다.
+install 스크립트가 메타 + body를 이어붙여 양쪽 모두 **subagent**로 배포한다.
 
-| 대상 | 산출 경로 | 형태 |
+| 대상 | 산출 경로 | body가 들어가는 자리 |
 |---|---|---|
-| Claude Code | `~/.claude/agents/<name>.md` | subagent (Task 위임 대상) |
-| Codex | `~/.codex/skills/<name>/SKILL.md` + `agents/openai.yaml` | skill (`$name`으로 호출) |
+| Claude Code | `~/.claude/agents/<name>.md` | frontmatter 아래 본문 |
+| Codex | `~/.codex/agents/<name>.toml` | `developer_instructions` 값 |
 
-Codex에는 subagent 위임 프리미티브가 없어 skill로 배포한다. 별도 컨텍스트로 분리되지 않고 본 세션에서 역할 지침으로 적용되는 점이 Claude와 다르다. 두 경우 모두 이름 단위로만 덮어쓰므로 사용자가 직접 만든 agent/skill은 보존된다.
+두 경우 모두 이름 단위로만 덮어쓰므로 사용자가 직접 만든 agent는 보존된다. Codex는 `spawn_agent`로 병렬 위임되며, `codex exec`에서 이름이 노출되는지로 확인할 수 있다.
 
-`body.md`는 "최종 메시지로 반환" 같은 subagent 전용 표현을 피하고 "보고한다"로 쓴다 — Codex에서도 같은 문장이 성립해야 한다.
+```bash
+codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agent 이름만 나열해."
+```
+
+플랫폼별 메타가 흡수하는 차이는 두 가지다.
+
+- **권한**: Claude는 `tools` 화이트리스트, Codex는 `sandbox_mode`. 파일을 쓰는 role을 Codex에서 `read-only`로 배포하면 런타임에 조용히 실패하므로, 현재 3개 role 모두 `workspace-write`다.
+- **모델**: Claude는 `model: opus`처럼 별칭을 쓴다. Codex는 `model`을 지정하지 않고 `model_reasoning_effort`만 둔다 — 모델 ID를 고정하면 카탈로그가 바뀔 때 깨지고, 생략하면 사용자 기본 모델을 상속하기 때문이다.
+
+`body.md`는 "최종 메시지로 반환" 같은 특정 플랫폼 전용 표현을 피하고 "보고한다"로 쓴다 — 양쪽에서 같은 문장이 성립해야 한다. 또 `body.md`에 `'''`를 넣으면 안 된다 — Codex 쪽 TOML literal string이 조기 종료된다(검증 스크립트가 잡는다).
+
+> Codex 0.145.0부터 subagent(`~/.codex/agents/<name>.toml`)를 지원한다. 그 전에는 위임 프리미티브가 없어 같은 role을 skill(`~/.codex/skills/<name>/`)로 배포했다. install 스크립트가 배포 시 그 구 경로를 이름 단위로 정리한다.
 
 - `planner`: 1~4문장 아이디어를 전체 프로젝트 스펙(문제 정의, 스코프 3층, 아키텍처, 기술 선택 근거, 리스크, 마일스톤)으로 확장한다. 고수준 설계와 프로젝트 맥락에 집중하고 코드·구현 순서는 다루지 않는다.
 - `generator`: 스펙에서 기능 **하나**를 골라 구현하고, 자체 평가 후 `docs/handoff/<NNN>-<slug>.md`에 QA 인수인계 파일을 남긴다. 여러 기능은 반복 호출로 처리한다.

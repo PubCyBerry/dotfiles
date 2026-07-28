@@ -1,0 +1,18 @@
+# Claude Code 플러그인 목록
+# install.sh / install.ps1이 읽어서 설치
+#
+# 형식: <marketplace-source> <plugin>@<marketplace> [scope]
+#   marketplace-source : GitHub repo(owner/name), URL, 또는 로컬 경로
+#   plugin@marketplace : 설치할 플러그인 ID (마켓플레이스 이름까지 명시)
+#   scope              : user(기본) | project | local
+#
+# 두 단계로 설치된다.
+#   claude plugin marketplace add <marketplace-source> --scope <scope>
+#   claude plugin install <plugin>@<marketplace> --scope <scope>
+# 둘 다 멱등이며, 이미 등록/설치된 항목은 그대로 둔다.
+
+# HUD — statusline에 세션 정보 표시
+jarrodwatts/claude-hud   claude-hud@claude-hud   user
+
+# 응답 압축 모드
+JuliusBrussee/caveman    caveman@caveman         user

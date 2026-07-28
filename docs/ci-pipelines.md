@@ -40,7 +40,7 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - apt 패키지 캐시 복원 후 `install.sh` 실행
 - Claude Code, RTK, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
-- `config/agents/roles/`가 `~/.codex/skills/<name>/`으로 실제 조립 배포됐는지 확인 (`SKIP_CLAUDE_CODE=1`이라 Claude 쪽 배포는 이 job에서 검증하지 않는다)
+- `config/agents/roles/`가 `~/.codex/agents/<name>.toml`로 실제 조립 배포됐는지 확인 — TOML 파싱, `name` 일치, `developer_instructions`와 소스 `body.md` 일치. 구 skill 경로(`~/.codex/skills/<name>/`)가 남지 않았는지도 함께 본다 (`SKIP_CLAUDE_CODE=1`이라 Claude 쪽 배포는 이 job에서 검증하지 않는다)
 
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
@@ -53,9 +53,9 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - `manifests/skills.txt`: `owner/repo@skill-name` 형식 확인
 
 **test-agent-roles**
-- `scripts/validate-agent-roles.py`: `config/agents/roles/` 소스 검증. frontmatter를 body와 조립한 뒤 파싱하므로, 조립 후에야 드러나는 오류(예: `body.md`가 `---`로 시작해 frontmatter 경계가 깨지는 경우)를 잡는다
-- 검사 항목: 필수 파일 4종, `name`과 디렉터리명 일치, Claude 쪽 허용 키/model 값, Codex 쪽 `metadata.short-description` 존재와 미지원 키(`tools`/`model`) 부재, `openai.yaml`의 `interface` 필드와 `default_prompt`의 `$<name>` 언급
-- `body.md`에 subagent 전용 표현(`메인 스레드`, `서브에이전트`, `subagent`)이 없는지 확인. Codex에는 위임 프리미티브가 없어 같은 문장이 양쪽에서 성립해야 한다
+- `scripts/validate-agent-roles.py`: `config/agents/roles/` 소스 검증. 메타를 body와 조립한 뒤 파싱하므로, 조립 후에야 드러나는 오류(예: `body.md`가 `---`로 시작해 Claude frontmatter 경계가 깨지거나, `'''`가 있어 Codex TOML literal string이 조기 종료되는 경우)를 잡는다
+- 검사 항목: 필수 파일 3종(`body.md`, `claude.frontmatter`, `codex.toml`), `name`과 디렉터리명 일치, Claude 쪽 허용 키/model 값, Codex 쪽 허용 키·`model_reasoning_effort`·`sandbox_mode` 값, 파일을 쓰는 role이 `read-only` sandbox로 배포되지 않는지
+- `body.md`에 플랫폼 고유 표현(`메인 스레드`, `서브에이전트`, `subagent`, `SKILL.md`, `Task 도구`)이 없는지 확인. 같은 문장이 Claude·Codex 양쪽에서 성립해야 한다
 
 ### apt 캐시 전략
 
@@ -151,7 +151,7 @@ GitHub Actions runner의 실제 사용자 환경을 지우지 않고, 격리된 
 
 - dotfiles 마커 블록 제거 후 사용자 profile 내용 보존
 - `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, hooks 파일 제거
-- dotfiles agent role 제거: `~/.claude/agents/<name>.md`와 `~/.codex/skills/<name>/`
+- dotfiles agent role 제거: `~/.claude/agents/<name>.md`, `~/.codex/agents/<name>.toml`, 그리고 구 배포 경로 `~/.codex/skills/<name>/`
 - dotfiles 로컬 skill 제거: `~/.claude/skills/<name>/`
 - 사용자 소유 agent/skill과 Codex 번들 skill(`~/.codex/skills/.system/`) 보존
 - Claude `settings.json`에서 dotfiles 관리 키 제거 후 사용자 `statusLine` 보존

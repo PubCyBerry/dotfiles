@@ -98,6 +98,10 @@ dotfiles/
   config/
     agents/
       global.md                    # Codex/Claude 공통 전역 지침 원본
+      roles/                       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
+        <name>/body.md             # 공용 시스템 프롬프트
+        <name>/claude.frontmatter  # Claude subagent 메타 (YAML)
+        <name>/codex.toml          # Codex subagent 메타 (TOML)
     claude/
       claude-hud.json              # claude-hud 설정
       settings.json                # Claude Code 설정 (`rtk hook claude`, env, permissions)
@@ -131,6 +135,7 @@ dotfiles/
     Brewfile                       # macOS Homebrew 패키지 목록
     npm-global.txt                 # npm 전역 패키지 목록
     skills.txt                     # Claude Code skills 목록
+    plugins.txt                    # Claude Code 플러그인 목록
   docs/
     tools.md                       # CLI 도구 사용법 cheatsheet
     ai-agents.md                   # Claude Code, 플러그인, skills 상세

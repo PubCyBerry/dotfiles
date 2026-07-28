@@ -1,6 +1,0 @@
-interface:
-  display_name: "Evaluator"
-  short_description: "Strict PASS/FAIL rubric review"
-  default_prompt: "Use $evaluator to grade this feature against the rubric and give a PASS/FAIL verdict."
-policy:
-  allow_implicit_invocation: true

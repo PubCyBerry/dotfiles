@@ -39,6 +39,7 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_RTK: "1"
       SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -83,22 +84,33 @@ jobs:
           set -euo pipefail
           for d in config/agents/roles/*/; do
             name="$(basename "$d")"
-            skill="$HOME/.codex/skills/$name"
-            [[ -f "$skill/SKILL.md" ]] || { echo "missing SKILL.md: $name"; exit 1; }
-            [[ -f "$skill/agents/openai.yaml" ]] || { echo "missing openai.yaml: $name"; exit 1; }
-            head -1 "$skill/SKILL.md" | grep -qx -- '---' \
-              || { echo "SKILL.md frontmatter 손상: $name"; exit 1; }
-            grep -qx "name: $name" "$skill/SKILL.md" \
-              || { echo "SKILL.md name 불일치: $name"; exit 1; }
-            # 조립 결과에서 frontmatter를 걷어낸 본문이 소스 body.md와 같아야 한다
-            # (앞쪽 빈 줄은 frontmatter 파일 끝 개행이라 무시)
-            strip_fm() {
-              awk 'BEGIN{c=0} /^---$/ && c<2 {c++; next} c==2' "$1" | sed '/./,$!d'
-            }
-            diff <(strip_fm "$skill/SKILL.md") <(sed '/./,$!d' "$d/body.md") \
-              || { echo "body drift: $name"; exit 1; }
-            echo "OK: $name"
+            agent="$HOME/.codex/agents/$name.toml"
+            [[ -f "$agent" ]] || { echo "missing agent toml: $name"; exit 1; }
+            # TOML로 파싱되고, name이 맞고, developer_instructions가 소스 body.md와 같아야 한다
+            python3 - "$agent" "$d/body.md" "$name" <<'PY'
+          import sys, tomllib
+          agent_path, body_path, name = sys.argv[1:4]
+          with open(agent_path, "rb") as f:
+              data = tomllib.load(f)
+          if data.get("name") != name:
+              sys.exit(f"name 불일치: {data.get('name')!r} != {name!r}")
+          body = open(body_path, encoding="utf-8").read()
+          if data.get("developer_instructions", "").strip() != body.strip():
+              sys.exit(f"body drift: {name}")
+          print(f"OK: {name}")
+          PY
           done
+
+      - name: Assert legacy Codex skill path is not used
+        run: |
+          set -euo pipefail
+          # role은 subagent(~/.codex/agents/)로만 배포한다. 구 skill 경로가 남으면 중복 정의가 된다.
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            [[ ! -e "$HOME/.codex/skills/$name" ]] \
+              || { echo "legacy skill still deployed: $name"; exit 1; }
+          done
+          echo "OK: no legacy skill paths"
 
   test-macos-install:
     name: macOS install + verify
@@ -108,6 +120,7 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_RTK: "1"
       SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -122,6 +135,7 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_RTK: "1"
       SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +152,7 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_RTK: "1"
       SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -231,9 +246,10 @@ jobs:
       - name: Assert body stays platform-neutral
         run: |
           set -euo pipefail
-          # Codex에는 subagent가 없다 — 위임 전용 표현이 body에 남으면 Codex 쪽에서 말이 안 된다.
-          if grep -rnE '메인 스레드|서브에이전트|subagent' config/agents/roles/*/body.md; then
-            echo "body.md는 플랫폼 중립 표현이어야 한다 (frontmatter로 분리할 것)"
+          # body는 Claude subagent와 Codex subagent 양쪽에서 그대로 성립해야 한다.
+          # 플랫폼 고유 명칭이 남으면 반대쪽에서 말이 안 된다.
+          if grep -rnE '메인 스레드|서브에이전트|subagent|SKILL\.md|Task 도구' config/agents/roles/*/body.md; then
+            echo "body.md는 플랫폼 중립 표현이어야 한다 (메타 파일로 분리할 것)"
             exit 1
           fi
           echo "OK: platform-neutral"

@@ -349,11 +349,13 @@ rm -rf "$HOME/.claude/skills/subagent-creator"
 
 > dotfiles가 만든 로컬 skill 디렉터리만 제거하며, 아래 원격 skill과 사용자가 만든 subagent는 보존한다.
 
-dotfiles agent role(저장소 소유, `config/agents/roles/`에서 조립 배포) 제거. Claude는 `~/.claude/agents/<name>.md`, Codex는 `~/.codex/skills/<name>/`에 배포된다:
+dotfiles agent role(저장소 소유, `config/agents/roles/`에서 조립 배포) 제거. Claude는 `~/.claude/agents/<name>.md`, Codex는 `~/.codex/agents/<name>.toml`에 배포된다. 구버전 dotfiles는 Codex 쪽을 `~/.codex/skills/<name>/`에 skill로 배포했으므로 그 경로도 함께 지운다:
 
 ```powershell
 "planner","generator","evaluator" | ForEach-Object {
     Remove-Item "$env:USERPROFILE\.claude\agents\$_.md" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:USERPROFILE\.codex\agents\$_.toml" -Force -ErrorAction SilentlyContinue
+    # 구 배포 경로 (skill 시절)
     Remove-Item "$env:USERPROFILE\.codex\skills\$_" -Recurse -Force -ErrorAction SilentlyContinue
 }
 ```
@@ -361,6 +363,8 @@ dotfiles agent role(저장소 소유, `config/agents/roles/`에서 조립 배포
 ```bash
 for n in planner generator evaluator; do
     rm -f "$HOME/.claude/agents/$n.md"
+    rm -f "$HOME/.codex/agents/$n.toml"
+    # 구 배포 경로 (skill 시절)
     rm -rf "$HOME/.codex/skills/$n"
 done
 ```
@@ -385,25 +389,50 @@ npx skills list -g
 
 ---
 
+### 7. Claude Code 플러그인 제거
+
+`manifests/plugins.txt`에 있는 플러그인만 제거한다. 플러그인 제거 후 마켓플레이스 등록도 함께 해제한다.
+
+```powershell
+# 플러그인 → 마켓플레이스 순서 (Windows / Linux / macOS 공통)
+claude plugin uninstall claude-hud@claude-hud --scope user
+claude plugin uninstall caveman@caveman --scope user
+
+claude plugin marketplace remove claude-hud
+claude plugin marketplace remove caveman
+```
+
+설치 상태 확인:
+
+```powershell
+claude plugin list
+claude plugin marketplace list
+```
+
+> `manifests/plugins.txt`에 있는 이름만 제거한다. 사용자가 직접 설치한 다른 플러그인과 `project`/`local` scope 플러그인은 남긴다. `~/.claude/plugins/` 디렉터리 전체를 지우면 그것들까지 사라지므로 CLI로만 제거한다.
+
+---
+
 ## 완전 초기화 순서
 
 모든 항목을 한 번에 제거할 경우 아래 순서를 권장:
 
-1. **6** — Claude Code Skills 제거 (npx skills 명령어 사용 가능할 때 먼저)
-2. **3-2** — RTK 제거
-3. **3-1** — Claude Code 설정 제거
-4. **3** — Claude Code 제거
-5. **2-2** — Codex 설정 제거
-6. **4** — PowerShell 프로파일 정리
-7. **5** — Git Bash 프로파일 정리
-8. **1-6** — Neovim 설정 제거
-9. **1-5** — Neovim PATH 제거
-10. **1-4** — Yazi 설정 제거
-11. **1-3** — YAZI_FILE_ONE 환경 변수 제거
-12. **1-2** — tmux 설정 제거
-13. **1-1** — Git 전역 설정 제거
-14. **2** — Node.js (fnm) 제거
-15. **1** — winget 패키지 제거
+1. **7** — Claude Code 플러그인 제거 (`claude` CLI 사용 가능할 때 먼저)
+2. **6** — Claude Code Skills 제거 (npx skills 명령어 사용 가능할 때 먼저)
+3. **3-2** — RTK 제거
+4. **3-1** — Claude Code 설정 제거
+5. **3** — Claude Code 제거
+6. **2-2** — Codex 설정 제거
+7. **4** — PowerShell 프로파일 정리
+8. **5** — Git Bash 프로파일 정리
+9. **1-6** — Neovim 설정 제거
+10. **1-5** — Neovim PATH 제거
+11. **1-4** — Yazi 설정 제거
+12. **1-3** — YAZI_FILE_ONE 환경 변수 제거
+13. **1-2** — tmux 설정 제거
+14. **1-1** — Git 전역 설정 제거
+15. **2** — Node.js (fnm) 제거
+16. **1** — winget 패키지 제거
 
 ---
 
@@ -412,7 +441,11 @@ npx skills list -g
 ### Claude 관련만 제거
 
 ```powershell
-# Skills → RTK → 설정 → 앱 순서
+# 플러그인 → Skills → RTK → 설정 → 앱 순서
+claude plugin uninstall claude-hud@claude-hud --scope user
+claude plugin uninstall caveman@caveman --scope user
+claude plugin marketplace remove claude-hud
+claude plugin marketplace remove caveman
 npx skills remove anthropics/skills --skill skill-creator -g
 npx skills remove anthropics/skills --skill pdf -g
 npx skills remove anthropics/skills --skill pptx -g
