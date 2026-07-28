@@ -8,6 +8,7 @@ on:
       - install.ps1
       - "config/**"
       - docs/uninstall.md
+      - "scripts/**"
       - ".github/workflows/uninstall-validation.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - install.ps1
       - "config/**"
       - docs/uninstall.md
+      - "scripts/**"
       - ".github/workflows/uninstall-validation.yml"
   workflow_dispatch:
 
@@ -86,6 +88,28 @@ jobs:
 
           cp config/agents/global.md "$HOME/.claude/CLAUDE.md"
           cp config/claude/hooks/temporal-context.sh "$HOME/.claude/hooks/temporal-context.sh"
+
+          # dotfiles 소유 agent role: Claude subagent + Codex skill 양쪽에 조립 배포
+          mkdir -p "$HOME/.claude/agents" "$HOME/.codex/skills"
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            cat "$d/claude.frontmatter" "$d/body.md" > "$HOME/.claude/agents/$name.md"
+            mkdir -p "$HOME/.codex/skills/$name/agents"
+            cat "$d/codex.frontmatter" "$d/body.md" > "$HOME/.codex/skills/$name/SKILL.md"
+            cp "$d/openai.yaml" "$HOME/.codex/skills/$name/agents/openai.yaml"
+          done
+
+          # dotfiles 소유 로컬 skill
+          mkdir -p "$HOME/.claude/skills"
+          cp -r config/claude/skills/. "$HOME/.claude/skills/"
+
+          # 사용자/원격 소유 — 반드시 살아남아야 한다
+          mkdir -p "$HOME/.claude/agents" "$HOME/.claude/skills/remote-skill" \
+                   "$HOME/.codex/skills/user-skill" "$HOME/.codex/skills/.system/imagegen"
+          echo "user agent" > "$HOME/.claude/agents/my-own.md"
+          echo "remote skill" > "$HOME/.claude/skills/remote-skill/SKILL.md"
+          echo "user skill" > "$HOME/.codex/skills/user-skill/SKILL.md"
+          echo "bundled" > "$HOME/.codex/skills/.system/imagegen/SKILL.md"
           cat > "$HOME/.claude/settings.json" <<'JSON'
           {
             "statusLine": {
@@ -168,6 +192,18 @@ jobs:
 
           rm -f "$HOME/.claude/CLAUDE.md"
           rm -rf "$HOME/.claude/hooks"
+
+          # docs/uninstall.md 의 role 제거 절차와 동일해야 한다 (이름 단위 제거)
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            rm -f "$HOME/.claude/agents/$name.md"
+            rm -rf "$HOME/.codex/skills/$name"
+          done
+          # dotfiles 소유 로컬 skill (config/claude/skills/ 에서 배포된 것만)
+          for d in config/claude/skills/*/; do
+            rm -rf "$HOME/.claude/skills/$(basename "$d")"
+          done
+
           tmp="$(mktemp)"
           jq 'del(
             .hooks,
@@ -214,6 +250,26 @@ jobs:
 
           [[ ! -e "$HOME/.claude/CLAUDE.md" ]]
           [[ ! -e "$HOME/.claude/hooks" ]]
+
+          # dotfiles 소유 role/skill은 제거
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            [[ ! -e "$HOME/.claude/agents/$name.md" ]] \
+              || { echo "claude agent 잔존: $name"; exit 1; }
+            [[ ! -e "$HOME/.codex/skills/$name" ]] \
+              || { echo "codex skill 잔존: $name"; exit 1; }
+          done
+          for d in config/claude/skills/*/; do
+            [[ ! -e "$HOME/.claude/skills/$(basename "$d")" ]] \
+              || { echo "local skill 잔존: $(basename "$d")"; exit 1; }
+          done
+
+          # 사용자/원격/번들 소유는 보존
+          [[ -f "$HOME/.claude/agents/my-own.md" ]]
+          [[ -f "$HOME/.claude/skills/remote-skill/SKILL.md" ]]
+          [[ -f "$HOME/.codex/skills/user-skill/SKILL.md" ]]
+          [[ -f "$HOME/.codex/skills/.system/imagegen/SKILL.md" ]]
+
           jq -e '
             .statusLine.command == "keep-me"
             and (has("hooks") | not)
@@ -290,6 +346,32 @@ jobs:
           $CodexConfig = Join-Path $CodexDir "config.toml"
           Set-TextFile $CodexConfig ((Get-Content "config/codex/config.toml" -Raw) + "`n[user]`nkeep = true`n")
 
+          # dotfiles 소유 agent role: Claude subagent + Codex skill 양쪽에 조립 배포
+          $ClaudeAgents = Join-Path $ClaudeDir "agents"
+          $CodexSkills = Join-Path $CodexDir "skills"
+          New-Item -ItemType Directory -Force -Path $ClaudeAgents, $CodexSkills | Out-Null
+          Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
+            $body = Get-Content (Join-Path $_.FullName "body.md") -Raw
+            Set-TextFile (Join-Path $ClaudeAgents "$($_.Name).md") `
+              ((Get-Content (Join-Path $_.FullName "claude.frontmatter") -Raw) + $body)
+            $skillDir = Join-Path $CodexSkills $_.Name
+            New-Item -ItemType Directory -Force -Path (Join-Path $skillDir "agents") | Out-Null
+            Set-TextFile (Join-Path $skillDir "SKILL.md") `
+              ((Get-Content (Join-Path $_.FullName "codex.frontmatter") -Raw) + $body)
+            Copy-Item (Join-Path $_.FullName "openai.yaml") (Join-Path $skillDir "agents") -Force
+          }
+
+          # dotfiles 소유 로컬 skill
+          $ClaudeSkills = Join-Path $ClaudeDir "skills"
+          New-Item -ItemType Directory -Force -Path $ClaudeSkills | Out-Null
+          Copy-Item "config/claude/skills/*" $ClaudeSkills -Recurse -Force
+
+          # 사용자/원격/번들 소유 — 반드시 살아남아야 한다
+          Set-TextFile (Join-Path $ClaudeAgents "my-own.md") "user agent`n"
+          Set-TextFile (Join-Path $ClaudeSkills "remote-skill\SKILL.md") "remote skill`n"
+          Set-TextFile (Join-Path $CodexSkills "user-skill\SKILL.md") "user skill`n"
+          Set-TextFile (Join-Path $CodexSkills ".system\imagegen\SKILL.md") "bundled`n"
+
           $SettingsPath = Join-Path $ClaudeDir "settings.json"
           $settings = Get-Content "config/claude/settings.json" -Raw | ConvertFrom-Json
           $settings | Add-Member -NotePropertyName "statusLine" -NotePropertyValue @{ command = "keep-me" } -Force
@@ -317,6 +399,15 @@ jobs:
 
           Remove-Item (Join-Path $ClaudeDir "CLAUDE.md") -Force
           Remove-Item (Join-Path $ClaudeDir "hooks") -Recurse -Force
+
+          # docs/uninstall.md 의 role 제거 절차와 동일해야 한다 (이름 단위 제거)
+          Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
+            Remove-Item (Join-Path $ClaudeAgents "$($_.Name).md") -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $CodexSkills $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem "config/claude/skills" -Directory | ForEach-Object {
+            Remove-Item (Join-Path $ClaudeSkills $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
+          }
           $settings = Get-Content $SettingsPath -Raw | ConvertFrom-Json
           foreach ($key in @(
             "hooks",
@@ -371,6 +462,21 @@ jobs:
           Assert-True (!(Test-Path (Join-Path $YaziDir "yazi.toml"))) "managed yazi.toml should be removed"
           Assert-True ((Test-Path (Join-Path $YaziDir "user.toml"))) "user yazi file should remain"
           Assert-True (!(Test-Path $NvimDir)) "managed nvim dir should be removed"
+
+          Get-ChildItem "config/agents/roles" -Directory | ForEach-Object {
+            Assert-True (!(Test-Path (Join-Path $ClaudeAgents "$($_.Name).md"))) `
+              "managed Claude agent should be removed: $($_.Name)"
+            Assert-True (!(Test-Path (Join-Path $CodexSkills $_.Name))) `
+              "managed Codex skill should be removed: $($_.Name)"
+          }
+          Get-ChildItem "config/claude/skills" -Directory | ForEach-Object {
+            Assert-True (!(Test-Path (Join-Path $ClaudeSkills $_.Name))) `
+              "managed local skill should be removed: $($_.Name)"
+          }
+          Assert-True ((Test-Path (Join-Path $ClaudeAgents "my-own.md"))) "user agent should remain"
+          Assert-True ((Test-Path (Join-Path $ClaudeSkills "remote-skill\SKILL.md"))) "remote skill should remain"
+          Assert-True ((Test-Path (Join-Path $CodexSkills "user-skill\SKILL.md"))) "user Codex skill should remain"
+          Assert-True ((Test-Path (Join-Path $CodexSkills ".system\imagegen\SKILL.md"))) "bundled Codex skill should remain"
 
           $profileContent = Get-Content $ProfilePath -Raw
           Assert-True ($profileContent.Contains("# user pwsh before")) "PowerShell user content before should remain"

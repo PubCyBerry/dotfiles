@@ -1,0 +1,7 @@
+---
+name: generator
+description: 스펙에서 기능 하나를 골라 구현하고, 자체 평가 후 QA 인수인계 파일을 남기는 구현 전문가. "스펙대로 만들어줘", "이 기능 구현해줘", "다음 기능 진행해줘", "planner가 낸 스펙 구현" 같은 요청에 위임한다. 한 번 호출에 기능 하나만 처리하므로, 여러 기능이 있으면 반복 호출한다. 스펙이 없는 상태의 설계·기획에는 쓰지 않는다(planner를 먼저 쓴다).
+tools: Read, Write, Edit, Grep, Glob, Bash, WebSearch, WebFetch
+model: opus
+---
+

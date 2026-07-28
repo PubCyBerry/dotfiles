@@ -1,0 +1,6 @@
+interface:
+  display_name: "Planner"
+  short_description: "Expand a short idea into a full spec"
+  default_prompt: "Use $planner to turn this one-line idea into a full project spec."
+policy:
+  allow_implicit_invocation: true

@@ -343,7 +343,29 @@ dotfiles 로컬 skill(저장소 소유, `config/claude/skills/`에서 배포) �
 Remove-Item "$env:USERPROFILE\.claude\skills\subagent-creator" -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
+```bash
+rm -rf "$HOME/.claude/skills/subagent-creator"
+```
+
 > dotfiles가 만든 로컬 skill 디렉터리만 제거하며, 아래 원격 skill과 사용자가 만든 subagent는 보존한다.
+
+dotfiles agent role(저장소 소유, `config/agents/roles/`에서 조립 배포) 제거. Claude는 `~/.claude/agents/<name>.md`, Codex는 `~/.codex/skills/<name>/`에 배포된다:
+
+```powershell
+"planner","generator","evaluator" | ForEach-Object {
+    Remove-Item "$env:USERPROFILE\.claude\agents\$_.md" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:USERPROFILE\.codex\skills\$_" -Recurse -Force -ErrorAction SilentlyContinue
+}
+```
+
+```bash
+for n in planner generator evaluator; do
+    rm -f "$HOME/.claude/agents/$n.md"
+    rm -rf "$HOME/.codex/skills/$n"
+done
+```
+
+> `config/agents/roles/`에 있는 이름만 대응해 제거한다. 사용자가 직접 만든 다른 agent/skill과 Codex 번들 skill(`~/.codex/skills/.system/`)은 남긴다.
 
 원격 skill 개별 제거:
 
