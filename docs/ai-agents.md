@@ -37,6 +37,7 @@ codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agen
 |---|---|---|
 | `claude-hud` | `jarrodwatts/claude-hud` | statusline에 세션 정보(모델, 컨텍스트, 토큰, git 상태) 표시 |
 | `caveman` | `JuliusBrussee/caveman` | 응답 압축 모드 — 토큰 사용량 감소 |
+| `codex` | `openai/codex-plugin-cc` (마켓플레이스 이름 `openai-codex`) | Claude Code 세션 안에서 Codex 호출 |
 
 플러그인은 `~/.claude/plugins/`에 CLI가 직접 설치하므로, 저장소가 파일을 복사하지 않는다. 제거도 CLI로만 한다(`docs/uninstall.md` 7번 참고) — 디렉터리를 통째로 지우면 매니페스트 밖의 플러그인까지 사라진다.
 

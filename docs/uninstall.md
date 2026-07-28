@@ -397,9 +397,11 @@ npx skills list -g
 # 플러그인 → 마켓플레이스 순서 (Windows / Linux / macOS 공통)
 claude plugin uninstall claude-hud@claude-hud --scope user
 claude plugin uninstall caveman@caveman --scope user
+claude plugin uninstall codex@openai-codex --scope user
 
 claude plugin marketplace remove claude-hud
 claude plugin marketplace remove caveman
+claude plugin marketplace remove openai-codex
 ```
 
 설치 상태 확인:
@@ -444,8 +446,10 @@ claude plugin marketplace list
 # 플러그인 → Skills → RTK → 설정 → 앱 순서
 claude plugin uninstall claude-hud@claude-hud --scope user
 claude plugin uninstall caveman@caveman --scope user
+claude plugin uninstall codex@openai-codex --scope user
 claude plugin marketplace remove claude-hud
 claude plugin marketplace remove caveman
+claude plugin marketplace remove openai-codex
 npx skills remove anthropics/skills --skill skill-creator -g
 npx skills remove anthropics/skills --skill pdf -g
 npx skills remove anthropics/skills --skill pptx -g

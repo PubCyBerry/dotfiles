@@ -16,3 +16,6 @@ jarrodwatts/claude-hud   claude-hud@claude-hud   user
 
 # 응답 압축 모드
 JuliusBrussee/caveman    caveman@caveman         user
+
+# Codex를 Claude Code 안에서 사용
+openai/codex-plugin-cc    codex@openai-codex      user
