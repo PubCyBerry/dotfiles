@@ -25,7 +25,7 @@ brew "eza"        # 컬러/아이콘 ls 대체
 brew "fd"         # 빠른 find 대체
 brew "delta"      # git diff 뷰어
 brew "ripgrep"    # 빠른 grep 대체 (rg)
-brew "oven-sh/bun/bun"  # JavaScript 런타임 & 패키지 매니저
+brew "oven-sh/bun/bun", trusted: true  # JavaScript 런타임 & 패키지 매니저
 
 # 추가 CLI 도구
 brew "zoxide"       # 스마트 cd 대체 (z 명령어)
@@ -45,5 +45,7 @@ brew "tmux"
 brew "rtk"
 
 # CodexBar (AI 코딩 도구 사용량 메뉴바 앱, macOS 14+ Sonoma 필요)
-tap "steipete/tap"
+# Homebrew 6.0부터 서드파티 tap은 명시적 신뢰가 필요하다(`trusted:`).
+# 표기가 없으면 "Refusing to load formula ... from untrusted tap"으로 설치가 중단된다.
+tap "steipete/tap", trusted: true
 cask "codexbar"
