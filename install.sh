@@ -621,6 +621,23 @@ if [[ -n "$YQ_ARCH" ]]; then
             fi
             echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
 
+            # 구버전 정리 — LTS가 올라가면 이전 버전은 디스크만 차지한다(버전당 ~100MB).
+            # 현재 활성(=default) 버전만 남긴다. 구버전을 쓰던 셸은 fnm 심볼릭 링크가
+            # 끊기므로 정리 후 새 셸을 열어야 한다.
+            _cur_ver="$(fnm current 2>/dev/null || true)"
+            if [[ "$_cur_ver" =~ ^v[0-9] ]]; then
+                while read -r _old_ver; do
+                    [[ -n "$_old_ver" && "$_old_ver" != "$_cur_ver" ]] || continue
+                    if fnm uninstall "$_old_ver" >/dev/null 2>&1; then
+                        echo "    Removed old Node: $_old_ver"
+                    else
+                        echo "    [!] Node $_old_ver 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
+                    fi
+                done < <(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+            else
+                echo "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
+            fi
+
             # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
             if [[ -f "$CLAUDE_DIR/settings.json" ]] && command -v jq >/dev/null 2>&1; then
                 _node_ver="$(node --version 2>/dev/null || true)"

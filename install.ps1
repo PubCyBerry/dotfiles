@@ -403,6 +403,28 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     fnm use lts-latest
     Write-Host "    Node.js LTS installed."
 
+    # 구버전 정리 — LTS가 올라가면 이전 버전은 디스크만 차지한다(버전당 ~100MB).
+    # 현재 활성(=default) 버전만 남긴다. 다른 셸이 구버전을 쓰고 있었다면 그 셸의
+    # fnm junction이 끊기므로 정리 후에는 셸을 새로 열어야 한다.
+    $activeVer = (fnm current 2>$null)
+    if ($activeVer -match '^v\d') {
+        $installedVers = @(fnm list 2>$null | ForEach-Object {
+            if ($_ -match '(v\d+\.\d+\.\d+)') { $Matches[1] }
+        } | Select-Object -Unique)
+        $staleVers = @($installedVers | Where-Object { $_ -ne $activeVer })
+        foreach ($ver in $staleVers) {
+            fnm uninstall $ver 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "    Removed old Node: $ver"
+            } else {
+                Write-Host "    [!] Node $ver 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
+            }
+        }
+        if ($staleVers.Count -eq 0) { Write-Host "    No old Node versions ($activeVer only)." }
+    } else {
+        Write-Host "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
+    }
+
     # fnm aliases\default → User PATH 영구 등록 (MCP 서버 등 비쉘 프로세스에서 npx 접근 가능)
     $fnmDefaultPath = Join-Path $env:APPDATA "fnm\aliases\default"
     if (Test-Path $fnmDefaultPath) {

@@ -86,7 +86,7 @@ dotfiles/
    1-4. `config/yazi/` → `%APPDATA%\yazi\config\` 배포 (nvim opener 설정)
    1-5. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
-2. fnm → Node.js LTS
+2. fnm → Node.js LTS (설치 후 활성 버전 외 구버전 자동 삭제)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치
@@ -106,7 +106,7 @@ dotfiles/
    1-4. `config/nvim/` → `~/.config/nvim/` 배포 (항상 덮어쓰기)
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
-2. fnm → Node.js LTS
+2. fnm → Node.js LTS (설치 후 활성 버전 외 구버전 자동 삭제)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
@@ -126,7 +126,7 @@ dotfiles/
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. 공식 install 스크립트: zoxide, starship, atuin, fnm(--skip-shell), bun
    1-7. GitHub releases 바이너리: neovim(tar.gz, 0.10+), yazi(.deb), lazygit(tar.gz), git-delta(.deb), fzf(tar.gz), eza(tar.gz), yq(단일 바이너리)
-2. fnm → Node.js LTS
+2. fnm → Node.js LTS (설치 후 활성 버전 외 구버전 자동 삭제)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
