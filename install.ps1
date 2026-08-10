@@ -203,33 +203,107 @@ Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
+        # 사전 점검: 실행 중인 프로세스가 대상 파일을 잠그면 설치 관리자가 실패한다.
+        #   Git.Git(Inno Setup) — bash/ssh가 살아 있으면 "process(es) use Git for Windows"
+        #                         메시지 박스가 억제된 채 Cancel 처리되어 exit 1 → 0x8A150006
+        #   marlocarlo.psmux(portable) — tmux.exe 교체 시 "Access is denied" → 0x8A150052
+        # 설치 전에 알려야 사용자가 세션을 정리하고 재실행할 수 있다.
+        $LockBlockers = @{
+            'Git.Git'          = @('bash', 'sh', 'ssh', 'git')
+            'marlocarlo.psmux' = @('tmux')
+        }
+        foreach ($entry in $LockBlockers.GetEnumerator()) {
+            $running = @($entry.Value |
+                ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
+                Group-Object ProcessName |
+                ForEach-Object { "$($_.Name) x$($_.Count)" })
+            if ($running.Count -gt 0) {
+                Write-Host "    [warn] $($entry.Key): 파일을 잠그는 프로세스 실행 중 — $($running -join ', ')"
+                Write-Host "           업그레이드 실패 시 해당 프로세스 종료 후 재실행 필요."
+            }
+        }
+
+        $WingetLogDir = Join-Path $env:LOCALAPPDATA "Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir"
+
+        $results = Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
             $package = $_
-            $upToDate = @(-1978335189, 0x8A150109)  # NO_APPLICABLE_UPDATE
+            $logDir  = $using:WingetLogDir
 
-            # 설치 여부 확인 후 install/upgrade 분기
-            winget list --id $package --exact --accept-source-agreements 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                # 신규 설치
-                winget install --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "    [install]  $package"
-                } else {
-                    Write-Host "    [!] install failed: $package (exit: $LASTEXITCODE)"
-                }
-            } else {
-                # 이미 설치됨 → 업그레이드 시도
-                winget upgrade --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "    [upgrade]  $package"
-                } elseif ($upToDate -contains $LASTEXITCODE) {
-                    Write-Host "    [current]  $package"
-                } else {
-                    Write-Host "    [!] upgrade failed: $package (exit: $LASTEXITCODE)"
-                }
+            # winget 종료 코드 → 원인. $LASTEXITCODE는 부호 있는 int라 두 자리 보수 hex로 비교한다.
+            $codes = @{
+                '8A15002B' = '최신 버전 — 적용할 업데이트 없음'
+                '8A150006' = '설치 관리자가 실패 코드 반환 — 대상 파일 사용 중이거나 권한 부족'
+                '8A150011' = '적용 가능한 installer 없음 — 아키텍처/스코프 불일치'
+                '8A150014' = '일치하는 패키지 없음 — --exact는 ID 대소문자를 구분한다'
+                '8A150044' = '패키지 사용 계약 미동의'
+                '8A150052' = 'portable 설치 실패 — 교체 대상 exe가 실행 중'
+                '8A150056' = '설치 위치 사용 불가'
             }
+
+            # `winget list` 출력에서 설치 버전 추출.
+            # 헤더가 로케일별로 다르므로 컬럼명 대신 ID 토큰 다음 토큰을 읽는다.
+            #   예: "yq   MikeFarah.yq 4.53.3 winget" → 4.53.3
+            $parseVer = {
+                param($text, $id)
+                foreach ($line in ($text -split "`r?`n")) {
+                    $t = @($line -split '\s+' | Where-Object { $_ })
+                    for ($i = 0; $i -lt $t.Count - 1; $i++) {
+                        if ($t[$i] -ieq $id) { return $t[$i + 1] }
+                    }
+                }
+                return ''
+            }
+
+            $listOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
+            $isInstalled = ($LASTEXITCODE -eq 0)
+            $beforeVer = if ($isInstalled) { & $parseVer $listOut $package } else { '' }
+
+            if (-not $isInstalled) {
+                $verb = 'install'
+                $out  = (winget install --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String)
+            } else {
+                $verb = 'upgrade'
+                $out  = (winget upgrade --id $package --exact --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-String)
+            }
+            $code = $LASTEXITCODE
+            $hex  = '{0:X8}' -f $code
+            $why  = if ($codes.ContainsKey($hex)) { " — $($codes[$hex])" } else { '' }
+            $pad  = $package.PadRight(28)
+
+            if ($code -eq 0) {
+                $afterOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
+                $afterVer = & $parseVer $afterOut $package
+                if ($verb -eq 'install') {
+                    Write-Host "    [install]  $pad $afterVer"
+                    $status = 'install'
+                } else {
+                    $delta = if ($beforeVer -and $afterVer -and $beforeVer -ne $afterVer) { "$beforeVer -> $afterVer" } else { $afterVer }
+                    Write-Host "    [upgrade]  $pad $delta"
+                    $status = 'upgrade'
+                }
+            } elseif ($hex -eq '8A15002B') {
+                Write-Host "    [current]  $pad $beforeVer"
+                $status = 'current'
+            } else {
+                Write-Host "    [!] $verb failed: $pad 0x$hex$why"
+                # winget이 출력한 마지막 실질 메시지 — 코드만으로는 안 보이는 실패 사유가 여기 있다.
+                $tail = @($out -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Last 2)
+                foreach ($t in $tail) { Write-Host "           winget: $t" }
+                Write-Host "           상세 로그: $logDir"
+                $status = 'failed'
+            }
+
+            [pscustomobject]@{ Package = $package; Status = $status; Code = $hex }
         } -ThrottleLimit 4
+
+        # 요약 — 실패 목록을 마지막에 다시 모아 스크롤 위로 사라지지 않게 한다.
+        $byStatus = $results | Group-Object Status | ForEach-Object { "$($_.Name) $($_.Count)" }
+        Write-Host "    ---- winget 요약: $($byStatus -join ' / ')"
+        $failed = @($results | Where-Object { $_.Status -eq 'failed' })
+        foreach ($f in $failed) {
+            Write-Host "    [!] 실패: $($f.Package) (0x$($f.Code))"
+        }
     } else {
         Write-Host "    [!] winget not found. Skipping package installation."
     }

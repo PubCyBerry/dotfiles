@@ -170,3 +170,26 @@ git config --global --get core.quotepath   # → false
 ```
 
 진단 단서: `git status` 출력에서 파일명이 큰따옴표로 감싸여 있으면 quotepath 케이스다. 로케일 문제라면 따옴표 없이 `???` 또는 mojibake로 나온다.
+
+## install.ps1의 winget 설치/업그레이드 실패
+
+`install.ps1`은 실패 시 종료 코드를 hex로 바꿔 원인을 함께 출력한다. 실제로 관측된 3종:
+
+| 종료 코드 | 패키지 | 진짜 원인 | 조치 |
+|---|---|---|---|
+| `0x8A150006` (-1978335226) | `Git.Git` | Inno Setup이 "The following process(es) use Git for Windows: ssh.exe, bash.exe…" 대화상자를 띄우는데 `/VERYSILENT /SUPPRESSMSGBOXES`라 자동 Cancel → installer exit 1 | Git Bash/tmux/ssh 세션을 모두 닫고 **PowerShell에서** 재실행 |
+| `0x8A150052` (-1978335150) | `marlocarlo.psmux` | portable installer가 `WinGet\Packages\...\tmux.exe`를 교체하려다 `remove: Access is denied` — tmux 프로세스가 파일을 잡고 있음 | `tmux kill-server` 후 재실행 |
+| `0x8A150014` (-1978335212) | `mikefarah.yq` | `No app found matching input criteria`. **`--exact`는 ID 대소문자를 구분**하는데 매니페스트가 소문자였다. 실제 ID는 `MikeFarah.yq` | 매니페스트 ID를 winget 카탈로그 표기와 정확히 일치시킨다 |
+
+두 잠금 케이스는 `install.ps1`이 실행 전에 미리 경고한다(`[warn] Git.Git: 파일을 잠그는 프로세스 실행 중 — bash x6, ssh x2`).
+
+원인이 코드만으로 안 보이면 winget 자체 로그를 본다. 설치 관리자(Inno Setup 등)가 남긴 로그가 같은 디렉터리에 패키지 이름으로 따로 쌓인다.
+
+```bash
+cd "$LOCALAPPDATA/Packages/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe/LocalState/DiagOutputDir"
+ls -1t | head                                   # 최근 로그
+grep -E "<E>|Terminating context" WinGet-*.log  # winget 쪽 실패 지점
+tail -20 Git.Git.*.log                          # 설치 관리자 쪽 실제 사유
+```
+
+> 종료 코드는 부호 있는 int라 로그에는 `-1978335226`처럼 찍힌다. `'{0:X8}' -f $code`로 두 자리 보수 hex(`8A150006`)를 얻어 winget 문서와 대조한다.

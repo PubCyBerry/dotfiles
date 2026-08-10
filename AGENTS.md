@@ -79,7 +79,7 @@ dotfiles/
 
 ### Windows install.ps1 실행 순서
 
-1. `manifests/winget.txt` → winget 패키지 설치
+1. `manifests/winget.txt` → winget 패키지 설치 (사전 잠금 프로세스 경고, 실패 시 종료 코드 원인 + winget 메시지 출력, 마지막에 요약)
    1-1. `config/git/gitconfig` → git config 병합 + Windows override (`autocrlf=true`, `fileMode=false`)
    1-2. `config/tmux/tmux.windows.conf` → `~/.tmux.conf` 복사
    1-3. `YAZI_FILE_ONE` 환경변수 설정 (Git file.exe 경로)
