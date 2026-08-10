@@ -13,6 +13,11 @@
     #   Windows: autocrlf=true,  fileMode=false
     #   Linux:   autocrlf=input, fileMode=true
 
+[init]
+    # git init / git clone(빈 저장소)의 첫 브랜치 이름.
+    # 미설정 시 git이 master를 쓰면서 hint 경고를 출력한다.
+    defaultBranch = main
+
 [interactive]
     # git add -p 등 대화형 모드에서도 delta 컬러 필터 적용
     diffFilter = delta --color-only
