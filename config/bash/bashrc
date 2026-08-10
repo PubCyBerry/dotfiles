@@ -75,6 +75,15 @@ fi
 if command -v zoxide &> /dev/null; then
     export _ZO_DOCTOR=0
     eval "$(zoxide init bash)"
+    # zoxide 0.10.0 버그 우회: MSYS/Cygwin용 __zoxide_pwd가 cygpath에 명령 치환 없이
+    # 리터럴 '\builtin pwd -L'을 넘겨 'D:\builtin pwd -L' 같은 경로가 만들어진다.
+    # 그 결과 hook의 zoxide add가 매번 실패해 DB에 아무것도 기록되지 않는다.
+    case "$OSTYPE" in
+        msys* | cygwin*)
+            __zoxide_pwd() { \command cygpath -w "$(\builtin pwd -L)"; }
+            __zoxide_oldpwd="$(__zoxide_pwd)"
+            ;;
+    esac
 fi
 
 # starship 프롬프트 (TERM=dumb 환경 — Emacs tramp 등 — 에서는 스킵)
