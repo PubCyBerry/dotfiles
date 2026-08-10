@@ -5,6 +5,10 @@
     editor = nvim -f
     # 줄바꿈 정규화 기준: OS 네이티브
     eol = native
+    # 비ASCII 경로를 octal escape("\353\241\234")로 감싸지 않고 그대로 출력.
+    # 기본값 true라 status/diff/log에서 한글 파일명이 전부 깨져 보인다.
+    # 로케일(LANG=ko_KR.UTF-8) 문제가 아니라 git 출력 인코딩 설정.
+    quotepath = false
     # core.autocrlf, core.fileMode 은 OS별로 install 스크립트가 주입한다
     #   Windows: autocrlf=true,  fileMode=false
     #   Linux:   autocrlf=input, fileMode=true

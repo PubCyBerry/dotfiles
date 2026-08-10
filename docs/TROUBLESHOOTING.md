@@ -150,3 +150,23 @@ git fetch
 ```
 
 GitHub 외 호스트용 `dpapi` 설정은 `config/git/gitconfig`에 반영되어 있다. DPAPI는 사용자 프로필 기반이라 SSH 비대화형 세션에서도 동작한다.
+
+## git status에서 한글 파일명이 `\353\241\234...`로 출력
+
+```
+Untracked files:
+        "nexus-framework-\353\241\234\354\273\254\354\227\260\352\262\260-\352\260\200\354\235\264\353\223\234.md"
+```
+
+**원인은 로케일이 아니다.** `LANG=ko_KR.UTF-8`이 정상이어도 발생한다. git의 `core.quotepath` 기본값이 `true`라 비ASCII 경로 바이트를 octal escape로 감싸 출력하는 것이다. status/diff/log/ls-files 모두 영향을 받는다.
+
+**해결**: `config/git/gitconfig`의 `[core] quotepath = false`. install 스크립트의 gitconfig 병합 단계가 global에 주입한다(이미 설정된 키는 건드리지 않으므로, 수동으로 다른 값을 넣어둔 경우엔 그 값이 유지된다).
+
+이미 설치된 머신에 즉시 적용:
+
+```bash
+git config --global core.quotepath false
+git config --global --get core.quotepath   # → false
+```
+
+진단 단서: `git status` 출력에서 파일명이 큰따옴표로 감싸여 있으면 quotepath 케이스다. 로케일 문제라면 따옴표 없이 `???` 또는 mojibake로 나온다.
