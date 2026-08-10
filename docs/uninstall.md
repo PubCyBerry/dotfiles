@@ -244,10 +244,10 @@ Remove-Item -Path "$env:USERPROFILE\.local\share\claude" -Recurse -Force
 # dotfiles가 복사한 CLAUDE.md만 제거
 Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force
 
-# settings.json의 RTK hook만 제거
+# settings.json에서 dotfiles가 넣은 hook만 제거 (SessionStart — temporal-context)
 $settingsPath = "$env:USERPROFILE\.claude\settings.json"
 $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-$settings.hooks.PSObject.Properties.Remove("PreToolUse")
+$settings.hooks.PSObject.Properties.Remove("SessionStart")
 $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
 ```
 
@@ -270,28 +270,48 @@ $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -No
 
 ---
 
-### 3-2. RTK (Rust Token Killer) 제거
+### 3-2. RTK (Rust Token Killer) 제거 — 레거시
+
+> 현재 install 스크립트는 RTK를 설치하지 않는다. 과거 버전으로 설치한 머신에만 필요하다.
+> `settings.json` 병합은 기존 키를 보존하므로, 저장소에서 hook을 지워도 이미 배포된
+> `~/.claude/settings.json`의 엔트리는 남는다. 아래로 직접 제거한다.
 
 ```powershell
-# 바이너리 제거
+# 1. 바이너리
 Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
 
-# Claude hook 제거 (settings.json 엔트리)
+# 2. Claude hook — PreToolUse에서 rtk 항목만 골라 제거 (다른 hook은 보존)
 $settingsPath = "$env:USERPROFILE\.claude\settings.json"
 if (Test-Path $settingsPath) {
     $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-    if ($settings.hooks -and $settings.hooks.PreToolUse) {
-        $settings.hooks.PSObject.Properties.Remove("PreToolUse")
+    if ($settings.hooks.PreToolUse) {
+        $kept = @($settings.hooks.PreToolUse | ForEach-Object {
+            $_.hooks = @($_.hooks | Where-Object { $_.command -notmatch '^\s*rtk\b' })
+            $_
+        } | Where-Object { $_.hooks.Count -gt 0 })
+        if ($kept.Count -gt 0) { $settings.hooks.PreToolUse = $kept }
+        else { $settings.hooks.PSObject.Properties.Remove("PreToolUse") }
         $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
     }
 }
 
-# .local\bin에 다른 도구가 없을 경우 PATH에서도 제거
-$localBin = "$env:USERPROFILE\.local\bin"
-$userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-$newPath  = ($userPath -split ';' | Where-Object { $_ -ne $localBin }) -join ';'
-[System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+# 3. 캐시/통계 디렉터리 (rtk gain 히스토리)
+Remove-Item "$env:LOCALAPPDATA\rtk" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\rtk"      -Recurse -Force -ErrorAction SilentlyContinue
 ```
+
+Linux/macOS:
+
+```bash
+rm -f ~/.local/bin/rtk
+rm -rf ~/.cache/rtk ~/.local/share/rtk ~/.config/rtk
+jq '(.hooks.PreToolUse // []) |= (map(.hooks |= map(select((.command // "") | test("^\\s*rtk\\b") | not)))
+     | map(select((.hooks | length) > 0)))' ~/.claude/settings.json > /tmp/s.json \
+  && mv /tmp/s.json ~/.claude/settings.json
+brew uninstall rtk 2>/dev/null || true   # macOS에서 Brewfile로 설치한 경우
+```
+
+> `~/.local/bin`은 claude native 바이너리도 쓰므로 PATH에서 지우지 않는다.
 
 ---
 
@@ -421,7 +441,7 @@ claude plugin marketplace list
 
 1. **7** — Claude Code 플러그인 제거 (`claude` CLI 사용 가능할 때 먼저)
 2. **6** — Claude Code Skills 제거 (npx skills 명령어 사용 가능할 때 먼저)
-3. **3-2** — RTK 제거
+3. **3-2** — RTK 제거 (레거시 설치본이 있을 때만)
 4. **3-1** — Claude Code 설정 제거
 5. **3** — Claude Code 제거
 6. **2-2** — Codex 설정 제거
@@ -443,7 +463,7 @@ claude plugin marketplace list
 ### Claude 관련만 제거
 
 ```powershell
-# 플러그인 → Skills → RTK → 설정 → 앱 순서
+# 플러그인 → Skills → 설정 → 앱 순서 (레거시 RTK는 3-2 참고)
 claude plugin uninstall claude-hud@claude-hud --scope user
 claude plugin uninstall caveman@caveman --scope user
 claude plugin uninstall codex@openai-codex --scope user
@@ -455,15 +475,6 @@ npx skills remove anthropics/skills --skill pdf -g
 npx skills remove anthropics/skills --skill pptx -g
 npx skills remove anthropics/skills --skill docx -g
 npx skills remove anthropics/skills --skill xlsx -g
-Remove-Item "$env:USERPROFILE\.local\bin\rtk.exe" -Force -ErrorAction SilentlyContinue
-$settingsPath = "$env:USERPROFILE\.claude\settings.json"
-if (Test-Path $settingsPath) {
-    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-    if ($settings.hooks -and $settings.hooks.PreToolUse) {
-        $settings.hooks.PSObject.Properties.Remove("PreToolUse")
-        $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
-    }
-}
 Remove-Item "$env:USERPROFILE\.claude\CLAUDE.md" -Force -ErrorAction SilentlyContinue
 winget uninstall --id Anthropic.Claude
 ```

@@ -37,7 +37,6 @@ jobs:
     timeout-minutes: 20
     env:
       SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -118,7 +117,6 @@ jobs:
     timeout-minutes: 20
     env:
       SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
     steps:
@@ -133,7 +131,6 @@ jobs:
     timeout-minutes: 20
     env:
       SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -150,7 +147,6 @@ jobs:
     timeout-minutes: 40
     env:
       SKIP_CLAUDE_CODE: "1"
-      SKIP_RTK: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

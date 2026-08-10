@@ -38,7 +38,7 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 
 **test-apt-install**
 - apt 패키지 캐시 복원 후 `install.sh` 실행
-- Claude Code, RTK, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
+- Claude Code, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
 - `config/agents/roles/`가 `~/.codex/agents/<name>.toml`로 실제 조립 배포됐는지 확인 — TOML 파싱, `name` 일치, `developer_instructions`와 소스 `body.md` 일치. 구 skill 경로(`~/.codex/skills/<name>/`)가 남지 않았는지도 함께 본다 (`SKIP_CLAUDE_CODE=1`이라 Claude 쪽 배포는 이 job에서 검증하지 않는다)
 
@@ -181,14 +181,13 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 | 환경변수 | 스킵 대상 | 이유 |
 |---|---|---|
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
-| `SKIP_RTK=1` | RTK 설치 + `settings.json` hook 설정 준비 | 독점 외부 서비스 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `GITHUB_TOKEN=...` | `gh_release_tag()` 함수 | API rate limit 우회 |
 
 로컬에서 CI와 동일하게 실행하려면:
 
 ```bash
-SKIP_CLAUDE_CODE=1 SKIP_RTK=1 SKIP_SKILLS=1 bash install.sh
+SKIP_CLAUDE_CODE=1 SKIP_SKILLS=1 bash install.sh
 ```
 
 ---

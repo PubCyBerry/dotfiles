@@ -557,6 +557,11 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Host "    Claude Code installed."
 }
 
+# claude native 바이너리는 ~\.local\bin 에 설치된다. 셸이 아닌 프로세스(MCP 서버 등)도
+# 찾을 수 있도록 User PATH에 등록한다.
+New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
+if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
+
 # =============================================
 # 3-1. Claude Code 설정 배포 (config/claude/ + config/agents/global.md → ~/.claude/)
 # =============================================
@@ -628,33 +633,6 @@ if (Test-Path $rolesSrc) {
         }
     }
 }
-
-# =============================================
-# 3-2. RTK (Rust Token Killer) 설치
-# =============================================
-Write-Host ""
-Write-Host "==> Installing RTK (Rust Token Killer)..."
-New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
-
-if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
-
-try {
-    $release = Invoke-RestMethod "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
-    $asset = $release.assets | Where-Object { $_.name -match "windows" -and $_.name -match "\.zip$" } | Select-Object -First 1
-    if ($asset) {
-        $tmpZip = "$env:TEMP\rtk-windows.zip"
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmpZip -UseBasicParsing
-        Expand-Archive -Path $tmpZip -DestinationPath $LocalBin -Force
-        Remove-Item $tmpZip -Force
-        Write-Host "    RTK installed."
-    } else {
-        Write-Host "    [!] RTK Windows 바이너리를 찾을 수 없음. 수동 설치: cargo install rtk"
-    }
-} catch {
-    Write-Host "    [!] RTK 설치 실패: $_"
-}
-
-# Claude hook 등록은 config\claude\settings.json의 `rtk hook claude` 엔트리로 미리 정의되어 있고 3-1 단계의 settings.json 병합으로 반영됨
 
 # =============================================
 # 4. PowerShell 프로파일 설정 (마커 방식)

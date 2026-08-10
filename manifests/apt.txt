@@ -1,7 +1,7 @@
 # Ubuntu/Debian apt 패키지 목록
 # install.sh가 읽어서 설치
 # apt에 충분한 버전이 없거나 미수록인 도구는 install.sh가 공식 스크립트/release로 설치
-#   (fnm, bun, fzf, eza, delta, yq, starship, yazi, lazygit, neovim, ruff, httpie, atuin, rtk)
+#   (fnm, bun, fzf, eza, delta, yq, starship, yazi, lazygit, neovim, ruff, httpie, atuin)
 
 # 빌드/기본
 build-essential
@@ -56,4 +56,3 @@ file                            # MIME type(파일 타입 탐지)
 # ruff # X, uv로 설치
 # httpie                        # O, http/https CLI
 # atuin # X, ?
-# rtk # X, ?

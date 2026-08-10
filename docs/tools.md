@@ -225,16 +225,6 @@ hyperfine --warmup 3 'rg pattern .'        # 워밍업 포함 (캐시 안정화)
 hyperfine --export-markdown bench.md 'cmd' # 결과를 마크다운 테이블로 저장
 ```
 
-### RTK — 토큰 최적화 프록시
-
-```bash
-rtk git status      # git 명령어 압축 출력 (59-80% 절감)
-rtk gh pr list      # GitHub CLI 압축 출력 (26-87% 절감)
-rtk cargo test      # 테스트 실패만 출력 (90%+ 절감)
-rtk gain            # 누적 토큰 절감 통계
-rtk gain --history  # 명령어별 절감 히스토리
-```
-
 ## 런타임
 
 ### bun — JavaScript 런타임 & 패키지 매니저

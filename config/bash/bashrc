@@ -3,9 +3,9 @@
 
 # === 비대화형 세션에서도 필요한 PATH 설정 ===
 # scp/rsync 등이 ~/.local/bin의 도구를 호출할 수 있으므로 가드 위에 둔다.
-RTK_PATH="$HOME/.local/bin"
-if [[ -d "$RTK_PATH" ]] && [[ ":$PATH:" != *":$RTK_PATH:"* ]]; then
-    export PATH="$RTK_PATH:$PATH"
+LOCAL_BIN_PATH="$HOME/.local/bin"
+if [[ -d "$LOCAL_BIN_PATH" ]] && [[ ":$PATH:" != *":$LOCAL_BIN_PATH:"* ]]; then
+    export PATH="$LOCAL_BIN_PATH:$PATH"
 fi
 
 # === Windows: WinGet Links 우회 (SSH/NETWORK 토큰에서 reparse symlink 거부 회피) ===

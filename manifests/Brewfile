@@ -41,8 +41,6 @@ brew "atuin"        # 히스토리 강화
 
 brew "tmux"
 
-# RTK (Rust Token Killer)
-brew "rtk"
 
 # CodexBar (AI 코딩 도구 사용량 메뉴바 앱, macOS 14+ Sonoma 필요)
 # Homebrew 6.0부터 서드파티 tap은 명시적 신뢰가 필요하다(`trusted:`).

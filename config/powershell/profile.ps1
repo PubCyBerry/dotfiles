@@ -77,8 +77,8 @@ if (Test-Path $gitBash) {
     function global:bash { & $gitBash @args }
 }
 
-# RTK PATH (install.ps1이 $USERPROFILE\rtk에 설치)
-$rtkPath = "$env:USERPROFILE\rtk"
-if ((Test-Path $rtkPath) -and ($env:PATH -notlike "*$rtkPath*")) {
-    $env:PATH = "$rtkPath;$env:PATH"
+# ~/.local/bin (claude native 바이너리 등)
+$localBin = "$env:USERPROFILE\.local\bin"
+if ((Test-Path $localBin) -and ($env:PATH -notlike "*$localBin*")) {
+    $env:PATH = "$localBin;$env:PATH"
 }
