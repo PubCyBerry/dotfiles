@@ -41,7 +41,7 @@ jobs:
 on:
   # 브랜치 push 시
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - "install.sh"       # 특정 파일 변경 시만 실행
 

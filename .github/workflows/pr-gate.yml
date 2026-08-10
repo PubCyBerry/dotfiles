@@ -2,7 +2,7 @@ name: PR Gate
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - install.sh
       - install.ps1
