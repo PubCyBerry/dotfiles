@@ -2,7 +2,6 @@
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
     "MAX_THINKING_TOKENS": "10000",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "ENABLE_PROMPT_CACHING_1H": "1",

@@ -52,3 +52,4 @@ def merge_permissions($old; $managed):
 | if (($old | has("hooks")) or ($managed | has("hooks"))) then
     .hooks = merge_hooks($old.hooks; $managed.hooks)
   else . end
+| if (.env | type) == "object" then del(.env.CLAUDE_CODE_SUBAGENT_MODEL) else . end
