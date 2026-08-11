@@ -96,11 +96,18 @@ merge_gitconfig() {
 }
 
 merge_codex_config() {
-    local src="$1" dst="$2"
-    local curSec="" line t key mapKey k sec_part
+    local src="$1" dst="$2" tmp
 
     if [[ ! -f "$src" ]]; then
         echo "    [!] $src not found, skipping."
+        return 0
+    fi
+    if ! command -v yq >/dev/null 2>&1; then
+        echo "    [!] yq not found, keeping existing config.toml"
+        return 0
+    fi
+    if ! yq -p=toml -o=json '.' "$src" >/dev/null 2>&1; then
+        echo "    [!] source config.toml is invalid, keeping existing config.toml"
         return 0
     fi
     if [[ ! -f "$dst" ]]; then
@@ -108,89 +115,52 @@ merge_codex_config() {
         echo "    Copied config.toml"
         return 0
     fi
-
-    # Parse source: srcKeys["sec\x1fkey"] = rawLine; srcSecOrder tracks section order
-    declare -A srcKeys doneKeys seenSec
-    local srcSecOrder=("")
-    curSec=""
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        t="${line#"${line%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
-        if [[ "$t" =~ ^\[(.+)\]$ ]]; then
-            curSec="${BASH_REMATCH[1]}"
-            local _f=0
-            for _s in "${srcSecOrder[@]}"; do [[ "$_s" == "$curSec" ]] && _f=1 && break; done
-            [[ $_f -eq 0 ]] && srcSecOrder+=("$curSec")
-        elif [[ -n "$t" && "${t:0:1}" != "#" && "$t" =~ ^([^[:space:]=]+)[[:space:]]*= ]]; then
-            srcKeys["${curSec}"$'\x1f'"${BASH_REMATCH[1]}"]="$line"
-        fi
-    done < "$src"
-
-    local tmp; tmp="$(mktemp)"; _TMPFILES+=("$tmp")
-    curSec=""
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        t="${line#"${line%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
-        if [[ "$t" =~ ^\[(.+)\]$ ]]; then
-            # Flush source keys missing from outgoing section
-            for k in "${!srcKeys[@]}"; do
-                sec_part="${k%%$'\x1f'*}"
-                [[ "$sec_part" != "$curSec" || -n "${doneKeys[$k]+x}" ]] && continue
-                printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
-                echo "    Added [${curSec}] ${k#*$'\x1f'}"
-            done
-            curSec="${BASH_REMATCH[1]}"; seenSec["$curSec"]="1"
-            printf '%s\n' "$line" >> "$tmp"
-        elif [[ -n "$t" && "${t:0:1}" != "#" && "$t" =~ ^([^[:space:]=]+)[[:space:]]*= ]]; then
-            key="${BASH_REMATCH[1]}"; mapKey="${curSec}"$'\x1f'"${key}"
-            doneKeys["$mapKey"]="1"
-            if [[ -n "${srcKeys[$mapKey]+x}" ]]; then
-                printf '%s\n' "${srcKeys[$mapKey]}" >> "$tmp"
-                [[ "${srcKeys[$mapKey]}" != "$line" ]] && echo "    Override [${curSec}] ${key}"
-            else
-                printf '%s\n' "$line" >> "$tmp"
-            fi
-        else
-            printf '%s\n' "$line" >> "$tmp"
-        fi
-    done < "$dst"
-
-    # Flush missing keys for last section
-    for k in "${!srcKeys[@]}"; do
-        sec_part="${k%%$'\x1f'*}"
-        [[ "$sec_part" != "$curSec" || -n "${doneKeys[$k]+x}" ]] && continue
-        printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
-        echo "    Added [${curSec}] ${k#*$'\x1f'}"
-    done
-
-    # Prepend missing top-level keys
-    local topMissing=()
-    for k in "${!srcKeys[@]}"; do
-        [[ "${k%%$'\x1f'*}" != "" || -n "${doneKeys[$k]+x}" ]] && continue
-        topMissing+=("${srcKeys[$k]}")
-        echo "    Added top-level ${k#*$'\x1f'}"
-    done
-    if [[ ${#topMissing[@]} -gt 0 ]]; then
-        local tmpTop; tmpTop="$(mktemp)"; _TMPFILES+=("$tmpTop")
-        printf '%s\n' "${topMissing[@]}" > "$tmpTop"
-        printf '\n' >> "$tmpTop"
-        cat "$tmp" >> "$tmpTop"
-        mv "$tmpTop" "$tmp"
+    if ! yq -p=toml -o=json '.' "$dst" >/dev/null 2>&1; then
+        echo "    [!] existing config.toml is invalid, keeping it unchanged"
+        return 0
     fi
 
-    # Append entirely missing sections
-    local sec
-    for sec in "${srcSecOrder[@]}"; do
-        [[ "$sec" == "" || -n "${seenSec[$sec]+x}" ]] && continue
-        printf '\n[%s]\n' "$sec" >> "$tmp"
-        for k in "${!srcKeys[@]}"; do
-            [[ "${k%%$'\x1f'*}" == "$sec" ]] && printf '%s\n' "${srcKeys[$k]}" >> "$tmp"
-        done
-        echo "    Added section [$sec]"
-    done
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if yq eval-all -p=toml -o=toml \
+        'select(fileIndex == 0) * select(fileIndex == 1)' \
+        "$src" "$dst" > "$tmp" 2>/dev/null \
+        && [[ -s "$tmp" ]] \
+        && yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1; then
+        mv "$tmp" "$dst"
+        echo "    Merged config.toml (existing values preserved)"
+    else
+        echo "    [!] merged config.toml is invalid, keeping existing config.toml"
+    fi
+}
 
-    mv "$tmp" "$dst"
-    echo "    Merged config.toml (source overrides destination)"
+merge_json_registry() {
+    local src="$1" dst="$2" tmp
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] $src not found, skipping."
+        return 0
+    fi
+    if [[ ! -f "$dst" ]]; then
+        cp -f "$src" "$dst"
+        echo "    Copied $(basename "$dst")"
+        return 0
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "    [!] jq not found, keeping existing $(basename "$dst")"
+        return 0
+    fi
+    local filter="$ROOT/scripts/merge-json-registry.jq"
+    if [[ ! -f "$filter" ]]; then
+        echo "    [!] merge-json-registry.jq not found, keeping existing $(basename "$dst")"
+        return 0
+    fi
+
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if jq -s -f "$filter" "$dst" "$src" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+        mv "$tmp" "$dst"
+        echo "    Merged $(basename "$dst")"
+    else
+        echo "    [!] jq merge failed, keeping existing $(basename "$dst")"
+    fi
 }
 
 add_to_path_runtime() {
@@ -231,6 +201,10 @@ arch_triple() {
         fi
     done
 }
+
+if [[ "${DOTFILES_FUNCTIONS_ONLY:-0}" == "1" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
 
 install_gh_tar() {
     # tar.gz → /usr/local/bin/$name. $1=name $2=url $3=bin_in_archive(default:$1)
@@ -735,11 +709,10 @@ if [[ -d "$ROLES_SRC" ]]; then
     done
 fi
 
-# hooks.json: 단순 복사
+# hooks.json: 사용자 hook 보존 + dotfiles 관리 command upsert
 CODEX_HOOKS_JSON_SRC="$ROOT/config/codex/hooks.json"
 if [[ -f "$CODEX_HOOKS_JSON_SRC" ]]; then
-    cp -f "$CODEX_HOOKS_JSON_SRC" "$CODEX_DIR/hooks.json"
-    echo "    Copied hooks.json"
+    merge_json_registry "$CODEX_HOOKS_JSON_SRC" "$CODEX_DIR/hooks.json"
 else
     echo "    [!] config/codex/hooks.json not found"
 fi
@@ -781,20 +754,7 @@ else
     SETTINGS_SRC="$ROOT/config/claude/settings.json"
     SETTINGS_DST="$CLAUDE_DIR/settings.json"
     if [[ -f "$SETTINGS_SRC" ]]; then
-        if [[ -f "$SETTINGS_DST" ]] && command -v jq >/dev/null 2>&1; then
-            # 기존 키 보존(claude-hud의 statusLine 등) + 새 키 덮어쓰기/추가
-            TMP="$(mktemp)"; _TMPFILES+=("$TMP")
-            if jq -s '.[0] * .[1]' "$SETTINGS_DST" "$SETTINGS_SRC" > "$TMP" \
-                && [[ -s "$TMP" ]]; then
-                mv "$TMP" "$SETTINGS_DST"
-                echo "    Merged settings.json"
-            else
-                echo "    [!] jq merge failed, keeping existing settings.json"
-            fi
-        else
-            cp -f "$SETTINGS_SRC" "$SETTINGS_DST"
-            echo "    Copied settings.json"
-        fi
+        merge_json_registry "$SETTINGS_SRC" "$SETTINGS_DST"
     else
         echo "    [!] config/claude/settings.json not found"
     fi
