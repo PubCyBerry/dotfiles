@@ -191,6 +191,58 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
     }
 }
 
+function Invoke-FnmPruneIfRequested {
+    if ($env:DOTFILES_PRUNE_NODE_VERSIONS -ne "1") { return }
+    $activeVer = (fnm current 2>$null)
+    if ($activeVer -notmatch '^v\d') {
+        Write-Host "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
+        return
+    }
+    $installedVers = @(fnm list 2>$null | ForEach-Object {
+        if ($_ -match '(v\d+\.\d+\.\d+)') { $Matches[1] }
+    } | Select-Object -Unique)
+    foreach ($ver in ($installedVers | Where-Object { $_ -ne $activeVer })) {
+        fnm uninstall $ver 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Removed old Node: $ver"
+        } else {
+            Write-Host "    [!] Node $ver 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
+        }
+    }
+}
+
+function Update-FnmStatusLine([string]$SettingsPath, [string]$FnmRoot, [string]$NodeVersion) {
+    $nodeExe = Join-Path $FnmRoot "node-versions\$NodeVersion\installation\node.exe"
+    if (-not (Test-Path $SettingsPath -PathType Leaf) -or
+        -not (Test-Path $nodeExe -PathType Leaf)) { return $false }
+    try {
+        $settings = Get-Content $SettingsPath -Raw | ConvertFrom-Json
+        $cmd = $settings.statusLine.command
+        if (-not ($cmd -is [string])) { return $false }
+        $rootPattern = ((($FnmRoot.TrimEnd('\', '/')) -split '[\\/]') |
+            ForEach-Object { [regex]::Escape($_) }) -join '[\\/]'
+        $nodePattern = "$rootPattern[\\/]node-versions[\\/]v\d+\.\d+\.\d+[\\/]installation(?:[\\/]bin)?[\\/]node(?:\.exe)?"
+        $match = [regex]::Match($cmd, $nodePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $match.Success) { return $false }
+        $newCmd = $cmd.Remove($match.Index, $match.Length).Insert($match.Index, $nodeExe)
+        if ($newCmd -ceq $cmd) { return $false }
+
+        $settings.statusLine.command = $newCmd
+        $tmp = Join-Path (Split-Path $SettingsPath) ".settings.$([guid]::NewGuid()).tmp"
+        try {
+            $settings | ConvertTo-Json -Depth 10 | Out-File $tmp -Encoding utf8 -NoNewline
+            Move-Item $tmp $SettingsPath -Force
+            Write-Host "    Patched statusLine node path: $($match.Value) -> $nodeExe"
+            return $true
+        } finally {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Host "    [!] statusLine node path update failed; keeping settings.json."
+        return $false
+    }
+}
+
 if ($env:DOTFILES_FUNCTIONS_ONLY -eq "1") { return }
 
 Write-Host "==> Windows dotfiles setup starting..."
@@ -404,54 +456,23 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     fnm use lts-latest
     Write-Host "    Node.js LTS installed."
 
-    # 구버전 정리 — LTS가 올라가면 이전 버전은 디스크만 차지한다(버전당 ~100MB).
-    # 현재 활성(=default) 버전만 남긴다. 다른 셸이 구버전을 쓰고 있었다면 그 셸의
-    # fnm junction이 끊기므로 정리 후에는 셸을 새로 열어야 한다.
-    $activeVer = (fnm current 2>$null)
-    if ($activeVer -match '^v\d') {
-        $installedVers = @(fnm list 2>$null | ForEach-Object {
-            if ($_ -match '(v\d+\.\d+\.\d+)') { $Matches[1] }
-        } | Select-Object -Unique)
-        $staleVers = @($installedVers | Where-Object { $_ -ne $activeVer })
-        foreach ($ver in $staleVers) {
-            fnm uninstall $ver 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "    Removed old Node: $ver"
-            } else {
-                Write-Host "    [!] Node $ver 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
-            }
-        }
-        if ($staleVers.Count -eq 0) { Write-Host "    No old Node versions ($activeVer only)." }
-    } else {
-        Write-Host "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
-    }
+    Invoke-FnmPruneIfRequested
 
     # fnm aliases\default → User PATH 영구 등록 (MCP 서버 등 비쉘 프로세스에서 npx 접근 가능)
-    $fnmDefaultPath = Join-Path $env:APPDATA "fnm\aliases\default"
-    if (Test-Path $fnmDefaultPath) {
+    $fnmRoot = if ($env:FNM_DIR) { $env:FNM_DIR } else { Join-Path $env:APPDATA "fnm" }
+    $fnmDefaultPath = Join-Path $fnmRoot "aliases\default"
+    if (Test-Path (Join-Path $fnmDefaultPath "node.exe") -PathType Leaf) {
         if (Add-ToUserPath $fnmDefaultPath) { Write-Host "    Added fnm aliases\default to User PATH: $fnmDefaultPath" }
         else { Write-Host "    fnm aliases\default already in User PATH." }
     } else {
-        Write-Host "    [!] fnm aliases\default not found. Run: fnm default lts-latest"
+        Write-Host "    [!] fnm aliases\default\node.exe not found. Run: fnm default lts-latest"
     }
 
     # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
-    $nodeVer = "v$((node --version 2>$null).TrimStart('v'))"
+    $nodeVersionOutput = node --version 2>$null
+    $nodeVer = if ($nodeVersionOutput -match '^v\d+\.\d+\.\d+$') { $nodeVersionOutput } else { $null }
     $settingsPath = Join-Path $ClaudeDir "settings.json"
-    if ((Test-Path $settingsPath) -and $nodeVer -match '^v\d') {
-        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-        $cmd = $settings.statusLine.command
-        if ($cmd -match '/fnm/node-versions/(v[\d.]+)/installation/node') {
-            $oldVer = $Matches[1]
-            if ($oldVer -ne $nodeVer) {
-                $settings.statusLine.command = $cmd -replace [regex]::Escape("/fnm/node-versions/$oldVer/installation/node"), "/fnm/node-versions/$nodeVer/installation/node"
-                $settings | ConvertTo-Json -Depth 10 | Out-File $settingsPath -Encoding utf8 -NoNewline
-                Write-Host "    Patched statusLine node path: $oldVer → $nodeVer"
-            } else {
-                Write-Host "    statusLine node path already up to date ($nodeVer)"
-            }
-        }
-    }
+    if ($nodeVer) { $null = Update-FnmStatusLine $settingsPath $fnmRoot $nodeVer }
 } else {
     Write-Host "    [!] fnm not found. Restart terminal and run:"
     Write-Host "        fnm install --lts && fnm default lts-latest"

@@ -260,6 +260,101 @@ arch_triple() {
     done
 }
 
+prune_node_versions() {
+    local current old
+    [[ "${DOTFILES_PRUNE_NODE_VERSIONS:-0}" == "1" ]] || return 0
+    current="$(fnm current 2>/dev/null || true)"
+    if [[ ! "$current" =~ ^v[0-9] ]]; then
+        echo "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
+        return
+    fi
+    while read -r old; do
+        [[ -n "$old" && "$old" != "$current" ]] || continue
+        if fnm uninstall "$old" >/dev/null 2>&1; then
+            echo "    Removed old Node: $old"
+        else
+            echo "    [!] Node $old 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
+        fi
+    done < <(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+}
+
+link_fnm_default_bins() {
+    local default_path="${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default"
+    local bin target link legacy_target
+    for bin in node npm npx; do
+        target="$default_path/bin/$bin"
+        link="$LOCAL_BIN/$bin"
+        legacy_target="$default_path/$bin"
+        if [[ ! -x "$target" ]]; then
+            echo "    [!] fnm default $bin is not executable: $target"
+            continue
+        fi
+        if [[ ! -e "$link" && ! -L "$link" ]]; then
+            ln -s "$target" "$link"
+            echo "    Linked $link -> fnm default"
+        elif [[ -L "$link" && ! -e "$link" && "$(readlink "$link")" == "$legacy_target" ]]; then
+            ln -sfn "$target" "$link"
+            echo "    Repaired legacy link $link -> fnm default"
+        elif [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
+            :
+        else
+            echo "    $link already exists, preserving it."
+        fi
+    done
+}
+
+update_fnm_statusline() {
+    local node_ver="$1" fnm_root="${FNM_DIR:-$HOME/.local/share/fnm}"
+    local target settings command rest old="" tmp
+    target="$fnm_root/node-versions/$node_ver/installation/bin/node"
+    settings="$CLAUDE_DIR/settings.json"
+    [[ -x "$target" && -f "$settings" ]] || return 0
+    command="$(jq -r '.statusLine.command // ""' "$settings" 2>/dev/null || true)"
+    [[ "$command" == *"$fnm_root/node-versions/"* ]] || return 0
+    rest="${command#*"$fnm_root/node-versions/"}"
+    rest="${rest%%/*}"
+    for candidate in "$fnm_root/node-versions/$rest/installation/node" \
+                     "$fnm_root/node-versions/$rest/installation/bin/node"; do
+        [[ "$command" == *"$candidate"* ]] && old="$candidate" && break
+    done
+    [[ -n "$old" && "$old" != "$target" ]] || return 0
+
+    tmp="$(mktemp "$CLAUDE_DIR/.settings.json.XXXXXX")"; _TMPFILES+=("$tmp")
+    if jq --arg old "$old" --arg new "$target" \
+        '.statusLine.command |= (split($old) | join($new))' "$settings" > "$tmp" &&
+       jq empty "$tmp" && mv "$tmp" "$settings"; then
+        echo "    Patched statusLine node path: $old -> $target"
+    fi
+}
+
+install_node_lts() {
+    echo
+    echo "==> Installing Node.js LTS via fnm..."
+    if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
+        echo "    [!] fnm not found. Restart terminal and run:"
+        echo "        fnm install --lts"
+        return
+    fi
+
+    eval "$(fnm env --shell bash)"
+    if ! fnm install --lts; then
+        echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
+        return
+    fi
+    fnm default lts-latest
+    fnm use lts-latest
+
+    local node_ver
+    node_ver="$(node --version 2>/dev/null || true)"
+    echo "    Node ${node_ver:-not active yet} active."
+    prune_node_versions
+    link_fnm_default_bins
+    if [[ "$node_ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        update_fnm_statusline "$node_ver"
+    fi
+    return 0
+}
+
 if [[ "${DOTFILES_FUNCTIONS_ONLY:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
@@ -633,80 +728,7 @@ if [[ -n "$YQ_ARCH" ]]; then
     # =============================================
     # 2. Node.js LTS (fnm)
     # =============================================
-    echo
-    echo "==> Installing Node.js LTS via fnm..."
-    if command -v fnm >/dev/null 2>&1 || [[ -x "$HOME/.local/share/fnm/fnm" ]]; then
-        eval "$(fnm env --shell bash)"
-        if fnm install --lts; then
-            # fnm uses the exact version number, but we can set default to the installed lts
-            LTS_VER=$(fnm ls | grep "lts-latest" | awk '{print $2}' || true)
-            if [[ -z "$LTS_VER" ]]; then
-                LTS_VER=$(fnm ls | grep -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1)
-            fi
-            if [[ -n "$LTS_VER" ]]; then
-                fnm default "$LTS_VER"
-                fnm use "$LTS_VER"
-            else
-                # fallback
-                fnm default lts-latest || true
-                fnm use lts-latest || true
-            fi
-            echo "    Node $(node --version 2>/dev/null || echo 'not active yet') active."
-
-            # 구버전 정리 — LTS가 올라가면 이전 버전은 디스크만 차지한다(버전당 ~100MB).
-            # 현재 활성(=default) 버전만 남긴다. 구버전을 쓰던 셸은 fnm 심볼릭 링크가
-            # 끊기므로 정리 후 새 셸을 열어야 한다.
-            _cur_ver="$(fnm current 2>/dev/null || true)"
-            if [[ "$_cur_ver" =~ ^v[0-9] ]]; then
-                while read -r _old_ver; do
-                    [[ -n "$_old_ver" && "$_old_ver" != "$_cur_ver" ]] || continue
-                    if fnm uninstall "$_old_ver" >/dev/null 2>&1; then
-                        echo "    Removed old Node: $_old_ver"
-                    else
-                        echo "    [!] Node $_old_ver 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
-                    fi
-                done < <(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
-            else
-                echo "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
-            fi
-
-            # statusLine.command의 fnm node 버전 경로 갱신 (버전 업 시 깨지는 절대 경로 수정)
-            if [[ -f "$CLAUDE_DIR/settings.json" ]] && command -v jq >/dev/null 2>&1; then
-                _node_ver="$(node --version 2>/dev/null || true)"
-                _old_ver="$(jq -r '.statusLine.command // ""' "$CLAUDE_DIR/settings.json" \
-                    | grep -oE 'fnm/node-versions/v[0-9]+\.[0-9]+\.[0-9]+' | head -1 \
-                    | sed 's|fnm/node-versions/||' || true)"
-                if [[ -n "$_old_ver" && "$_old_ver" != "$_node_ver" ]]; then
-                    _tmp="$(mktemp)"; _TMPFILES+=("$_tmp")
-                    jq --arg old "$_old_ver" --arg new "$_node_ver" \
-                        '.statusLine.command |= gsub("/fnm/node-versions/" + $old + "/installation/node"; "/fnm/node-versions/" + $new + "/installation/node")' \
-                        "$CLAUDE_DIR/settings.json" > "$_tmp" && mv "$_tmp" "$CLAUDE_DIR/settings.json"
-                    echo "    Patched statusLine node path: $_old_ver → $_node_ver"
-                elif [[ -n "$_old_ver" ]]; then
-                    echo "    statusLine node path already up to date ($_node_ver)"
-                fi
-            fi
-        # fnm aliases/default → ~/.local/bin symlink (MCP 서버 등 비쉘 프로세스에서 npx 접근 가능)
-        FNM_DEFAULT_PATH="${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default"
-        if [[ -e "$FNM_DEFAULT_PATH" ]]; then
-            for _bin in node npm npx; do
-                if [[ ! -e "$LOCAL_BIN/$_bin" ]]; then
-                    ln -sf "$FNM_DEFAULT_PATH/$_bin" "$LOCAL_BIN/$_bin"
-                    echo "    Linked $LOCAL_BIN/$_bin -> fnm default"
-                else
-                    echo "    $LOCAL_BIN/$_bin already exists, skipping."
-                fi
-            done
-        else
-            echo "    [!] fnm aliases/default not found at $FNM_DEFAULT_PATH"
-        fi
-        else
-            echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
-        fi
-    else
-        echo "    [!] fnm not found. Restart terminal and run:"
-        echo "        fnm install --lts"
-    fi
+    install_node_lts
 # =============================================
 # 2-1. npm 전역 패키지 (manifests/npm-global.txt)
 # =============================================

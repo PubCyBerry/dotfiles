@@ -36,7 +36,7 @@ WinGet으로 설치한 CLI 도구는 모두 `%LOCALAPPDATA%\Microsoft\WinGet\Lin
 - **tmux (`marlocarlo.psmux`)**: WinGet **symbolic link**지만 패키지 디렉토리가 PATH에 없으면 Links 심링크에만 의존해 깨진다. 증상: PowerShell `이 작업을 하기 위해 지정된 파일로 아무 응용 프로그램도 연결되어 있지 않습니다` / Git Bash `Permission denied`. → `bashrc` 그룹 A와 `profile.ps1`에 psmux 패키지 디렉토리를 등록해 실경로로 해석.
 - **node / npm (fnm)**: fnm은 node를 **junction 체인**(`multishell → aliases/default → lts-latest → version`)으로 노출하는데, NETWORK 토큰은 이 junction traversal도 거부한다(R2L 심링크 정책과 무관). 증상: Claude Code 등의 hook이 `bash -c node`를 실행할 때 `node: command not found` → `UserPromptSubmit hook error`. → 실제 설치 디렉토리(`AppData/Roaming/fnm/node-versions/<ver>/installation`, reparse 아님)를 PATH에 직접 추가.
   - `bashrc`에서는 **가드 위**(비대화형에서도 적용되는 구간)에 추가해야 한다. 가드 아래의 `fnm env`는 hook 같은 비대화형 셸이 실행 전에 `return`하므로 효과가 없다.
-  - `profile.ps1`에서는 `fnm env` 직후 설치 디렉토리를 PATH에 prepend (`fnm current`는 비대화형에서 `none`을 반환하므로 `node-versions` 디렉토리를 직접 스캔).
+  - `profile.ps1`에서는 `fnm env` 직후 설치 디렉토리를 PATH 뒤에 fallback으로 추가한다(`fnm current`는 비대화형에서 `none`을 반환하므로 `node-versions` 디렉토리를 직접 스캔). fnm multishell 경로가 앞에 남아 `fnm use`/`--use-on-cd`가 선택한 버전이 우선한다.
 
 > **`fsutil behavior set SymlinkEvaluation R2L:1`은 답이 아니다.** R2L은 심링크 "따라가기"만 허용하고, 그 위에 "untrusted mount point"(`경로에 신뢰할 수 없는 탑재 지점이 포함되어 있기 때문에 경로를 통과할 수 없습니다`) 게이트가 별도로 막아 실행이 여전히 거부된다. junction은 R2L 적용 대상도 아니다. 정책 완화는 보안만 약화시키고 효과가 없으므로 기본값(R2L:0) 유지. 해결은 항상 **실경로를 PATH에 추가**하는 쪽이다.
 
