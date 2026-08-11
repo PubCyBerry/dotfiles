@@ -43,25 +43,83 @@ set_profile_block() {
     local file="$1" content="$2"
     local begin="# ===== dotfiles-begin ====="
     local end="# ===== dotfiles-end ====="
-    local block tmp
-    block="$(printf '%s\n%s\n%s' "$begin" "$content" "$end")"
+    local block_file tmp begin_exact end_exact begin_any end_any begin_line end_line
+    block_file="$(mktemp)"; _TMPFILES+=("$block_file")
+    printf '%s\n%s\n%s\n' "$begin" "$content" "$end" > "$block_file"
 
     mkdir -p "$(dirname "$file")"
     [[ -f "$file" ]] || : > "$file"
 
-    if grep -qF "$begin" "$file" && grep -qF "$end" "$file"; then
+    begin_exact="$(grep -Fxc -- "$begin" "$file" || true)"
+    end_exact="$(grep -Fxc -- "$end" "$file" || true)"
+    begin_any="$(grep -Fc -- "$begin" "$file" || true)"
+    end_any="$(grep -Fc -- "$end" "$file" || true)"
+
+    if [[ "$begin_any" == "0" && "$end_any" == "0" ]]; then
+        printf '\n' >> "$file"
+        cat "$block_file" >> "$file"
+        echo "    Appended dotfiles block to $file"
+    elif [[ "$begin_exact" == "1" && "$end_exact" == "1" &&
+            "$begin_any" == "1" && "$end_any" == "1" ]]; then
+        begin_line="$(grep -nFx -- "$begin" "$file" | cut -d: -f1)"
+        end_line="$(grep -nFx -- "$end" "$file" | cut -d: -f1)"
+        if (( begin_line >= end_line )); then
+            echo "    [!] Invalid dotfiles marker order in $file; keeping the file unchanged." >&2
+            return 1
+        fi
+
         tmp="$(mktemp)"; _TMPFILES+=("$tmp")
-        awk -v begin="$begin" -v end="$end" -v repl="$block" '
-            BEGIN { skip = 0 }
-            $0 == begin { print repl; skip = 1; next }
-            skip && $0 == end { skip = 0; next }
+        if ! awk -v begin="$begin" -v end="$end" -v block_file="$block_file" '
+            BEGIN { skip = 0; found_begin = 0; found_end = 0 }
+            $0 == begin {
+                while ((getline line < block_file) > 0) print line
+                close(block_file)
+                found_begin++
+                skip = 1
+                next
+            }
+            skip && $0 == end { found_end++; skip = 0; next }
             !skip { print }
-        ' "$file" > "$tmp"
+            END { if (skip || found_begin != 1 || found_end != 1) exit 1 }
+        ' "$file" > "$tmp"; then
+            echo "    [!] Failed to replace dotfiles marker block in $file; keeping the file unchanged." >&2
+            return 1
+        fi
         mv "$tmp" "$file"
         echo "    Updated dotfiles block in $file"
     else
-        printf '\n%s\n' "$block" >> "$file"
-        echo "    Appended dotfiles block to $file"
+        echo "    [!] Invalid dotfiles marker state in $file; keeping the file unchanged." >&2
+        return 1
+    fi
+}
+
+install_shell_profiles() {
+    local profile src
+    echo "==> Updating shell profiles..."
+    for profile in bashrc inputrc; do
+        src="$ROOT/config/bash/$profile"
+        if [[ -f "$src" ]]; then
+            set_profile_block "$HOME/.$profile" "$(cat "$src")"
+        elif [[ "$profile" == "bashrc" ]]; then
+            echo "    [!] config/bash/bashrc not found, skipping bashrc."
+        fi
+    done
+
+    if [[ "$OS" == "Darwin" ]]; then
+        set_profile_block "$HOME/.zprofile" 'if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+fi'
+        set_profile_block "$HOME/.zshrc" 'typeset -U path PATH
+path=("$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.local/share/fnm" $path)
+
+if command -v fnm >/dev/null 2>&1; then
+    eval "$(fnm env --use-on-cd --shell zsh)"
+fi
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init zsh)"
+fi'
     fi
 }
 
@@ -803,18 +861,10 @@ else
 fi
 
 # =============================================
-# 4. bash 프로파일 설정 (~/.bashrc, ~/.inputrc, 마커 방식)
+# 4. shell 프로파일 설정 (bash + macOS zsh, 마커 방식)
 # =============================================
 echo
-echo "==> Updating bash profile..."
-for _profile in bashrc inputrc; do
-    _src="$ROOT/config/bash/$_profile"
-    if [[ -f "$_src" ]]; then
-        set_profile_block "$HOME/.$_profile" "$(cat "$_src")"
-    elif [[ "$_profile" == "bashrc" ]]; then
-        echo "    [!] config/bash/bashrc not found, skipping bashrc."
-    fi
-done
+install_shell_profiles
 
 # =============================================
 # 6. Claude Code skills 설치 (manifests/skills.txt)

@@ -49,21 +49,31 @@ function Set-ProfileBlock([string]$FilePath, [string]$Content) {
     $begin = "# ===== dotfiles-begin ====="
     $end   = "# ===== dotfiles-end ====="
     $block = "$begin`n$Content`n$end"
-    New-Item -ItemType File -Force -Path $FilePath | Out-Null
+    if (-not (Test-Path $FilePath)) { New-Item -ItemType File -Path $FilePath | Out-Null }
 
     $existing = Get-Content $FilePath -Raw -ErrorAction SilentlyContinue
     if (-not $existing) { $existing = "" }
 
-    # 기존 마커 블록을 정규식으로 완전 교체 (Singleline으로 개행 포함 매칭)
-    $pattern    = [regex]::Escape($begin) + ".*?" + [regex]::Escape($end)
-    $newContent = [regex]::Replace($existing, $pattern, $block,
-                      [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $beginPattern = "(?m)^" + [regex]::Escape($begin) + "(?=\r?$)"
+    $endPattern   = "(?m)^" + [regex]::Escape($end) + "(?=\r?$)"
+    $beginMatches = [regex]::Matches($existing, $beginPattern)
+    $endMatches   = [regex]::Matches($existing, $endPattern)
+    $beginCount   = [regex]::Matches($existing, [regex]::Escape($begin)).Count
+    $endCount     = [regex]::Matches($existing, [regex]::Escape($end)).Count
 
-    if ($newContent -eq $existing) {
+    if ($beginCount -eq 0 -and $endCount -eq 0) {
         $newContent = "$existing`n$block"
         Write-Host "    Appended dotfiles block to $FilePath"
-    } else {
+    } elseif ($beginCount -eq 1 -and $endCount -eq 1 -and
+              $beginMatches.Count -eq 1 -and $endMatches.Count -eq 1 -and
+              $beginMatches[0].Index -lt $endMatches[0].Index) {
+        $afterEnd = $endMatches[0].Index + $endMatches[0].Length
+        $newContent = $existing.Substring(0, $beginMatches[0].Index) +
+                      $block + $existing.Substring($afterEnd)
         Write-Host "    Updated dotfiles block in $FilePath"
+    } else {
+        Write-Warning "Invalid dotfiles marker state in $FilePath; keeping the file unchanged."
+        throw "Profile marker validation failed: $FilePath"
     }
     $newContent | Out-File -FilePath $FilePath -Encoding utf8 -NoNewline
 }
@@ -624,7 +634,7 @@ if (Test-Path $profileSrc) {
     $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
     $block = "$profileContent`n$claudeAlias"
 
-    $profilePaths = @("$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
+    $profilePaths = @($PROFILE.CurrentUserCurrentHost)
     foreach ($prof in $profilePaths) {
         New-Item -ItemType Directory -Force -Path (Split-Path $prof) | Out-Null
         Set-ProfileBlock $prof $block
@@ -658,12 +668,9 @@ if (Test-Path $bashrcSrc) {
             Set-ProfileBlock $inputrcPath $inputrcContent
         }
 
-        # ~/.bash_profile이 없으면 생성 (Git Bash 로그인 셸 경고 방지)
+        # Git Bash 로그인 셸에서 ~/.bashrc를 로드하도록 사용자 설정을 보존하며 추가
         $bashProfilePath = Join-Path $env:USERPROFILE ".bash_profile"
-        if (-not (Test-Path $bashProfilePath)) {
-            Set-Content $bashProfilePath "[[ -f ~/.bashrc ]] && . ~/.bashrc" -Encoding utf8
-            Write-Host "    Created $bashProfilePath"
-        }
+        Set-ProfileBlock $bashProfilePath "[[ -f ~/.bashrc ]] && . ~/.bashrc"
     }
 } else {
     Write-Host "    [!] config\bash\bashrc not found, skipping Git Bash setup."

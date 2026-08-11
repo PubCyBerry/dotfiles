@@ -320,37 +320,86 @@ brew uninstall rtk 2>/dev/null || true   # macOS에서 Brewfile로 설치한 경
 dotfiles 마커 블록(`# ===== dotfiles-begin =====` ~ `# ===== dotfiles-end =====`) 제거:
 
 ```powershell
-$prof = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-if (Test-Path $prof) {
-    $content = Get-Content $prof -Raw
-    $content = $content -replace '(?s)\r?\n?# ===== dotfiles-begin =====(.*?)# ===== dotfiles-end =====\r?\n?', ''
-    $content | Out-File $prof -Encoding utf8 -NoNewline
-    Write-Host "dotfiles 블록 제거 완료: $prof"
+function Remove-DotfilesProfileBlock([string]$Path) {
+    if (-not (Test-Path $Path)) { return }
+    $begin = "# ===== dotfiles-begin ====="
+    $end = "# ===== dotfiles-end ====="
+    $content = Get-Content $Path -Raw
+    if ($null -eq $content) { $content = "" }
+    $beginMatches = [regex]::Matches($content, "(?m)^$([regex]::Escape($begin))(?=\r?$)")
+    $endMatches = [regex]::Matches($content, "(?m)^$([regex]::Escape($end))(?=\r?$)")
+    $beginCount = [regex]::Matches($content, [regex]::Escape($begin)).Count
+    $endCount = [regex]::Matches($content, [regex]::Escape($end)).Count
+
+    if ($beginCount -eq 0 -and $endCount -eq 0) { return }
+    if ($beginCount -ne 1 -or $endCount -ne 1 -or
+        $beginMatches.Count -ne 1 -or $endMatches.Count -ne 1 -or
+        $beginMatches[0].Index -ge $endMatches[0].Index) {
+        throw "Invalid dotfiles marker state in $Path; file was not changed."
+    }
+
+    $afterEnd = $endMatches[0].Index + $endMatches[0].Length
+    if ($content.Substring($afterEnd).StartsWith("`r`n")) { $afterEnd += 2 }
+    elseif ($content.Substring($afterEnd).StartsWith("`n")) { $afterEnd++ }
+    $content = $content.Substring(0, $beginMatches[0].Index) + $content.Substring($afterEnd)
+    $content | Out-File $Path -Encoding utf8 -NoNewline
+    Write-Host "dotfiles 블록 제거 완료: $Path"
 }
+
+Remove-DotfilesProfileBlock $PROFILE.CurrentUserCurrentHost
 ```
 
 ---
 
 ### 5. Git Bash 프로파일 정리
 
-`.bashrc`와 `.inputrc`에서 마커 블록 제거 (Git Bash에서 실행):
+`.bashrc`, `.inputrc`, `.bash_profile`, macOS zsh profile에서 마커 블록 제거:
 
 ```bash
-for file in ~/.bashrc ~/.inputrc; do
-    if [ -f "$file" ]; then
-        sed -i '/# ===== dotfiles-begin =====/,/# ===== dotfiles-end =====/d' "$file"
-        echo "dotfiles 블록 제거 완료: $file"
+remove_profile_block() {
+    file="$1"
+    [ -f "$file" ] || return 0
+    begin='# ===== dotfiles-begin ====='
+    end='# ===== dotfiles-end ====='
+    begin_exact=$(grep -Fxc -- "$begin" "$file" || true)
+    end_exact=$(grep -Fxc -- "$end" "$file" || true)
+    begin_any=$(grep -Fc -- "$begin" "$file" || true)
+    end_any=$(grep -Fc -- "$end" "$file" || true)
+
+    [ "$begin_any" -eq 0 ] && [ "$end_any" -eq 0 ] && return 0
+    if [ "$begin_exact" -ne 1 ] || [ "$end_exact" -ne 1 ] ||
+       [ "$begin_any" -ne 1 ] || [ "$end_any" -ne 1 ]; then
+        echo "[!] Invalid dotfiles marker state in $file; file was not changed." >&2
+        return 1
     fi
+    begin_line=$(grep -nFx -- "$begin" "$file" | cut -d: -f1)
+    end_line=$(grep -nFx -- "$end" "$file" | cut -d: -f1)
+    if [ "$begin_line" -ge "$end_line" ]; then
+        echo "[!] Invalid dotfiles marker order in $file; file was not changed." >&2
+        return 1
+    fi
+
+    tmp=$(mktemp "${TMPDIR:-/tmp}/dotfiles-profile.XXXXXX")
+    if ! awk -v begin="$begin" -v end="$end" '
+        BEGIN { skip = 0; found_begin = 0; found_end = 0 }
+        $0 == begin { found_begin++; skip = 1; next }
+        skip && $0 == end { found_end++; skip = 0; next }
+        !skip { print }
+        END { if (skip || found_begin != 1 || found_end != 1) exit 1 }
+    ' "$file" > "$tmp"; then
+        rm -f "$tmp"
+        echo "[!] Failed to remove dotfiles block from $file; file was not changed." >&2
+        return 1
+    fi
+    mv "$tmp" "$file"
+    echo "dotfiles 블록 제거 완료: $file"
+}
+
+status=0
+for file in ~/.bashrc ~/.inputrc ~/.bash_profile ~/.zprofile ~/.zshrc; do
+    remove_profile_block "$file" || status=1
 done
-```
-
-install.ps1이 생성한 `.bash_profile` 제거:
-
-```powershell
-# 내용이 dotfiles 생성본인지 확인 후 삭제
-Get-Content "$env:USERPROFILE\.bash_profile"
-# 확인 후:
-Remove-Item "$env:USERPROFILE\.bash_profile" -Force
+[ "$status" -eq 0 ]
 ```
 
 ---
@@ -483,9 +532,8 @@ winget uninstall --id Anthropic.Claude
 
 ```powershell
 # 마커 블록 제거
-$prof = "$env:USERPROFILE\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-(Get-Content $prof -Raw) -replace '(?s)\r?\n?# ===== dotfiles-begin =====(.*?)# ===== dotfiles-end =====\r?\n?', '' |
-    Out-File $prof -Encoding utf8 -NoNewline
+# 위 4절의 fail-closed helper를 정의한 뒤 실행
+Remove-DotfilesProfileBlock $PROFILE.CurrentUserCurrentHost
 
 # Git 설정 제거
 git config --global --unset core.pager
