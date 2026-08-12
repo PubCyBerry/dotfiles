@@ -53,8 +53,9 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - `manifests/skills.txt`: `owner/repo@skill-name` 형식 확인
 
 **test-agent-roles**
-- `scripts/validate-agent-roles.py`: `config/agents/roles/` 소스 검증. 메타를 body와 조립한 뒤 파싱하므로, 조립 후에야 드러나는 오류(예: `body.md`가 `---`로 시작해 Claude frontmatter 경계가 깨지거나, `'''`가 있어 Codex TOML literal string이 조기 종료되는 경우)를 잡는다
-- 검사 항목: 필수 파일 3종(`body.md`, `claude.frontmatter`, `codex.toml`), `name`과 디렉터리명 일치, Claude 쪽 허용 키/model 값, Codex 쪽 허용 키·`model_reasoning_effort`·`sandbox_mode` 값, 파일을 쓰는 role이 `read-only` sandbox로 배포되지 않는지
+- `uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py`: `config/agents/roles/` 소스 검증. 메타를 body와 조립한 뒤 PyYAML/TOML로 파싱하므로 조립 후에야 드러나는 오류도 잡는다
+- Claude agent와 `subagent-creator`는 같은 공용 engine으로 malformed YAML, 알 수 없는 key·tool, field type을 검사한다. unittest가 최신 field와 model alias의 회귀를 고정한다
+- Codex 쪽 허용 키·`model_reasoning_effort`·`sandbox_mode`, 파일을 쓰는 role의 `read-only` sandbox도 검사한다
 - `body.md`에 플랫폼 고유 표현(`메인 스레드`, `서브에이전트`, `subagent`, `SKILL.md`, `Task 도구`)이 없는지 확인. 같은 문장이 Claude·Codex 양쪽에서 성립해야 한다
 
 ### apt 캐시 전략

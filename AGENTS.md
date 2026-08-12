@@ -109,7 +109,7 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
-   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치
 6. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -128,7 +128,7 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code native 설치 (`curl -fsSL https://claude.ai/install.sh | bash`)
-   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json `jq -s '.[0]*.[1]'` 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
 7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -181,7 +181,7 @@ Claude Code와 Codex에 공통으로 배포하는 역할 정의는 `config/agent
 ```text
 config/agents/roles/<name>/
 ├── body.md              # 공용 시스템 프롬프트 (플랫폼 중립 표현으로 작성)
-├── claude.frontmatter   # YAML — name/description/tools/model
+├── claude.frontmatter   # YAML — Claude agent frontmatter fields
 └── codex.toml           # TOML — name/description/model_reasoning_effort/sandbox_mode
 ```
 
@@ -216,10 +216,14 @@ codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agen
 새 role을 추가하거나 고치면 커밋 전에 검증한다. CI(`pr-gate.yml`의 `test-agent-roles`)가 같은 스크립트를 돌린다.
 
 ```bash
-python3 scripts/validate-agent-roles.py
+uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py
 ```
 
-Claude subagent 형식을 더 엄격히 보려면 `subagent-creator` skill의 `scripts/validate_subagent.py`를 조립 결과에 돌린다(`cat claude.frontmatter body.md > /tmp/<name>.md`).
+단일 Claude agent 파일은 같은 공용 engine을 쓰는 `subagent-creator` validator로 검사한다.
+
+```bash
+uv run --with pyyaml --python 3.11 config/claude/skills/subagent-creator/scripts/validate_subagent.py <agent.md>
+```
 
 ## 설치/언인스톨 변경 지침
 

@@ -9,6 +9,7 @@ on:
       - "config/**"
       - "manifests/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/pr-gate.yml"
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - "config/**"
       - "manifests/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/pr-gate.yml"
 
 concurrency:
@@ -233,11 +235,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PyYAML
-        run: python3 -m pip install --break-system-packages --quiet pyyaml
+      - uses: astral-sh/setup-uv@v6
 
       - name: Validate role sources and composed frontmatter
-        run: python3 scripts/validate-agent-roles.py
+        run: uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py
+
+      - name: Test agent validator
+        run: uv run --with pyyaml --python 3.11 -m unittest discover -s tests -p test_agent_role_validation.py
 
       - name: Assert body stays platform-neutral
         run: |
