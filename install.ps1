@@ -35,11 +35,324 @@ function Get-ManifestLines([string]$Path) {
         }
 }
 
+$script:ReceiptPath = if ($env:DOTFILES_RECEIPT_PATH) {
+    $env:DOTFILES_RECEIPT_PATH
+} else {
+    Join-Path $env:LOCALAPPDATA "dotfiles\install-receipt.json"
+}
+
+function Get-WingetVersion([string]$Text, [string]$Id) {
+    foreach ($line in ($Text -split "`r?`n")) {
+        $tokens = @($line -split '\s+' | Where-Object { $_ })
+        for ($i = 0; $i -lt $tokens.Count - 1; $i++) {
+            if ($tokens[$i] -ieq $Id) { return $tokens[$i + 1] }
+        }
+    }
+    return ''
+}
+$script:Receipt = $null
+$script:ReceiptReady = $false
+$script:FunctionsOnlyMode = $env:DOTFILES_FUNCTIONS_ONLY -eq '1'
+
+function Save-InstallReceipt {
+    $dir = Split-Path $script:ReceiptPath
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $tmp = Join-Path $dir ".install-receipt.$([guid]::NewGuid()).tmp"
+    try {
+        $script:Receipt | ConvertTo-Json -Depth 10 | Out-File $tmp -Encoding utf8 -NoNewline
+        $null = Get-Content $tmp -Raw | ConvertFrom-Json -AsHashtable
+        Move-Item $tmp $script:ReceiptPath -Force
+    } finally {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Initialize-InstallReceipt {
+    $receiptItem = Get-Item -LiteralPath $script:ReceiptPath -Force -ErrorAction SilentlyContinue
+    if ($receiptItem -and ($receiptItem -isnot [IO.FileInfo] -or ($receiptItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+        Write-Warning "Invalid install receipt path type; preserving it: $script:ReceiptPath"
+        $script:ReceiptReady = $false
+        return $false
+    }
+    if ($receiptItem) {
+        try {
+            $receipt = Get-Content $script:ReceiptPath -Raw | ConvertFrom-Json -AsHashtable
+            if ($receipt.schemaVersion -ne 1 -or
+                $receipt.artifacts -isnot [Collections.IDictionary] -or
+                $receipt.packages -isnot [Collections.IDictionary] -or
+                $receipt.values -isnot [Collections.IDictionary]) { throw "invalid schema" }
+            $script:Receipt = $receipt
+            $script:ReceiptReady = $true
+            return $true
+        } catch {
+            Write-Warning "Invalid install receipt; preserving it and skipping managed writes: $script:ReceiptPath"
+            $script:ReceiptReady = $false
+            return $false
+        }
+    }
+    $script:Receipt = [ordered]@{ schemaVersion = 1; artifacts = [ordered]@{}; packages = [ordered]@{}; values = [ordered]@{} }
+    $script:ReceiptReady = $true
+    Save-InstallReceipt
+    return $true
+}
+
+function Get-ManagedPath([string]$Path) {
+    [IO.Path]::GetFullPath($Path)
+}
+
+function Test-ManagedParentPath([string]$Path) {
+    $parent = [IO.Path]::GetDirectoryName((Get-ManagedPath $Path))
+    $boundary = if ($env:USERPROFILE) { (Get-ManagedPath $env:USERPROFILE).TrimEnd('\') } else { $null }
+    while ($parent) {
+        if ($boundary -and $parent.Equals($boundary, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        $item = Get-Item -LiteralPath $parent -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item -isnot [IO.DirectoryInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) { return $false }
+        $next = [IO.Directory]::GetParent($parent)
+        if (-not $next) { break }
+        $parent = $next.FullName
+    }
+    return $true
+}
+
+function Install-ManagedFile([string]$SourcePath, [string]$DestPath, [ValidateSet('Takeover','Skip')] [string]$Collision = 'Takeover') {
+    if (-not $script:ReceiptReady -or -not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) { return $false }
+    if (-not (Test-ManagedParentPath $DestPath)) {
+        Write-Warning "Unsupported destination parent path; preserving: $DestPath"
+        return $false
+    }
+    $key = Get-ManagedPath $DestPath
+    $entry = $script:Receipt.artifacts[$key]
+    $destItem = Get-Item -LiteralPath $DestPath -Force -ErrorAction SilentlyContinue
+    if ($destItem -and ($destItem -isnot [IO.FileInfo] -or ($destItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+        Write-Warning "Unsupported destination type; preserving: $DestPath"
+        return $false
+    }
+    $exists = $null -ne $destItem
+    $beforeHash = if ($exists) { (Get-FileHash -LiteralPath $DestPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+    $sourceHash = (Get-FileHash -LiteralPath $SourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    if ($entry) {
+        if ($entry.pending -and $exists -and $beforeHash -eq $entry.targetHash) {
+            $entry.installedHash = $entry.targetHash
+            $entry.pending = $false
+            foreach ($field in @('targetHash','previousHash','previousExists')) { $null = $entry.Remove($field) }
+            Save-InstallReceipt
+            if ($beforeHash -eq $sourceHash) { return $true }
+        }
+        $expectedHash = if ($entry.pending -and $entry.Contains('previousHash')) { $entry.previousHash } elseif ($entry.pending) { $entry.before.hash } else { $entry.installedHash }
+        $expectedExists = if ($entry.pending -and $entry.Contains('previousExists')) { [bool]$entry.previousExists } elseif ($entry.pending) { [bool]$entry.before.exists } else { $true }
+        if ($exists -ne $expectedExists -or ($exists -and $beforeHash -ne $expectedHash)) {
+            Write-Warning "Managed file changed or missing; preserving: $DestPath"
+            return $false
+        }
+        if (-not $entry.pending -and $beforeHash -eq $sourceHash) { return $true }
+    } elseif ($exists -and $Collision -eq 'Skip') {
+        Write-Warning "Unowned file collision; preserving: $DestPath"
+        return $false
+    } elseif ($exists -and $beforeHash -eq $sourceHash) {
+        return $true
+    } else {
+        $backup = $null
+        if ($exists) {
+            $backup = "$DestPath.dotfiles-backup"
+            $n = 0
+            while (Get-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue) { $n++; $backup = "$DestPath.dotfiles-backup.$n" }
+        }
+        $script:Receipt.artifacts[$key] = [ordered]@{
+            before = [ordered]@{ exists = $exists; hash = $beforeHash; backup = $backup }
+            installedHash = $null
+        }
+        $entry = $script:Receipt.artifacts[$key]
+    }
+
+    $entry.pending = $true
+    $entry.targetHash = $sourceHash
+    $entry.previousHash = $beforeHash
+    $entry.previousExists = $exists
+    Save-InstallReceipt
+
+    $backup = $entry.before.backup
+    if ($entry.before.exists -and $null -eq $entry.installedHash -and $backup) {
+        $backupItem = Get-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        if ($backupItem) {
+            if ($backupItem -isnot [IO.FileInfo] -or ($backupItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                (Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.before.hash) {
+                Write-Warning "Managed backup collision; preserving destination: $DestPath"
+                return $false
+            }
+        } else {
+            $backupTmp = "$backup.$([guid]::NewGuid()).tmp"
+            try {
+                Copy-Item -LiteralPath $DestPath -Destination $backupTmp
+                if ((Get-FileHash -LiteralPath $backupTmp -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.before.hash) {
+                    Write-Warning "Destination changed before backup; preserving: $DestPath"
+                    return $false
+                }
+                Move-Item -LiteralPath $backupTmp -Destination $backup
+            } finally {
+                Remove-Item -LiteralPath $backupTmp -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $DestPath) | Out-Null
+    $tmp = Join-Path (Split-Path $DestPath) ".$([IO.Path]::GetFileName($DestPath)).$([guid]::NewGuid()).tmp"
+    try {
+        Copy-Item -LiteralPath $SourcePath -Destination $tmp -Force
+        Move-Item -LiteralPath $tmp -Destination $DestPath -Force
+        $entry = $script:Receipt.artifacts[$key]
+        $entry.installedHash = $sourceHash
+        $entry.pending = $false
+        foreach ($field in @('targetHash','previousHash','previousExists')) { $null = $entry.Remove($field) }
+        Save-InstallReceipt
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-ReceiptOwnsPrefix([string]$Path) {
+    $prefix = (Get-ManagedPath $Path).TrimEnd('\') + '\'
+    @($script:Receipt.artifacts.Keys | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+}
+
+function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet('Takeover','Skip')] [string]$Collision = 'Takeover', [bool]$SkipExistingRoot = $false) {
+    if (-not $script:ReceiptReady -or -not (Test-Path $SourceDir -PathType Container)) { return $false }
+    $destRoot = Get-Item -LiteralPath $DestDir -Force -ErrorAction SilentlyContinue
+    if ($destRoot -and ($destRoot -isnot [IO.DirectoryInfo] -or ($destRoot.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+        Write-Warning "Unsupported destination tree root; preserving: $DestDir"
+        return $false
+    }
+    if ($SkipExistingRoot -and (Test-Path $DestDir) -and -not (Test-ReceiptOwnsPrefix $DestDir)) {
+        Write-Warning "Unowned directory collision; preserving: $DestDir"
+        return $false
+    }
+    $success = $true
+    Get-ChildItem $SourceDir -Recurse -File | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($SourceDir, $_.FullName)
+        if (-not (Install-ManagedFile $_.FullName (Join-Path $DestDir $relative) $Collision)) { $success = $false }
+    }
+    return $success
+}
+
+function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue) {
+    if (-not $script:ReceiptReady -or ($BeforePresent -and $BeforeValue -eq $InstalledValue)) { return }
+    if (-not $BeforePresent -and -not $InstalledValue) { return }
+    if (-not $script:Receipt.packages.Contains($Name)) {
+        $script:Receipt.packages[$Name] = [ordered]@{ before = [ordered]@{ present = $BeforePresent; value = $(if ($BeforePresent) { $BeforeValue } else { $null }) }; installed = $InstalledValue }
+    } else {
+        $script:Receipt.packages[$Name].installed = $InstalledValue
+    }
+    $null = $script:Receipt.packages[$Name].Remove('pending')
+    Save-InstallReceipt
+}
+
+function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue) {
+    if (-not $script:ReceiptReady) { return $false }
+    $existing = $script:Receipt.packages[$Name]
+    if ($existing.pending -and ($BeforePresent -ne $existing.pending.previousPresent -or ($BeforePresent -and $BeforeValue -ne $existing.pending.previousValue))) {
+        Record-ManagedPackage $Name $existing.before.present $existing.before.value $BeforeValue
+    }
+    $isNew = -not $script:Receipt.packages.Contains($Name)
+    if ($isNew) {
+        $script:Receipt.packages[$Name] = [ordered]@{
+            before = [ordered]@{ present = $BeforePresent; value = $(if ($BeforePresent) { $BeforeValue } else { $null }) }
+            installed = $null
+        }
+    }
+    $script:Receipt.packages[$Name].pending = [ordered]@{ previousPresent = $BeforePresent; previousValue = $(if ($BeforePresent) { $BeforeValue } else { $null }); newEntry = $isNew }
+    Save-InstallReceipt
+    return $true
+}
+
+function Cancel-ManagedPackage([string]$Name) {
+    if (-not $script:ReceiptReady -or -not $script:Receipt.packages.Contains($Name)) { return }
+    if ($script:Receipt.packages[$Name].pending.newEntry -and $null -eq $script:Receipt.packages[$Name].installed) {
+        $script:Receipt.packages.Remove($Name)
+    } else {
+        $null = $script:Receipt.packages[$Name].Remove('pending')
+    }
+    Save-InstallReceipt
+}
+
+function Test-SensitiveManagedValue([string]$Name) {
+    $Name -ine 'git:credential.credentialStore' -and $Name -match '(?i)(token|secret|password|credential)'
+}
+
+function Record-ManagedValue([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue, [bool]$StoreBeforeValue = $true) {
+    if (-not $script:ReceiptReady -or (Test-SensitiveManagedValue $Name)) { return }
+    if (-not $script:Receipt.values.Contains($Name)) {
+        $before = [ordered]@{ present = $BeforePresent }
+        if ($StoreBeforeValue) { $before.value = $BeforeValue }
+        $script:Receipt.values[$Name] = [ordered]@{ before = $before; installed = $InstalledValue }
+    } else {
+        $script:Receipt.values[$Name].installed = $InstalledValue
+    }
+    $null = $script:Receipt.values[$Name].Remove('pending')
+    Save-InstallReceipt
+}
+
+function Begin-ManagedValue([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$TargetValue, [bool]$StoreBeforeValue = $true) {
+    if (-not $script:ReceiptReady -or (Test-SensitiveManagedValue $Name)) { return $false }
+    if (-not $script:Receipt.values.Contains($Name)) {
+        $before = [ordered]@{ present = $BeforePresent }
+        if ($StoreBeforeValue) { $before.value = $BeforeValue }
+        $script:Receipt.values[$Name] = [ordered]@{ before = $before; installed = $null }
+    }
+    $pending = [ordered]@{ previousPresent = $BeforePresent; target = $TargetValue }
+    if ($StoreBeforeValue) { $pending.previousValue = $BeforeValue }
+    $script:Receipt.values[$Name].pending = $pending
+    Save-InstallReceipt
+    return $true
+}
+
+function Set-ManagedGitValue([string]$Name, [string]$Value) {
+    if (-not $script:ReceiptReady) { return }
+    $before = git config --global --get $Name 2>$null
+    $present = $LASTEXITCODE -eq 0
+    $receiptKey = "git:$Name"
+    $entry = $script:Receipt.values[$receiptKey]
+    if ($entry) {
+        if ($entry.pending) {
+            if ($present -and $before -ceq $entry.pending.target) {
+                Record-ManagedValue $receiptKey $entry.before.present $entry.before.value $entry.pending.target
+                return
+            }
+            if ($present -ne $entry.pending.previousPresent -or ($present -and $before -cne $entry.pending.previousValue)) {
+                Write-Warning "Managed value changed; preserving: $Name"
+                return
+            }
+        } elseif (($present -ne ($entry.installed -ne $null)) -or ($present -and $before -cne $entry.installed)) {
+            Write-Warning "Managed value changed; preserving: $Name"
+            return
+        }
+    }
+    if (-not $present -or $before -cne $Value) {
+        if (-not (Begin-ManagedValue $receiptKey $present $before $Value)) { return }
+        git config --global $Name $Value
+        if ($LASTEXITCODE -eq 0) { Record-ManagedValue $receiptKey $present $before $Value }
+    }
+}
+
 function Add-ToUserPath([string]$Dir) {
     $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-    if ($userPath -notlike "*$Dir*") {
-        [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$Dir", "User")
+    $present = @($userPath -split ';' | Where-Object { $_ }) -contains $Dir
+    $pathKey = "env:PATH:$Dir"
+    $pathEntry = if ($script:ReceiptReady) { $script:Receipt.values[$pathKey] } else { $null }
+    if ($present -and $pathEntry.pending) {
+        Record-ManagedValue $pathKey $pathEntry.before.present $null "present" $false
+        return $false
+    }
+    if (-not $present) {
+        if ($pathEntry -and -not $pathEntry.pending) {
+            Write-Warning "Managed PATH entry was removed; preserving user choice: $Dir"
+            return $false
+        }
+        if (-not (Begin-ManagedValue $pathKey $false $null "present" $false)) { return $false }
+        $newUserPath = if ($userPath) { "$userPath;$Dir" } else { $Dir }
+        [System.Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
         $env:PATH = "$env:PATH;$Dir"
+        Record-ManagedValue $pathKey $false $null "present" $false
         return $true
     }
     return $false
@@ -101,8 +414,11 @@ function Merge-GitConfig([string]$FilePath) {
                 $value = $Matches[2].Trim()
                 # 이미 설정된 항목은 건너뜀 (사용자 커스텀 설정 보존)
                 if (-not $existingConfig.ContainsKey("$currentSection.$key")) {
-                    git config --global "$currentSection.$key" $value
-                    Write-Host "    Added [$currentSection] $key = $value"
+                    Set-ManagedGitValue "$currentSection.$key" $value
+                    $installed = git config --global --get "$currentSection.$key" 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $installed -ceq $value) {
+                        Write-Host "    Added [$currentSection] $key = $value"
+                    }
                 } else {
                     Write-Host "    Skip  [$currentSection] $key (already set)"
                 }
@@ -127,8 +443,8 @@ function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
         return
     }
     if (-not (Test-Path $DestPath)) {
-        Copy-Item $SourcePath $DestPath -Force
-        Write-Host "    Copied config.toml"
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied config.toml" }
+        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied config.toml" }
         return
     }
     & yq -p=toml -o=json '.' $DestPath 2>$null | Out-Null
@@ -150,8 +466,12 @@ function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
             Write-Host "    [!] merged config.toml is invalid, keeping existing config.toml"
             return
         }
-        Move-Item $tmp $DestPath -Force
-        Write-Host "    Merged config.toml (existing values preserved)"
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
+            Move-Item $tmp $DestPath -Force
+            Write-Host "    Merged config.toml (existing values preserved)"
+        } elseif (Install-ManagedFile $tmp $DestPath Takeover) {
+            Write-Host "    Merged config.toml (existing values preserved)"
+        }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
@@ -163,8 +483,8 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
         return
     }
     if (-not (Test-Path $DestPath)) {
-        Copy-Item $SourcePath $DestPath -Force
-        Write-Host "    Copied $(Split-Path $DestPath -Leaf)"
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
+        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
         return
     }
     if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
@@ -184,8 +504,12 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
             Write-Host "    [!] jq merge failed, keeping existing $(Split-Path $DestPath -Leaf)"
             return
         }
-        Move-Item $tmp $DestPath -Force
-        Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
+            Move-Item $tmp $DestPath -Force
+            Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+        } elseif (Install-ManagedFile $tmp $DestPath Takeover) {
+            Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+        }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
@@ -231,9 +555,16 @@ function Update-FnmStatusLine([string]$SettingsPath, [string]$FnmRoot, [string]$
         $tmp = Join-Path (Split-Path $SettingsPath) ".settings.$([guid]::NewGuid()).tmp"
         try {
             $settings | ConvertTo-Json -Depth 10 | Out-File $tmp -Encoding utf8 -NoNewline
-            Move-Item $tmp $SettingsPath -Force
-            Write-Host "    Patched statusLine node path: $($match.Value) -> $nodeExe"
-            return $true
+            if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
+                Move-Item $tmp $SettingsPath -Force
+                Write-Host "    Patched statusLine node path: $($match.Value) -> $nodeExe"
+                return $true
+            }
+            if (Install-ManagedFile $tmp $SettingsPath Takeover) {
+                Write-Host "    Patched statusLine node path: $($match.Value) -> $nodeExe"
+                return $true
+            }
+            return $false
         } finally {
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         }
@@ -244,6 +575,8 @@ function Update-FnmStatusLine([string]$SettingsPath, [string]$FnmRoot, [string]$
 }
 
 if ($env:DOTFILES_FUNCTIONS_ONLY -eq "1") { return }
+
+if (-not (Initialize-InstallReceipt)) { throw "Install receipt validation failed." }
 
 Write-Host "==> Windows dotfiles setup starting..."
 Write-Host "    Source: $ROOT"
@@ -278,9 +611,17 @@ if (Test-Path $wingetFile) {
 
         $WingetLogDir = Join-Path $env:LOCALAPPDATA "Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir"
 
-        $results = Get-ManifestLines $wingetFile | ForEach-Object -Parallel {
+        $packageStates = Get-ManifestLines $wingetFile | ForEach-Object {
+            $listOut = (winget list --id $_ --exact --accept-source-agreements 2>&1 | Out-String)
+            $present = $LASTEXITCODE -eq 0
+            $version = if ($present) { Get-WingetVersion $listOut $_ } else { '' }
+            if (-not (Begin-ManagedPackage "winget:$_" $present $version)) { throw "winget receipt journal failed: $_" }
+            [pscustomobject]@{ Package = $_; BeforePresent = $present; BeforeVersion = $version }
+        }
+
+        $results = $packageStates | ForEach-Object -Parallel {
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-            $package = $_
+            $package = $_.Package
             $logDir  = $using:WingetLogDir
 
             # winget 종료 코드 → 원인. $LASTEXITCODE는 부호 있는 int라 두 자리 보수 hex로 비교한다.
@@ -308,9 +649,9 @@ if (Test-Path $wingetFile) {
                 return ''
             }
 
-            $listOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
-            $isInstalled = ($LASTEXITCODE -eq 0)
-            $beforeVer = if ($isInstalled) { & $parseVer $listOut $package } else { '' }
+            $isInstalled = $_.BeforePresent
+            $beforeVer = $_.BeforeVersion
+            $afterVer = ''
 
             if (-not $isInstalled) {
                 $verb = 'install'
@@ -323,10 +664,10 @@ if (Test-Path $wingetFile) {
             $hex  = '{0:X8}' -f $code
             $why  = if ($codes.ContainsKey($hex)) { " — $($codes[$hex])" } else { '' }
             $pad  = $package.PadRight(28)
+            $afterOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
+            $afterVer = & $parseVer $afterOut $package
 
             if ($code -eq 0) {
-                $afterOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
-                $afterVer = & $parseVer $afterOut $package
                 if ($verb -eq 'install') {
                     Write-Host "    [install]  $pad $afterVer"
                     $status = 'install'
@@ -347,7 +688,10 @@ if (Test-Path $wingetFile) {
                 $status = 'failed'
             }
 
-            [pscustomobject]@{ Package = $package; Status = $status; Code = $hex }
+            [pscustomobject]@{
+                Package = $package; Status = $status; Code = $hex
+                BeforePresent = $isInstalled; BeforeVersion = $beforeVer; AfterVersion = $afterVer
+            }
         } -ThrottleLimit 4
 
         # 요약 — 실패 목록을 마지막에 다시 모아 스크롤 위로 사라지지 않게 한다.
@@ -356,6 +700,13 @@ if (Test-Path $wingetFile) {
         $failed = @($results | Where-Object { $_.Status -eq 'failed' })
         foreach ($f in $failed) {
             Write-Host "    [!] 실패: $($f.Package) (0x$($f.Code))"
+        }
+        foreach ($r in $results) {
+            if ($r.AfterVersion -and ((-not $r.BeforePresent) -or $r.BeforeVersion -ne $r.AfterVersion)) {
+                Record-ManagedPackage "winget:$($r.Package)" $r.BeforePresent $r.BeforeVersion $r.AfterVersion
+            } else {
+                Cancel-ManagedPackage "winget:$($r.Package)"
+            }
         }
     } else {
         Write-Host "    [!] winget not found. Skipping package installation."
@@ -372,9 +723,8 @@ Write-Host "==> Merging git config..."
 Merge-GitConfig (Join-Path $ROOT "config\git\gitconfig")
 
 # Windows 전용 git 설정 주입 (공유 gitconfig는 OS-중립)
-git config --global core.autocrlf true
-git config --global core.fileMode false
-Write-Host "    Set core.autocrlf=true, core.fileMode=false (Windows)"
+Set-ManagedGitValue core.autocrlf true
+Set-ManagedGitValue core.fileMode false
 
 # =============================================
 # 1-2. tmux 설정 복사
@@ -382,8 +732,7 @@ Write-Host "    Set core.autocrlf=true, core.fileMode=false (Windows)"
 Write-Host ""
 $tmuxSrc = Join-Path $ROOT "config\tmux\tmux.windows.conf"
 if (Test-Path $tmuxSrc) {
-    Copy-Item $tmuxSrc (Join-Path $env:USERPROFILE ".tmux.conf") -Force
-    Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)"
+    if (Install-ManagedFile $tmuxSrc (Join-Path $env:USERPROFILE ".tmux.conf") Takeover) { Write-Host "    Copied .tmux.conf (tmux default shell: pwsh)" }
 }
 
 # =============================================
@@ -393,9 +742,28 @@ Write-Host ""
 Write-Host "==> Setting YAZI_FILE_ONE environment variable..."
 $gitFileExe = $GitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($gitFileExe) {
-    [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
-    $env:YAZI_FILE_ONE = $gitFileExe
-    Write-Host "    YAZI_FILE_ONE = $gitFileExe"
+    $beforeYazi = [System.Environment]::GetEnvironmentVariable("YAZI_FILE_ONE", "User")
+    $yaziEntry = if ($script:ReceiptReady) { $script:Receipt.values['env:YAZI_FILE_ONE'] } else { $null }
+    if (-not $script:ReceiptReady) {
+        Write-Warning "Receipt unavailable; preserving YAZI_FILE_ONE."
+    } elseif ($yaziEntry.pending -and $beforeYazi -ceq $yaziEntry.pending.target) {
+        Record-ManagedValue "env:YAZI_FILE_ONE" $yaziEntry.before.present $yaziEntry.before.value $yaziEntry.pending.target
+        $env:YAZI_FILE_ONE = $beforeYazi
+        Write-Host "    YAZI_FILE_ONE = $beforeYazi"
+    } elseif ($yaziEntry.pending -and $beforeYazi -cne $yaziEntry.pending.previousValue) {
+        Write-Warning "Managed YAZI_FILE_ONE changed; preserving user value."
+    } elseif ($yaziEntry -and -not $yaziEntry.pending -and $beforeYazi -cne $yaziEntry.installed) {
+        Write-Warning "Managed YAZI_FILE_ONE changed; preserving user value."
+    } else {
+        if ($beforeYazi -cne $gitFileExe -and -not (Begin-ManagedValue "env:YAZI_FILE_ONE" ($null -ne $beforeYazi) $beforeYazi $gitFileExe)) {
+            Write-Warning "Could not journal YAZI_FILE_ONE; preserving user value."
+            throw "YAZI_FILE_ONE receipt journal failed."
+        }
+        [System.Environment]::SetEnvironmentVariable("YAZI_FILE_ONE", $gitFileExe, "User")
+        $env:YAZI_FILE_ONE = $gitFileExe
+        if ($beforeYazi -cne $gitFileExe) { Record-ManagedValue "env:YAZI_FILE_ONE" ($null -ne $beforeYazi) $beforeYazi $gitFileExe }
+        Write-Host "    YAZI_FILE_ONE = $gitFileExe"
+    }
 } else {
     Write-Host "    [!] Git file.exe not found. Install Git for Windows first."
     Write-Host "        winget install --id Git.Git"
@@ -409,9 +777,7 @@ Write-Host "==> Deploying yazi config..."
 $yaziConfigSrc = Join-Path $ROOT "config\yazi"
 $yaziConfigDst = Join-Path $env:APPDATA "yazi\config"
 if (Test-Path $yaziConfigSrc) {
-    New-Item -ItemType Directory -Force -Path $yaziConfigDst | Out-Null
-    Copy-Item "$yaziConfigSrc\*" $yaziConfigDst -Recurse -Force
-    Write-Host "    yazi config deployed to $yaziConfigDst"
+    if (Install-ManagedTree $yaziConfigSrc $yaziConfigDst Takeover) { Write-Host "    yazi config deployed to $yaziConfigDst" }
 } else {
     Write-Host "    [!] config\yazi not found, skipping."
 }
@@ -423,7 +789,7 @@ Write-Host ""
 Write-Host "==> Adding Neovim to PATH..."
 if (Test-Path $NvimBin) {
     if (Add-ToUserPath $NvimBin) { Write-Host "    Added Neovim to PATH: $NvimBin" }
-    else { Write-Host "    Neovim already in PATH." }
+    elseif (@([System.Environment]::GetEnvironmentVariable("PATH", "User") -split ';') -contains $NvimBin) { Write-Host "    Neovim already in PATH." }
 } else {
     Write-Host "    [!] Neovim not found at $NvimBin. Install via winget: Neovim.Neovim"
 }
@@ -438,10 +804,10 @@ $nvimSrc = Join-Path $ROOT "config\nvim"
 if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
     Write-Host "    [!] config\nvim\init.lua not found, skipping."
 } else {
-    New-Item -ItemType Directory -Force -Path $NvimConfigDir | Out-Null
-    Copy-Item "$nvimSrc\*" $NvimConfigDir -Recurse -Force
-    Write-Host "    lazy.nvim config deployed to $NvimConfigDir"
-    Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
+    if (Install-ManagedTree $nvimSrc $NvimConfigDir Takeover) {
+        Write-Host "    lazy.nvim config deployed to $NvimConfigDir"
+        Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
+    }
 }
 
 # =============================================
@@ -463,7 +829,7 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     $fnmDefaultPath = Join-Path $fnmRoot "aliases\default"
     if (Test-Path (Join-Path $fnmDefaultPath "node.exe") -PathType Leaf) {
         if (Add-ToUserPath $fnmDefaultPath) { Write-Host "    Added fnm aliases\default to User PATH: $fnmDefaultPath" }
-        else { Write-Host "    fnm aliases\default already in User PATH." }
+        elseif (@([System.Environment]::GetEnvironmentVariable("PATH", "User") -split ';') -contains $fnmDefaultPath) { Write-Host "    fnm aliases\default already in User PATH." }
     } else {
         Write-Host "    [!] fnm aliases\default\node.exe not found. Run: fnm default lts-latest"
     }
@@ -485,16 +851,42 @@ Write-Host ""
 Write-Host "==> Installing global npm packages..."
 $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if (Test-Path $npmFile) {
-    Get-ManifestLines $npmFile | ForEach-Object -Parallel {
+    $npmRoot = npm root -g 2>$null
+    $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
+    if (-not $jqPath) {
+        Write-Warning "jq unavailable; skipping npm mutations to preserve package provenance."
+        $npmResults = @()
+    } else {
+        $npmStates = Get-ManifestLines $npmFile | ForEach-Object {
+            $packageJson = Join-Path $npmRoot "$_\package.json"
+            $beforeVersion = if (Test-Path $packageJson) { (& $jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
+            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion)) { throw "npm receipt journal failed: $_" }
+            [pscustomobject]@{ Package = $_; BeforeVersion = $beforeVersion }
+        }
+        $npmResults = $npmStates | ForEach-Object -Parallel {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        $package = $_
+        $package = $_.Package
+        $packageJson = Join-Path $using:npmRoot "$package\package.json"
+        $beforeVersion = $_.BeforeVersion
         npm install -g $package 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $success = $LASTEXITCODE -eq 0
+        $afterVersion = if (Test-Path $packageJson) { (& $using:jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
+        if ($success) {
             Write-Host "    Installed $package"
+            [pscustomobject]@{ Package = $package; Success = $true; BeforeVersion = $beforeVersion; AfterVersion = $afterVersion }
         } else {
             Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+            [pscustomobject]@{ Package = $package; Success = $false; BeforeVersion = $beforeVersion; AfterVersion = $afterVersion }
         }
-    } -ThrottleLimit 4
+        } -ThrottleLimit 4
+    }
+    foreach ($r in $npmResults) {
+        if ($r.AfterVersion -and $r.BeforeVersion -ne $r.AfterVersion) {
+            Record-ManagedPackage "npm:$($r.Package)" ([bool]$r.BeforeVersion) $r.BeforeVersion $r.AfterVersion
+        } else {
+            Cancel-ManagedPackage "npm:$($r.Package)"
+        }
+    }
 } else {
     Write-Host "    [!] manifests\npm-global.txt not found, skipping."
 }
@@ -513,8 +905,7 @@ Merge-CodexConfig `
 $agentsGlobalSrc = Join-Path $ROOT "config\agents\global.md"
 $rolesSrc = Join-Path $ROOT "config\agents\roles"
 if (Test-Path $agentsGlobalSrc) {
-    Copy-Item $agentsGlobalSrc (Join-Path $CodexDir "AGENTS.md") -Force
-    Write-Host "    Copied global agent instructions to AGENTS.md"
+    if (Install-ManagedFile $agentsGlobalSrc (Join-Path $CodexDir "AGENTS.md") Takeover) { Write-Host "    Copied global agent instructions to AGENTS.md" }
 } else {
     Write-Host "    [!] config\agents\global.md not found"
 }
@@ -534,15 +925,13 @@ if (Test-Path $rolesSrc) {
             if (-not $bodyText.EndsWith("`n")) { $bodyText += "`n" }
             # TOML literal multi-line string(''') — 이스케이프 해석이 없어 body를 그대로 담는다
             $content = $metaText + "developer_instructions = '''`n" + $bodyText + "'''`n"
-            Set-Content -Path (Join-Path $codexAgentsDst "$($_.Name).toml") -Value $content -NoNewline -Encoding utf8
-            Write-Host "    Deployed agent: $($_.Name)"
-
-            # 구 배포물 정리: 이전에는 같은 role을 skill로 배포했다 (~\.codex\skills\<name>\)
-            $legacySkill = Join-Path $CodexDir "skills\$($_.Name)"
-            if (Test-Path (Join-Path $legacySkill "SKILL.md")) {
-                Remove-Item $legacySkill -Recurse -Force
-                Write-Host "    Removed legacy skill: $($_.Name)"
-            }
+            $tmpAgent = New-TemporaryFile
+            try {
+                Set-Content -Path $tmpAgent -Value $content -NoNewline -Encoding utf8
+                if (Install-ManagedFile $tmpAgent (Join-Path $codexAgentsDst "$($_.Name).toml") Skip) {
+                    Write-Host "    Deployed agent: $($_.Name)"
+                }
+            } finally { Remove-Item $tmpAgent -Force -ErrorAction SilentlyContinue }
         }
     }
 }
@@ -559,9 +948,9 @@ if (Test-Path $codexHooksJsonSrc) {
 $codexHooksDir = Join-Path $CodexDir "hooks"
 $temporalSrc   = Join-Path $ROOT "config\codex\hooks\temporal-context.sh"
 if (Test-Path $temporalSrc) {
-    New-Item -ItemType Directory -Force -Path $codexHooksDir | Out-Null
-    Copy-Item $temporalSrc $codexHooksDir -Force
-    Write-Host "    Copied temporal-context.sh to ~/.codex/hooks/"
+    if (Install-ManagedFile $temporalSrc (Join-Path $codexHooksDir "temporal-context.sh") Skip) {
+        Write-Host "    Copied temporal-context.sh to ~/.codex/hooks/"
+    }
 } else {
     Write-Host "    [!] config\codex\hooks\temporal-context.sh not found, skipping."
 }
@@ -600,8 +989,7 @@ if (Test-Path $settingsSrc) {
 }
 
 if (Test-Path $agentsGlobalSrc) {
-    Copy-Item $agentsGlobalSrc (Join-Path $ClaudeDir "CLAUDE.md") -Force
-    Write-Host "    Copied global agent instructions to CLAUDE.md"
+    if (Install-ManagedFile $agentsGlobalSrc (Join-Path $ClaudeDir "CLAUDE.md") Takeover) { Write-Host "    Copied global agent instructions to CLAUDE.md" }
 } else {
     Write-Host "    [!] config\agents\global.md not found"
 }
@@ -610,9 +998,7 @@ if (Test-Path $agentsGlobalSrc) {
 $hooksSrc = Join-Path $ROOT "config\claude\hooks"
 $hooksDst = Join-Path $ClaudeDir "hooks"
 if (Test-Path $hooksSrc) {
-    New-Item -ItemType Directory -Force -Path $hooksDst | Out-Null
-    Copy-Item "$hooksSrc\*" $hooksDst -Recurse -Force
-    Write-Host "    Copied hooks/"
+    if (Install-ManagedTree $hooksSrc $hooksDst Skip) { Write-Host "    Copied hooks/" }
 } else {
     Write-Host "    [!] config\claude\hooks not found, skipping."
 }
@@ -623,8 +1009,9 @@ if (Test-Path $skillsLocalSrc) {
     $skillsDst = Join-Path $ClaudeDir "skills"
     New-Item -ItemType Directory -Force -Path $skillsDst | Out-Null
     Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
-        Copy-Item $_.FullName $skillsDst -Recurse -Force
-        Write-Host "    Deployed local skill: $($_.Name)"
+        if (Install-ManagedTree $_.FullName (Join-Path $skillsDst $_.Name) Skip $true) {
+            Write-Host "    Deployed local skill: $($_.Name)"
+        }
     }
 }
 
@@ -638,8 +1025,13 @@ if (Test-Path $rolesSrc) {
         $body = Join-Path $_.FullName "body.md"
         if ((Test-Path $fm) -and (Test-Path $body)) {
             $content = (Get-Content $fm -Raw) + (Get-Content $body -Raw)
-            Set-Content -Path (Join-Path $agentsDst "$($_.Name).md") -Value $content -NoNewline -Encoding utf8
-            Write-Host "    Deployed agent: $($_.Name)"
+            $tmpAgent = New-TemporaryFile
+            try {
+                Set-Content -Path $tmpAgent -Value $content -NoNewline -Encoding utf8
+                if (Install-ManagedFile $tmpAgent (Join-Path $agentsDst "$($_.Name).md") Skip) {
+                    Write-Host "    Deployed agent: $($_.Name)"
+                }
+            } finally { Remove-Item $tmpAgent -Force -ErrorAction SilentlyContinue }
         }
     }
 }

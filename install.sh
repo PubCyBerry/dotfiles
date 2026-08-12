@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2317
 # Linux(Ubuntu) dotfiles 설치 진입점 (all-in-one)
 # 실행: bash install.sh
 # 지원: Ubuntu 22.04+ (apt 기반)
@@ -37,6 +38,312 @@ manifest_lines() {
     local path="$1"
     [[ -f "$path" ]] || return 0
     LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
+}
+
+RECEIPT_PATH="${DOTFILES_RECEIPT_PATH:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install-receipt.json}"
+RECEIPT_READY=false
+FUNCTIONS_ONLY_MODE="${DOTFILES_FUNCTIONS_ONLY:-0}"
+
+receipt_path_is_safe() {
+    [[ ! -L "$RECEIPT_PATH" && ( ! -e "$RECEIPT_PATH" || -f "$RECEIPT_PATH" ) ]]
+}
+
+receipt_init() {
+    if ! receipt_path_is_safe; then
+        echo "    [!] Invalid install receipt path type; preserving it: $RECEIPT_PATH" >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "    [!] jq unavailable; skipping receipt-managed writes." >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    if [[ -f "$RECEIPT_PATH" ]]; then
+        if jq -e '.schemaVersion == 1 and (.artifacts|type)=="object" and (.packages|type)=="object" and (.values|type)=="object"' "$RECEIPT_PATH" >/dev/null 2>&1; then
+            RECEIPT_READY=true
+            return 0
+        fi
+        echo "    [!] Invalid install receipt; preserving it and skipping managed writes: $RECEIPT_PATH" >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    local dir tmp
+    dir="$(dirname "$RECEIPT_PATH")"
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir" || return 1
+    tmp="$(mktemp "$dir/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    printf '%s\n' '{"schemaVersion":1,"artifacts":{},"packages":{},"values":{}}' > "$tmp" || return 1
+    jq -e '.schemaVersion == 1 and (.artifacts|type)=="object" and (.packages|type)=="object" and (.values|type)=="object"' "$tmp" >/dev/null || return 1
+    chmod 600 "$tmp" || return 1
+    mv "$tmp" "$RECEIPT_PATH" || return 1
+    RECEIPT_READY=true
+}
+
+receipt_preflight() {
+    if ! receipt_path_is_safe; then
+        return 1
+    elif [[ -f "$RECEIPT_PATH" ]] && ! command -v jq >/dev/null 2>&1; then
+        receipt_is_jq_bootstrap
+    elif [[ -f "$RECEIPT_PATH" ]]; then receipt_init
+    elif command -v jq >/dev/null 2>&1; then receipt_init
+    fi
+}
+
+receipt_is_jq_bootstrap() {
+    local actual apt_expected brew_expected
+    actual="$(cat "$RECEIPT_PATH" 2>/dev/null)" || return 1
+    apt_expected='{"schemaVersion":1,"bootstrap":"dotfiles-apt-jq-v1","artifacts":{},"packages":{"apt:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}'
+    brew_expected='{"schemaVersion":1,"bootstrap":"dotfiles-brew-jq-v1","artifacts":{},"packages":{"brew:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}'
+    [[ "$actual" == "$apt_expected" || "$actual" == "$brew_expected" ]]
+}
+
+receipt_bootstrap_jq() {
+    local manager="$1" before_present="${2:-false}" dir tmp marker
+    [[ "$manager" == apt || "$manager" == brew ]] || return 1
+    if [[ "$before_present" == true ]]; then
+        echo "    [!] jq package exists but its executable is unavailable; preserving package ownership." >&2
+        return 1
+    fi
+    receipt_path_is_safe || return 1
+    if [[ -e "$RECEIPT_PATH" ]]; then receipt_is_jq_bootstrap; return; fi
+    dir="$(dirname "$RECEIPT_PATH")"
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir" || return 1
+    tmp="$(mktemp "$dir/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    marker="dotfiles-$manager-jq-v1"
+    printf '{"schemaVersion":1,"bootstrap":"%s","artifacts":{},"packages":{"%s:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}\n' \
+        "$marker" "$manager" > "$tmp" || return 1
+    chmod 600 "$tmp" || return 1
+    mv "$tmp" "$RECEIPT_PATH" || return 1
+}
+
+receipt_commit() {
+    local tmp
+    tmp="$(mktemp "$(dirname "$RECEIPT_PATH")/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    if jq "$@" "$RECEIPT_PATH" > "$tmp" && jq empty "$tmp"; then
+        chmod 600 "$tmp" || return 1
+        mv "$tmp" "$RECEIPT_PATH" || return 1
+    else
+        rm -f "$tmp"
+        return 1
+    fi
+}
+
+file_hash() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    else shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+managed_parent_is_safe() {
+    local path="$1" parent next boundary=""
+    case "$path" in "$HOME"/*) boundary="${HOME%/}"; [[ -n "$boundary" ]] || boundary=/ ;; esac
+    parent="$(dirname "$path")"
+    while [[ -n "$parent" && "$parent" != "$boundary" && "$parent" != / && "$parent" != . ]]; do
+        if [[ -L "$parent" || ( -e "$parent" && ! -d "$parent" ) ]]; then return 1; fi
+        next="$(dirname "$parent")"
+        [[ "$next" != "$parent" ]] || break
+        parent="$next"
+    done
+    return 0
+}
+
+install_managed_file() {
+    local src="$1" dst="$2" collision="${3:-takeover}"
+    local entry_hash="" before_hash="" source_hash backup="" n=0 tmp pending expected_hash expected_exists current_exists=false
+    local before_exists installed_hash backup_tmp
+    $RECEIPT_READY && [[ -f "$src" ]] || return 1
+    if ! managed_parent_is_safe "$dst"; then
+        echo "    [!] Unsupported destination parent path; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]] && { [[ ! -f "$dst" ]] || [[ -L "$dst" ]]; }; then
+        echo "    [!] Unsupported destination type; preserving: $dst" >&2
+        return 1
+    fi
+    source_hash="$(file_hash "$src")"
+    [[ -f "$dst" ]] && before_hash="$(file_hash "$dst")"
+    entry_hash="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+
+    if jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        if [[ "$pending" == true && -f "$dst" && "$before_hash" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" ]]; then
+            receipt_commit --arg path "$dst" '.artifacts[$path].installedHash=.artifacts[$path].targetHash | .artifacts[$path].pending=false | del(.artifacts[$path].targetHash,.artifacts[$path].previousHash,.artifacts[$path].previousExists)' || return 1
+            pending=false
+            entry_hash="$before_hash"
+            [[ "$before_hash" != "$source_hash" ]] || return 0
+        fi
+        expected_hash="$entry_hash"; expected_exists=true
+        if [[ "$pending" == "true" ]]; then
+            expected_hash="$(jq -r --arg path "$dst" '.artifacts[$path] | if has("previousHash") then .previousHash // "" else .before.hash // "" end' "$RECEIPT_PATH")"
+            expected_exists="$(jq -r --arg path "$dst" '.artifacts[$path] | if has("previousExists") then .previousExists else .before.exists end' "$RECEIPT_PATH")"
+        fi
+        if [[ -f "$dst" ]]; then current_exists=true; fi
+        if [[ "$current_exists" != "$expected_exists" || ( -f "$dst" && "$before_hash" != "$expected_hash" ) ]]; then
+            echo "    [!] Managed file changed or missing; preserving: $dst" >&2
+            return 1
+        fi
+        [[ "$pending" == true || "$before_hash" != "$source_hash" ]] || return 0
+    elif [[ -f "$dst" && "$collision" == "skip" ]]; then
+        echo "    [!] Unowned file collision; preserving: $dst" >&2
+        return 1
+    elif [[ -f "$dst" && "$before_hash" == "$source_hash" ]]; then
+        return 0
+    else
+        if [[ -f "$dst" ]]; then
+            backup="$dst.dotfiles-backup"
+            while [[ -e "$backup" || -L "$backup" ]]; do n=$((n + 1)); backup="$dst.dotfiles-backup.$n"; done
+        fi
+        receipt_commit --arg path "$dst" --arg hash "$before_hash" --arg backup "$backup" --arg installed "$source_hash" \
+            '.artifacts[$path] = {before:{exists:($hash != ""),hash:(if $hash=="" then null else $hash end),backup:(if $backup=="" then null else $backup end)},installedHash:null,pending:true,targetHash:$installed,previousHash:(if $hash=="" then null else $hash end),previousExists:($hash != "")}' || return 1
+        pending=true
+    fi
+
+    if [[ "$pending" != true ]]; then
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --argjson previous_exists "$current_exists" \
+            '.artifacts[$path].pending=true | .artifacts[$path].targetHash=$installed | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+    elif [[ "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" != "$source_hash" ]]; then
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --argjson previous_exists "$current_exists" \
+            '.artifacts[$path].targetHash=$installed | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+    fi
+
+    before_exists="$(jq -r --arg path "$dst" '.artifacts[$path].before.exists' "$RECEIPT_PATH")"
+    installed_hash="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    backup="$(jq -r --arg path "$dst" '.artifacts[$path].before.backup // empty' "$RECEIPT_PATH")"
+    if [[ "$before_exists" == true && -z "$installed_hash" && -n "$backup" ]]; then
+        if [[ -e "$backup" || -L "$backup" ]]; then
+            if [[ ! -f "$backup" || -L "$backup" || "$(file_hash "$backup")" != "$(jq -r --arg path "$dst" '.artifacts[$path].before.hash' "$RECEIPT_PATH")" ]]; then
+                echo "    [!] Managed backup collision; preserving destination: $dst" >&2
+                return 1
+            fi
+        else
+            backup_tmp="$(mktemp "$(dirname "$backup")/.dotfiles-backup.XXXXXX")" || return 1; _TMPFILES+=("$backup_tmp")
+            cp -p "$dst" "$backup_tmp" || return 1
+            if [[ "$(file_hash "$backup_tmp")" != "$(jq -r --arg path "$dst" '.artifacts[$path].before.hash' "$RECEIPT_PATH")" ]]; then
+                rm -f "$backup_tmp"
+                echo "    [!] Destination changed before backup; preserving: $dst" >&2
+                return 1
+            fi
+            chmod 600 "$backup_tmp" || return 1
+            mv "$backup_tmp" "$backup" || return 1
+        fi
+    fi
+
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.$(basename "$dst").XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    cp -p "$src" "$tmp" || return 1
+    mv "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg installed "$source_hash" '.artifacts[$path].installedHash = $installed | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].previousHash,.artifacts[$path].previousExists)' || return 1
+}
+
+receipt_owns_prefix() {
+    local prefix="${1%/}/"
+    jq -e --arg prefix "$prefix" '.artifacts | keys | any(startswith($prefix))' "$RECEIPT_PATH" >/dev/null
+}
+
+install_managed_tree() {
+    local src="$1" dst="$2" collision="${3:-takeover}" skip_root="${4:-false}" file relative status=0
+    $RECEIPT_READY && [[ -d "$src" ]] || return 1
+    if [[ -e "$dst" || -L "$dst" ]] && { [[ ! -d "$dst" ]] || [[ -L "$dst" ]]; }; then
+        echo "    [!] Unsupported destination tree root; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ "$skip_root" == "true" && -d "$dst" ]] && ! receipt_owns_prefix "$dst"; then
+        echo "    [!] Unowned directory collision; preserving: $dst" >&2
+        return 1
+    fi
+    while IFS= read -r -d '' file; do
+        relative="${file#"$src"/}"
+        install_managed_file "$file" "$dst/$relative" "$collision" || status=1
+    done < <(find "$src" -type f -print0)
+    return "$status"
+}
+
+record_managed_package() {
+    local name="$1" before_present="$2" before_value="$3" installed="$4"
+    $RECEIPT_READY || return 0
+    [[ "$before_present" != "true" || "$before_value" != "$installed" ]] || return 0
+    [[ "$before_present" == "true" || -n "$installed" ]] || return 0
+    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" '
+        (if .packages[$name] then .packages[$name].installed=$installed | del(.packages[$name].pending)
+        else .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:$installed} end) | del(.bootstrap)'
+}
+
+begin_managed_package() {
+    local name="$1" present="$2" before="$3" current_previous current_present original_present original_before
+    $RECEIPT_READY || return 1
+    if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        current_previous="$(jq -r --arg name "$name" '.packages[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+        current_present="$(jq -r --arg name "$name" '.packages[$name].pending.previousPresent' "$RECEIPT_PATH")"
+        if [[ "$present" != "$current_present" || ( "$present" == true && "$before" != "$current_previous" ) ]]; then
+            original_present="$(jq -r --arg name "$name" '.packages[$name].before.present' "$RECEIPT_PATH")"
+            original_before="$(jq -r --arg name "$name" '.packages[$name].before.value // empty' "$RECEIPT_PATH")"
+            record_managed_package "$name" "$original_present" "$original_before" "$before" || return 1
+        fi
+    fi
+    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" '
+        (.packages|has($name)|not) as $new |
+        if $new then .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:null} else . end |
+        .packages[$name].pending={previousPresent:$present,previousValue:(if $present then $before else null end),newEntry:$new}'
+}
+
+cancel_managed_package() {
+    local name="$1"
+    $RECEIPT_READY || return 0
+    receipt_commit --arg name "$name" '
+        (if .packages[$name].pending.newEntry and .packages[$name].installed == null then del(.packages[$name])
+        else del(.packages[$name].pending) end) | del(.bootstrap)'
+}
+
+managed_value_is_sensitive() {
+    [[ "$1" != 'git:credential.credentialStore' && "$1" =~ [Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll] ]]
+}
+
+record_managed_value() {
+    local name="$1" before_present="$2" before_value="$3" installed="$4" store_before="${5:-true}"
+    $RECEIPT_READY || return 0
+    ! managed_value_is_sensitive "$name" || return 0
+    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" --argjson store "$store_before" '
+        if .values[$name] then .values[$name].installed=$installed | del(.values[$name].pending)
+        else .values[$name]={before:({present:$present} + if $store then {value:(if $present then $before else null end)} else {} end),installed:$installed} end'
+}
+
+begin_managed_value() {
+    local name="$1" present="$2" before="$3" target="$4" store="${5:-true}"
+    $RECEIPT_READY || return 1
+    ! managed_value_is_sensitive "$name" || return 1
+    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" --arg target "$target" --argjson store "$store" '
+        if (.values|has($name)|not) then .values[$name]={before:({present:$present} + if $store then {value:(if $present then $before else null end)} else {} end),installed:null} else . end |
+        .values[$name].pending=({previousPresent:$present,target:$target} + if $store then {previousValue:(if $present then $before else null end)} else {} end)'
+}
+
+set_managed_git_value() {
+    local name="$1" value="$2" before="" present=false entry="" pending_target="" pending_previous="" pending_present=false
+    $RECEIPT_READY || return 0
+    if before="$(git config --global --get "$name" 2>/dev/null)"; then present=true; fi
+    entry="$(jq -r --arg name "git:$name" '.values[$name].installed // empty' "$RECEIPT_PATH")"
+    if jq -e --arg name "git:$name" '.values[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        pending_target="$(jq -r --arg name "git:$name" '.values[$name].pending.target' "$RECEIPT_PATH")"
+        pending_previous="$(jq -r --arg name "git:$name" '.values[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+        pending_present="$(jq -r --arg name "git:$name" '.values[$name].pending.previousPresent' "$RECEIPT_PATH")"
+        if [[ "$present" == true && "$before" == "$pending_target" ]]; then
+            record_managed_value "git:$name" "$present" "$before" "$pending_target"
+            return 0
+        fi
+        if [[ "$present" != "$pending_present" || ( "$present" == true && "$before" != "$pending_previous" ) ]]; then
+            echo "    [!] Managed value changed; preserving: $name" >&2
+            return 0
+        fi
+    elif jq -e --arg name "git:$name" '.values | has($name)' "$RECEIPT_PATH" >/dev/null && [[ "$before" != "$entry" ]]; then
+        echo "    [!] Managed value changed; preserving: $name" >&2
+        return 0
+    fi
+    if [[ "$present" != "true" || "$before" != "$value" ]]; then
+        begin_managed_value "git:$name" "$present" "$before" "$value" || return 1
+        git config --global "$name" "$value" || return 1
+        record_managed_value "git:$name" "$present" "$before" "$value" || return 1
+    fi
 }
 
 set_profile_block() {
@@ -142,8 +449,10 @@ merge_gitconfig() {
                 value="${BASH_REMATCH[2]}"
                 existing_val=$(git config --global "$section.$key" 2>/dev/null || true)
                 if [[ -z "$existing_val" ]]; then
-                    git config --global "$section.$key" "$value"
-                    echo "    Added [$section] $key = $value"
+                    if set_managed_git_value "$section.$key" "$value" &&
+                       [[ "$(git config --global --get "$section.$key" 2>/dev/null || true)" == "$value" ]]; then
+                        echo "    Added [$section] $key = $value"
+                    fi
                 else
                     echo "    Skip  [$section] $key (already set)"
                 fi
@@ -169,7 +478,9 @@ merge_codex_config() {
         return 0
     fi
     if [[ ! -f "$dst" ]]; then
-        cp -f "$src" "$dst"
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
+        else install_managed_file "$src" "$dst" takeover || return 0
+        fi
         echo "    Copied config.toml"
         return 0
     fi
@@ -184,8 +495,12 @@ merge_codex_config() {
         "$src" "$dst" > "$tmp" 2>/dev/null \
         && [[ -s "$tmp" ]] \
         && yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1; then
-        mv "$tmp" "$dst"
-        echo "    Merged config.toml (existing values preserved)"
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$dst"
+            echo "    Merged config.toml (existing values preserved)"
+        elif install_managed_file "$tmp" "$dst" takeover; then
+            echo "    Merged config.toml (existing values preserved)"
+        fi
     else
         echo "    [!] merged config.toml is invalid, keeping existing config.toml"
     fi
@@ -198,7 +513,9 @@ merge_json_registry() {
         return 0
     fi
     if [[ ! -f "$dst" ]]; then
-        cp -f "$src" "$dst"
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
+        else install_managed_file "$src" "$dst" takeover || return 0
+        fi
         echo "    Copied $(basename "$dst")"
         return 0
     fi
@@ -214,8 +531,12 @@ merge_json_registry() {
 
     tmp="$(mktemp)"; _TMPFILES+=("$tmp")
     if jq -s -f "$filter" "$dst" "$src" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
-        mv "$tmp" "$dst"
-        echo "    Merged $(basename "$dst")"
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$dst"
+            echo "    Merged $(basename "$dst")"
+        elif install_managed_file "$tmp" "$dst" takeover; then
+            echo "    Merged $(basename "$dst")"
+        fi
     else
         echo "    [!] jq merge failed, keeping existing $(basename "$dst")"
     fi
@@ -322,8 +643,13 @@ update_fnm_statusline() {
     tmp="$(mktemp "$CLAUDE_DIR/.settings.json.XXXXXX")"; _TMPFILES+=("$tmp")
     if jq --arg old "$old" --arg new "$target" \
         '.statusLine.command |= (split($old) | join($new))' "$settings" > "$tmp" &&
-       jq empty "$tmp" && mv "$tmp" "$settings"; then
-        echo "    Patched statusLine node path: $old -> $target"
+       jq empty "$tmp"; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$settings"
+            echo "    Patched statusLine node path: $old -> $target"
+        elif install_managed_file "$tmp" "$settings" takeover; then
+            echo "    Patched statusLine node path: $old -> $target"
+        fi
     fi
 }
 
@@ -358,6 +684,8 @@ install_node_lts() {
 if [[ "${DOTFILES_FUNCTIONS_ONLY:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
+
+receipt_preflight || exit 1
 
 install_gh_tar() {
     # tar.gz → /usr/local/bin/$name. $1=name $2=url $3=bin_in_archive(default:$1)
@@ -413,12 +741,55 @@ if [[ "$OS" == "Darwin" ]]; then
     fi
 
     BREWFILE="$ROOT/manifests/Brewfile"
-    echo "    Installing packages from Brewfile..."
+    BREW_BEFORE="$(mktemp)"; _TMPFILES+=("$BREW_BEFORE")
     if [[ -f "$BREWFILE" ]]; then
-        brew bundle --file="$BREWFILE"
+        awk -F'"' '/^(brew|cask) "/ {kind=$1; sub(/ .*/, "", kind); print kind "\t" $2}' "$BREWFILE" | while IFS=$'\t' read -r kind package; do
+            before="$(brew list --"${kind/brew/formula}" --versions "$package" 2>/dev/null | awk '{print $2}' || true)"
+            before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+            printf '%s\t%s\t%s\t%s\n' "$kind" "$package" "$before_present" "$before"
+        done > "$BREW_BEFORE"
+    fi
+    if ! $RECEIPT_READY; then
+        jq_before="$(awk -F'\t' '$1=="brew" && $2=="jq" {print $3 "\t" $4}' "$BREW_BEFORE")"
+        IFS=$'\t' read -r jq_before_present jq_before_version <<< "$jq_before"
+        receipt_bootstrap_jq brew "${jq_before_present:-false}" || exit 1
+        jq_status=0
+        brew install jq || jq_status=$?
+        jq_after="$(brew list --formula --versions jq 2>/dev/null | awk '{print $2}' || true)"
+        if command -v jq >/dev/null 2>&1; then
+            receipt_init || exit 1
+            if [[ -n "$jq_after" && "$jq_after" != "${jq_before_version:-}" ]]; then
+                record_managed_package brew:jq "${jq_before_present:-false}" "${jq_before_version:-}" "$jq_after"
+            else
+                cancel_managed_package brew:jq
+            fi
+        fi
+        (( jq_status == 0 )) || exit "$jq_status"
+        $RECEIPT_READY || exit 1
+    fi
+    while IFS=$'\t' read -r kind package before_present before; do
+        [[ -n "$package" ]] || continue
+        begin_managed_package "$kind:$package" "$before_present" "$before" || exit 1
+    done < "$BREW_BEFORE"
+    echo "    Installing packages from Brewfile..."
+    brew_status=0
+    if [[ -f "$BREWFILE" ]]; then
+        brew bundle --file="$BREWFILE" || brew_status=$?
     else
         echo "    [!] manifests/Brewfile not found, skipping."
     fi
+
+    if ! receipt_init; then (( brew_status == 0 )) || exit "$brew_status"; exit 1; fi
+    while IFS=$'\t' read -r kind package before_present before; do
+        [[ -n "$package" ]] || continue
+        after="$(brew list --"${kind/brew/formula}" --versions "$package" 2>/dev/null | awk '{print $2}' || true)"
+        if [[ -n "$after" && ( "$before_present" != true || "$after" != "$before" ) ]]; then
+            record_managed_package "$kind:$package" "$before_present" "$before" "$after"
+        else
+            cancel_managed_package "$kind:$package"
+        fi
+    done < "$BREW_BEFORE"
+    (( brew_status == 0 )) || exit "$brew_status"
 
     if $APPLY_DEFAULTS; then
       echo "==> Applying macOS system defaults..."
@@ -431,8 +802,8 @@ if [[ "$OS" == "Darwin" ]]; then
     echo
     echo "==> Merging git config (macOS)..."
     merge_gitconfig "$ROOT/config/git/gitconfig"
-    git config --global core.autocrlf input
-    git config --global core.fileMode true
+    set_managed_git_value core.autocrlf input
+    set_managed_git_value core.fileMode true
 
 elif [[ "$OS" == "Linux" ]]; then
     # =============================================
@@ -442,12 +813,59 @@ elif [[ "$OS" == "Linux" ]]; then
     echo "==> Installing packages via apt..."
     APT_FILE="$ROOT/manifests/apt.txt"
     if [[ -f "$APT_FILE" ]]; then
+        APT_BEFORE="$(mktemp)"; _TMPFILES+=("$APT_BEFORE")
+        while IFS= read -r package; do
+            dpkg_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' "$package" 2>/dev/null || true)"
+            IFS=$'\t' read -r dpkg_status dpkg_version <<< "$dpkg_state"
+            before=""; [[ "$dpkg_status" == 'ii ' ]] && before="$dpkg_version"
+            before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+            printf '%s\t%s\t%s\n' "$package" "$before_present" "$before"
+        done < <(manifest_lines "$APT_FILE") > "$APT_BEFORE"
         run_privileged apt-get update -y
+        if ! $RECEIPT_READY; then
+            jq_before="$(awk -F'\t' '$1=="jq" {print $2 "\t" $3}' "$APT_BEFORE")"
+            IFS=$'\t' read -r jq_before_present jq_before_version <<< "$jq_before"
+            receipt_bootstrap_jq apt "${jq_before_present:-false}" || exit 1
+            jq_status=0
+            DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y jq --no-install-recommends || jq_status=$?
+            jq_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' jq 2>/dev/null || true)"
+            IFS=$'\t' read -r jq_dpkg_status jq_dpkg_version <<< "$jq_state"
+            jq_after=""; [[ "$jq_dpkg_status" == 'ii ' ]] && jq_after="$jq_dpkg_version"
+            if command -v jq >/dev/null 2>&1; then
+                receipt_init || exit 1
+                if [[ -n "$jq_after" && "$jq_after" != "${jq_before_version:-}" ]]; then
+                    record_managed_package apt:jq "${jq_before_present:-false}" "${jq_before_version:-}" "$jq_after"
+                else
+                    cancel_managed_package apt:jq
+                fi
+            fi
+            (( jq_status == 0 )) || exit "$jq_status"
+            $RECEIPT_READY || exit 1
+        fi
+        while IFS=$'\t' read -r package before_present before; do
+            [[ -n "$package" ]] || continue
+            begin_managed_package "apt:$package" "$before_present" "$before" || exit 1
+        done < "$APT_BEFORE"
+        apt_status=0
         # shellcheck disable=SC2046
         DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
-            $(manifest_lines "$APT_FILE") --no-install-recommends
+            $(manifest_lines "$APT_FILE") --no-install-recommends || apt_status=$?
+        if ! receipt_init; then (( apt_status == 0 )) || exit "$apt_status"; exit 1; fi
+        while IFS=$'\t' read -r package before_present before; do
+            [[ -n "$package" ]] || continue
+            dpkg_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' "$package" 2>/dev/null || true)"
+            IFS=$'\t' read -r dpkg_status dpkg_version <<< "$dpkg_state"
+            after=""; [[ "$dpkg_status" == 'ii ' ]] && after="$dpkg_version"
+            if [[ -n "$after" && ( "$before_present" != true || "$after" != "$before" ) ]]; then
+                record_managed_package "apt:$package" "$before_present" "$before" "$after"
+            else
+                cancel_managed_package "apt:$package"
+            fi
+        done < "$APT_BEFORE"
+        (( apt_status == 0 )) || exit "$apt_status"
     else
         echo "    [!] manifests/apt.txt not found, skipping."
+        receipt_init || exit 1
     fi
 
     echo "    Setting timezone to Asia/Seoul..."
@@ -473,9 +891,8 @@ elif [[ "$OS" == "Linux" ]]; then
     echo
     echo "==> Merging git config..."
     merge_gitconfig "$ROOT/config/git/gitconfig"
-    git config --global core.autocrlf input
-    git config --global core.fileMode true
-    echo "    Set core.autocrlf=input, core.fileMode=true (Linux)"
+    set_managed_git_value core.autocrlf input
+    set_managed_git_value core.fileMode true
 fi
 
 # =============================================
@@ -484,8 +901,7 @@ fi
 echo
 TMUX_SRC="$ROOT/config/tmux/tmux.linux.conf"
 if [[ -f "$TMUX_SRC" ]]; then
-    cp -f "$TMUX_SRC" "$HOME/.tmux.conf"
-    echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"
+    if install_managed_file "$TMUX_SRC" "$HOME/.tmux.conf" takeover; then echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"; fi
 fi
 
 # =============================================
@@ -494,9 +910,7 @@ fi
 echo
 echo "==> Deploying yazi config..."
 if [[ -d "$ROOT/config/yazi" ]]; then
-    mkdir -p "$YAZI_CONFIG_DIR"
-    cp -rf "$ROOT/config/yazi/." "$YAZI_CONFIG_DIR/"
-    echo "    yazi config deployed to $YAZI_CONFIG_DIR"
+    if install_managed_tree "$ROOT/config/yazi" "$YAZI_CONFIG_DIR" takeover; then echo "    yazi config deployed to $YAZI_CONFIG_DIR"; fi
 else
     echo "    [!] config/yazi not found, skipping."
 fi
@@ -509,10 +923,10 @@ echo "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
 if [[ ! -f "$ROOT/config/nvim/init.lua" ]]; then
     echo "    [!] config/nvim/init.lua not found, skipping."
 else
-    mkdir -p "$NVIM_CONFIG_DIR"
-    cp -rf "$ROOT/config/nvim/." "$NVIM_CONFIG_DIR/"
-    echo "    lazy.nvim config deployed to $NVIM_CONFIG_DIR"
-    echo "    Run nvim to auto-install lazy.nvim on first launch."
+    if install_managed_tree "$ROOT/config/nvim" "$NVIM_CONFIG_DIR" takeover; then
+        echo "    lazy.nvim config deployed to $NVIM_CONFIG_DIR"
+        echo "    Run nvim to auto-install lazy.nvim on first launch."
+    fi
 fi
 
 # =============================================
@@ -520,8 +934,7 @@ fi
 # =============================================
 echo
 if [[ -f "$ROOT/config/starship.toml" ]]; then
-    cp -f "$ROOT/config/starship.toml" "$STARSHIP_CONFIG"
-    echo "    Copied starship.toml to $STARSHIP_CONFIG"
+    if install_managed_file "$ROOT/config/starship.toml" "$STARSHIP_CONFIG" takeover; then echo "    Copied starship.toml to $STARSHIP_CONFIG"; fi
 fi
 
 # =============================================
@@ -736,14 +1149,28 @@ echo
 echo "==> Installing global npm packages..."
 NPM_FILE="$ROOT/manifests/npm-global.txt"
 if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
+    npm_root="$(npm root -g)"
+    npm_failed=0
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
+        package_json="$npm_root/$pkg/package.json"
+        before="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
+        before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+        begin_managed_package "npm:$pkg" "$before_present" "$before" || exit 1
         if npm install -g "$pkg" >/dev/null 2>&1; then
             echo "    Installed $pkg"
         else
             echo "    [!] Failed: $pkg"
+            npm_failed=1
+        fi
+        after="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
+        if [[ -n "$after" && ( "$before_present" != true || "$before" != "$after" ) ]]; then
+            record_managed_package "npm:$pkg" "$before_present" "$before" "$after"
+        else
+            cancel_managed_package "npm:$pkg"
         fi
     done < <(manifest_lines "$NPM_FILE")
+    (( npm_failed == 0 )) || exit 1
 else
     echo "    [!] manifests/npm-global.txt or npm not found, skipping."
 fi
@@ -759,8 +1186,7 @@ merge_codex_config "$ROOT/config/codex/config.toml" "$CODEX_DIR/config.toml"
 AGENTS_GLOBAL_SRC="$ROOT/config/agents/global.md"
 ROLES_SRC="$ROOT/config/agents/roles"
 if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
-    cp -f "$AGENTS_GLOBAL_SRC" "$CODEX_DIR/AGENTS.md"
-    echo "    Copied global agent instructions to AGENTS.md"
+    if install_managed_file "$AGENTS_GLOBAL_SRC" "$CODEX_DIR/AGENTS.md" takeover; then echo "    Copied global agent instructions to AGENTS.md"; fi
 else
     echo "    [!] config/agents/global.md not found"
 fi
@@ -773,19 +1199,14 @@ if [[ -d "$ROLES_SRC" ]]; then
         [[ -f "$d/codex.toml" && -f "$d/body.md" ]] || continue
         name="$(basename "$d")"
         # TOML literal multi-line string(''') — 이스케이프 해석이 없어 body를 그대로 담는다
+        tmp_agent="$(mktemp)"; _TMPFILES+=("$tmp_agent")
         {
             cat "$d/codex.toml"
             printf "developer_instructions = '''\n"
             cat "$d/body.md"
             printf "'''\n"
-        } > "$CODEX_DIR/agents/$name.toml"
-        echo "    Deployed agent: $name"
-
-        # 구 배포물 정리: 이전에는 같은 role을 skill로 배포했다 (~/.codex/skills/<name>/)
-        if [[ -f "$CODEX_DIR/skills/$name/SKILL.md" ]]; then
-            rm -rf "${CODEX_DIR:?}/skills/$name"
-            echo "    Removed legacy skill: $name"
-        fi
+        } > "$tmp_agent"
+        if install_managed_file "$tmp_agent" "$CODEX_DIR/agents/$name.toml" skip; then echo "    Deployed agent: $name"; fi
     done
 fi
 
@@ -801,10 +1222,10 @@ fi
 CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
 TEMPORAL_SRC="$ROOT/config/codex/hooks/temporal-context.sh"
 if [[ -f "$TEMPORAL_SRC" ]]; then
-    mkdir -p "$CODEX_HOOKS_DIR"
-    cp -f "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh"
-    chmod +x "$CODEX_HOOKS_DIR/temporal-context.sh"
-    echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
+    if install_managed_file "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh" skip; then
+        chmod +x "$CODEX_HOOKS_DIR/temporal-context.sh"
+        echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
+    fi
 else
     echo "    [!] config/codex/hooks/temporal-context.sh not found, skipping."
 fi
@@ -840,8 +1261,7 @@ else
     fi
 
     if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
-        cp -f "$AGENTS_GLOBAL_SRC" "$CLAUDE_DIR/CLAUDE.md"
-        echo "    Copied global agent instructions to CLAUDE.md"
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$CLAUDE_DIR/CLAUDE.md" takeover; then echo "    Copied global agent instructions to CLAUDE.md"; fi
     else
         echo "    [!] config/agents/global.md not found"
     fi
@@ -850,10 +1270,16 @@ else
     HOOKS_SRC="$ROOT/config/claude/hooks"
     HOOKS_DST="$CLAUDE_DIR/hooks"
     if [[ -d "$HOOKS_SRC" ]]; then
-        mkdir -p "$HOOKS_DST"
-        cp -rf "$HOOKS_SRC/." "$HOOKS_DST/"
-        chmod +x "$HOOKS_DST"/*.sh 2>/dev/null || true
-        echo "    Copied hooks/ and set +x"
+        hook_status=0
+        while IFS= read -r -d '' hook_src; do
+            hook_rel="${hook_src#"$HOOKS_SRC"/}"
+            if install_managed_file "$hook_src" "$HOOKS_DST/$hook_rel" skip; then
+                if [[ "$hook_src" == *.sh ]]; then chmod +x "$HOOKS_DST/$hook_rel"; fi
+            else
+                hook_status=1
+            fi
+        done < <(find "$HOOKS_SRC" -type f -print0)
+        if (( hook_status == 0 )); then echo "    Copied hooks/ and set +x"; fi
     else
         echo "    [!] config/claude/hooks not found, skipping."
     fi
@@ -864,8 +1290,8 @@ else
         mkdir -p "$CLAUDE_DIR/skills"
         for d in "$SKILLS_LOCAL_SRC"/*/; do
             [[ -d "$d" ]] || continue
-            cp -rf "$d" "$CLAUDE_DIR/skills/"
-            echo "    Deployed local skill: $(basename "$d")"
+            name="$(basename "$d")"
+            if install_managed_tree "$d" "$CLAUDE_DIR/skills/$name" skip true; then echo "    Deployed local skill: $name"; fi
         done
     fi
 
@@ -876,8 +1302,9 @@ else
         for d in "$ROLES_SRC"/*/; do
             [[ -f "$d/claude.frontmatter" && -f "$d/body.md" ]] || continue
             name="$(basename "$d")"
-            cat "$d/claude.frontmatter" "$d/body.md" > "$CLAUDE_DIR/agents/$name.md"
-            echo "    Deployed agent: $name"
+            tmp_agent="$(mktemp)"; _TMPFILES+=("$tmp_agent")
+            cat "$d/claude.frontmatter" "$d/body.md" > "$tmp_agent"
+            if install_managed_file "$tmp_agent" "$CLAUDE_DIR/agents/$name.md" skip; then echo "    Deployed agent: $name"; fi
         done
     fi
 fi
