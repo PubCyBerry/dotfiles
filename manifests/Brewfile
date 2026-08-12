@@ -5,6 +5,7 @@ brew "git"
 brew "curl"
 brew "wget"
 brew "vim"
+brew "neovim"
 brew "shellcheck"
 
 # Node 버전 관리

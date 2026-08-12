@@ -124,8 +124,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run install.sh
-        run: bash install.sh --with-defaults
+      - name: Seed existing user settings
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.codex"
+          printf '%s\n' 'sentinel = "keep"' > "$HOME/.codex/config.toml"
+          printf '%s\n' '# user-sentinel' > "$HOME/.zshrc"
+          git_config="$RUNNER_TEMP/dotfiles-gitconfig"
+          : > "$git_config"
+          printf 'GIT_CONFIG_GLOBAL=%s\n' "$git_config" >> "$GITHUB_ENV"
+
+      - name: First install (fresh environment)
+        run: /bin/bash install.sh --with-defaults
+
+      - name: Verify first install
+        run: |
+          set -euo pipefail
+          /bin/bash --version
+          command -v nvim
+          nvim --version
+
+      - name: Second install (idempotent / update path)
+        run: /bin/bash install.sh
+
+      - name: Verify install contract
+        run: |
+          set -euo pipefail
+          brew list --formula --versions neovim
+          command -v nvim
+          nvim --version
+
+          editor="$(git config --global --get core.editor)"
+          [[ "$editor" == "nvim -f" ]]
+          command -v "${editor%% *}"
+
+          yazi_run="$(yq -p=toml -r '.opener.edit[] | select(.for == "unix") | .run' "$HOME/.config/yazi/yazi.toml")"
+          [[ "$yazi_run" == 'nvim "%s"' ]]
+          command -v "${yazi_run%% *}"
+
+          [[ "$(yq -p=toml -r '.sentinel' "$HOME/.codex/config.toml")" == "keep" ]]
+          [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
 
   test-windows-install:
     name: Windows install + verify

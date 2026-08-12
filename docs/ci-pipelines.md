@@ -42,6 +42,11 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
 - `config/agents/roles/`가 `~/.codex/agents/<name>.toml`로 실제 조립 배포됐는지 확인 — TOML 파싱, `name` 일치, `developer_instructions`와 소스 `body.md` 일치. 구 skill 경로(`~/.codex/skills/<name>/`)가 남지 않았는지도 함께 본다 (`SKIP_CLAUDE_CODE=1`이라 Claude 쪽 배포는 이 job에서 검증하지 않는다)
 
+**test-macos-install**
+- `/bin/bash install.sh --with-defaults`와 `/bin/bash install.sh`를 이어서 실행해 fresh 및 update 경로를 검증
+- Homebrew Neovim, Git editor, Yazi opener가 실제 `nvim` executable을 가리키는지 확인
+- 기존 Codex TOML과 `.zshrc` sentinel이 보존되고 profile marker가 중복되지 않는지 확인
+
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
 - `jq empty config/claude/*.json`: JSON 파일 문법 검증
