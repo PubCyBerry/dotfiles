@@ -190,6 +190,9 @@ install_managed_file() {
         return 1
     elif [[ -f "$dst" && "$before_hash" == "$source_hash" ]]; then
         return 0
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
     else
         if [[ -f "$dst" ]]; then
             backup="$dst.dotfiles-backup"
@@ -237,6 +240,134 @@ install_managed_file() {
     receipt_commit --arg path "$dst" --arg installed "$source_hash" '.artifacts[$path].installedHash = $installed | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].previousHash,.artifacts[$path].previousExists)' || return 1
 }
 
+install_managed_symlink() {
+    local dst="$1" target="$2" legacy_target="${3:-}" current_target="" installed="" pending=false
+    local previous_exists=false previous_type=missing previous_target="" tmp
+    $RECEIPT_READY || return 1
+    if ! managed_parent_is_safe "$dst"; then
+        echo "    [!] Unsupported symlink parent path; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ -L "$dst" ]]; then
+        previous_exists=true; previous_type=symlink; current_target="$(readlink "$dst")"; previous_target="$current_target"
+    elif [[ -e "$dst" ]]; then
+        echo "    [!] Unowned file collision; preserving: $dst" >&2
+        return 1
+    fi
+
+    if jq -e --arg path "$dst" '.artifacts[$path] | has("installedTarget")' "$RECEIPT_PATH" >/dev/null; then
+        installed="$(jq -r --arg path "$dst" '.artifacts[$path].installedTarget' "$RECEIPT_PATH")"
+        pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+        if [[ "$pending" == true && -L "$dst" && "$current_target" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetTarget' "$RECEIPT_PATH")" ]]; then
+            receipt_commit --arg path "$dst" '.artifacts[$path].installedTarget=.artifacts[$path].targetTarget | .artifacts[$path].pending=false | del(.artifacts[$path].targetTarget,.artifacts[$path].previousExists,.artifacts[$path].previousType,.artifacts[$path].previousTarget)' || return 1
+            installed="$current_target"; pending=false
+        fi
+        if [[ "$pending" == true ]]; then
+            previous_exists="$(jq -r --arg path "$dst" '.artifacts[$path].previousExists' "$RECEIPT_PATH")"
+            previous_type="$(jq -r --arg path "$dst" '.artifacts[$path].previousType' "$RECEIPT_PATH")"
+            previous_target="$(jq -r --arg path "$dst" '.artifacts[$path].previousTarget // empty' "$RECEIPT_PATH")"
+            if [[ "$previous_exists" != true && ( -e "$dst" || -L "$dst" ) ]] ||
+               [[ "$previous_exists" == true && ( ! -L "$dst" || "$current_target" != "$previous_target" ) ]]; then
+                echo "    [!] Pending managed symlink changed; preserving: $dst" >&2
+                return 1
+            fi
+        elif [[ ! -L "$dst" || "$current_target" != "$installed" ]]; then
+            echo "    [!] Managed symlink changed or missing; preserving: $dst" >&2
+            return 1
+        elif [[ "$installed" == "$target" ]]; then
+            return 0
+        fi
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
+    else
+        if [[ -L "$dst" ]]; then
+            if [[ -n "$legacy_target" && ! -e "$dst" && "$current_target" == "$legacy_target" ]]; then
+                echo "    Migrating exact legacy dangling link: $dst"
+            else
+                echo "    [!] Unowned symlink collision; preserving: $dst" >&2
+                return 1
+            fi
+        fi
+        receipt_commit --arg path "$dst" --argjson exists "$previous_exists" --arg type "$previous_type" --arg previous "$previous_target" --arg target "$target" '
+          .artifacts[$path]={before:{exists:$exists,type:$type,target:(if $type=="symlink" then $previous else null end)},installedTarget:null,pending:true,targetTarget:$target,previousExists:$exists,previousType:$type,previousTarget:(if $type=="symlink" then $previous else null end)}' || return 1
+        pending=true
+    fi
+    if [[ "$pending" != true ]]; then
+        receipt_commit --arg path "$dst" --arg target "$target" --argjson exists "$previous_exists" --arg type "$previous_type" --arg previous "$previous_target" '
+          .artifacts[$path].pending=true | .artifacts[$path].targetTarget=$target | .artifacts[$path].previousExists=$exists | .artifacts[$path].previousType=$type | .artifacts[$path].previousTarget=(if $type=="symlink" then $previous else null end)' || return 1
+    fi
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.dotfiles-link.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    rm -f "$tmp" || return 1
+    ln -s "$target" "$tmp" || return 1
+    [[ -L "$tmp" && "$(readlink "$tmp")" == "$target" ]] || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg target "$target" '.artifacts[$path].installedTarget=$target | .artifacts[$path].pending=false | del(.artifacts[$path].targetTarget,.artifacts[$path].previousExists,.artifacts[$path].previousType,.artifacts[$path].previousTarget)' || return 1
+}
+
+ensure_managed_symlink() {
+    local dst="$1" target="$2" legacy_target="${3:-}"
+    if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+        if [[ -L "$dst" && "$(readlink "$dst")" == "$target" ]]; then return 0; fi
+        if [[ -L "$dst" && ! -e "$dst" && -n "$legacy_target" && "$(readlink "$dst")" == "$legacy_target" ]]; then
+            ln -sfn "$target" "$dst"
+            return
+        fi
+        if [[ ! -e "$dst" && ! -L "$dst" ]]; then mkdir -p "$(dirname "$dst")"; ln -s "$target" "$dst"; return; fi
+        return 1
+    fi
+    if [[ -L "$dst" && "$(readlink "$dst")" == "$target" ]] && ! jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    Exact external symlink preserved: $dst -> $target"
+        return 0
+    fi
+    install_managed_symlink "$dst" "$target" "$legacy_target"
+}
+
+download_verified() {
+    local url="$1" expected="$2" dst="$3" tmp actual
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.download.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    curl --retry 3 --retry-delay 2 -fsSL -o "$tmp" "$url" || return 1
+    actual="$(file_hash "$tmp")"
+    if [[ "$actual" != "$expected" ]]; then
+        echo "    [!] SHA-256 mismatch: $url" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    mv "$tmp" "$dst"
+}
+
+record_direct_version() {
+    local path="$1" version="$2"
+    receipt_commit --arg path "$path" --arg version "$version" '.artifacts[$path].directVersion=$version'
+}
+
+direct_anchor_state() {
+    local path="$1" version="$2" installed current
+    DIRECT_STATE=new; DIRECT_INSTALLED_VERSION=""
+    jq -e --arg path "$path" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null || return 0
+    if jq -e --arg path "$path" '.artifacts[$path].pending == true' "$RECEIPT_PATH" >/dev/null; then
+        DIRECT_STATE=recover
+        return 0
+    fi
+    installed="$(jq -r --arg path "$path" '.artifacts[$path].directVersion // empty' "$RECEIPT_PATH")"
+    DIRECT_INSTALLED_VERSION="$installed"
+    [[ -n "$installed" ]] || { DIRECT_STATE=recover; return 0; }
+    if jq -e --arg path "$path" '.artifacts[$path] | has("installedTarget")' "$RECEIPT_PATH" >/dev/null; then
+        current="$(readlink "$path" 2>/dev/null || true)"
+        [[ -L "$path" && "$current" == "$(jq -r --arg path "$path" '.artifacts[$path].installedTarget' "$RECEIPT_PATH")" ]] || DIRECT_STATE=modified
+    else
+        [[ -f "$path" && "$(file_hash "$path")" == "$(jq -r --arg path "$path" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")" ]] || DIRECT_STATE=modified
+    fi
+    [[ "$DIRECT_STATE" == modified ]] && return 0
+    if [[ "$installed" != "$version" ]]; then
+        if [[ "${DOTFILES_UPGRADE_DIRECT:-0}" != 1 ]]; then DIRECT_STATE=upgrade-blocked; else DIRECT_STATE=upgrade; fi
+        return 0
+    fi
+    [[ "$DIRECT_STATE" == new ]] && DIRECT_STATE=current
+}
+
 receipt_owns_prefix() {
     local prefix="${1%/}/"
     jq -e --arg prefix "$prefix" '.artifacts | keys | any(startswith($prefix))' "$RECEIPT_PATH" >/dev/null
@@ -258,6 +389,73 @@ install_managed_tree() {
         install_managed_file "$file" "$dst/$relative" "$collision" || status=1
     done < <(find "$src" -type f -print0)
     return "$status"
+}
+
+tree_hash() {
+    local root="$1"
+    {
+        printf 'root\0%s\0' "$(stat -c '%a' "$root")"
+        find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
+        printf 'content\0'
+        tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+    } | {
+        if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+        else shasum -a 256 | awk '{print $1}'
+        fi
+    }
+}
+
+install_managed_direct_tree() {
+    local src="$1" dst="$2" version="$3" source_hash current_hash="" pending target_hash previous_exists tmp
+    $RECEIPT_READY && [[ -d "$src" ]] || return 1
+    managed_parent_is_safe "$dst" || { echo "    [!] Unsafe direct tree parent; preserving: $dst" >&2; return 1; }
+    source_hash="$(tree_hash "$src")" || return 1
+    if jq -e --arg path "$dst" '.artifacts[$path] | has("installedTreeHash")' "$RECEIPT_PATH" >/dev/null; then
+        [[ -d "$dst" && ! -L "$dst" ]] && current_hash="$(tree_hash "$dst")"
+        pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+        target_hash="$(jq -r --arg path "$dst" '.artifacts[$path].targetTreeHash // empty' "$RECEIPT_PATH")"
+        if [[ "$pending" == true && ( -z "$target_hash" || "$source_hash" != "$target_hash" ) ]]; then
+            echo "    [!] Pending direct tree target changed; preserving: $dst" >&2
+            return 1
+        fi
+        if [[ "$pending" == true && -n "$current_hash" && "$current_hash" == "$target_hash" ]]; then
+            receipt_commit --arg path "$dst" '.artifacts[$path].installedTreeHash=.artifacts[$path].targetTreeHash | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
+            record_direct_version "$dst" "$version"
+            return
+        fi
+        if [[ "$pending" == true ]]; then
+            previous_exists="$(jq -r --arg path "$dst" '.artifacts[$path].previousExists // .artifacts[$path].before.exists' "$RECEIPT_PATH")"
+            if [[ "$previous_exists" != false || -e "$dst" || -L "$dst" ]]; then
+                echo "    [!] Pending direct tree is not a recoverable fresh versioned target; preserving: $dst" >&2
+                return 1
+            fi
+        elif [[ "$current_hash" != "$(jq -r --arg path "$dst" '.artifacts[$path].installedTreeHash' "$RECEIPT_PATH")" ]]; then
+            echo "    [!] Managed direct tree changed; preserving: $dst" >&2
+            return 1
+        fi
+        if [[ "$pending" != true ]]; then
+            if [[ "$current_hash" == "$source_hash" ]]; then record_direct_version "$dst" "$version"; return; fi
+            echo "    [!] Versioned direct tree content differs; preserving: $dst" >&2
+            return 1
+        fi
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
+    elif [[ -e "$dst" || -L "$dst" ]]; then
+        echo "    [!] Unowned direct tree collision; preserving: $dst" >&2
+        return 1
+    else
+        receipt_commit --arg path "$dst" --arg hash "$source_hash" '.artifacts[$path]={before:{exists:false,type:"missing"},installedTreeHash:null,pending:true,targetTreeHash:$hash,previousExists:false}' || return 1
+        pending=true
+    fi
+    [[ "$pending" == true ]] || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp -d "$(dirname "$dst")/.dotfiles-tree.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    cp -a "$src/." "$tmp/" || return 1
+    chmod --reference="$src" "$tmp" || return 1
+    [[ "$(tree_hash "$tmp")" == "$source_hash" ]] || return 1
+    mv -T "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg hash "$source_hash" --arg version "$version" '.artifacts[$path].installedTreeHash=$hash | .artifacts[$path].directVersion=$version | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
 }
 
 record_managed_package() {
@@ -294,6 +492,72 @@ cancel_managed_package() {
     receipt_commit --arg name "$name" '
         (if .packages[$name].pending.newEntry and .packages[$name].installed == null then del(.packages[$name])
         else del(.packages[$name].pending) end) | del(.bootstrap)'
+}
+
+query_claude_npm_package() {
+    local npm_root package_json
+    CLAUDE_QUERY_STATE=error; CLAUDE_QUERY_VERSION=""
+    npm_root="$(npm root -g 2>/dev/null)" || return 1
+    [[ -n "$npm_root" ]] || return 1
+    package_json="$npm_root/@anthropic-ai/claude-code/package.json"
+    if [[ ! -e "$package_json" && ! -L "$package_json" ]]; then CLAUDE_QUERY_STATE=absent; return 0; fi
+    [[ -f "$package_json" ]] || return 1
+    CLAUDE_QUERY_VERSION="$(jq -er '.version | strings | select(length > 0)' "$package_json" 2>/dev/null)" || return 1
+    CLAUDE_QUERY_STATE=present
+}
+
+query_claude_cask() {
+    local output installed
+    CLAUDE_QUERY_STATE=error; CLAUDE_QUERY_VERSION=""
+    if output="$(brew list --cask --versions claude-code 2>&1)"; then
+        CLAUDE_QUERY_VERSION="$(awk '$1 == "claude-code" && NF >= 2 { print $2; exit }' <<< "$output")"
+        [[ -n "$CLAUDE_QUERY_VERSION" ]] || return 1
+        CLAUDE_QUERY_STATE=present
+        return 0
+    fi
+    installed="$(brew list --cask 2>/dev/null)" || return 1
+    grep -Fxq claude-code <<< "$installed" && return 1
+    CLAUDE_QUERY_STATE=absent
+}
+
+reconcile_pending_claude_package() {
+    local name="$1" query="$2" command_present="$3" previous_present previous_value before_present before_value
+    "$query" || return 1
+    previous_present="$(jq -r --arg name "$name" '.packages[$name].pending.previousPresent' "$RECEIPT_PATH")"
+    previous_value="$(jq -r --arg name "$name" '.packages[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+    if [[ "$CLAUDE_QUERY_STATE" == present ]]; then
+        if [[ "$previous_present" == true && "$CLAUDE_QUERY_VERSION" == "$previous_value" ]]; then
+            cancel_managed_package "$name"
+        else
+            before_present="$(jq -r --arg name "$name" '.packages[$name].before.present' "$RECEIPT_PATH")"
+            before_value="$(jq -r --arg name "$name" '.packages[$name].before.value // empty' "$RECEIPT_PATH")"
+            record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION"
+        fi
+    elif [[ "$CLAUDE_QUERY_STATE" == absent && "$previous_present" == false && "$command_present" == false ]]; then
+        cancel_managed_package "$name"
+    else
+        return 1
+    fi
+}
+
+complete_managed_claude_package() {
+    local name="$1" query="$2" before_present="$3" before_value="$4" manager_status="$5" command_present="$6"
+    if "$query"; then
+        if [[ "$CLAUDE_QUERY_STATE" == present ]]; then
+            if [[ "$before_present" != true || "$CLAUDE_QUERY_VERSION" != "$before_value" ]]; then
+                record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION" || return 1
+            else
+                cancel_managed_package "$name" || return 1
+            fi
+            (( manager_status == 0 )) && return 0
+            return "$manager_status"
+        fi
+        if [[ "$CLAUDE_QUERY_STATE" == absent && "$before_present" == false && "$command_present" == false ]]; then
+            cancel_managed_package "$name" || return 1
+        fi
+    fi
+    (( manager_status != 0 )) && return "$manager_status"
+    return 1
 }
 
 managed_value_is_sensitive() {
@@ -560,27 +824,6 @@ run_privileged() {
     fi
 }
 
-gh_release_tag() {
-    # 최신 release tag (v 접두사 포함). GITHUB_TOKEN 설정 시 rate limit 5000/hr
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$1/releases/latest" \
-            | jq -r '.tag_name // empty'
-    else
-        curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
-            | jq -r '.tag_name // empty'
-    fi
-}
-
-arch_triple() {
-    # ARCH에 맞는 triple 반환. schema 예: "amd64:x86_64-linux-musl|arm64:aarch64-linux-musl"
-    local schema="$1" entry
-    for entry in $(echo "$schema" | tr '|' ' '); do
-        if [[ "${entry%%:*}" == "$ARCH" ]]; then
-            echo "${entry#*:}"; return
-        fi
-    done
-}
-
 prune_node_versions() {
     local current old
     [[ "${DOTFILES_PRUNE_NODE_VERSIONS:-0}" == "1" ]] || return 0
@@ -610,16 +853,8 @@ link_fnm_default_bins() {
             echo "    [!] fnm default $bin is not executable: $target"
             continue
         fi
-        if [[ ! -e "$link" && ! -L "$link" ]]; then
-            ln -s "$target" "$link"
+        if ensure_managed_symlink "$link" "$target" "$legacy_target"; then
             echo "    Linked $link -> fnm default"
-        elif [[ -L "$link" && ! -e "$link" && "$(readlink "$link")" == "$legacy_target" ]]; then
-            ln -sfn "$target" "$link"
-            echo "    Repaired legacy link $link -> fnm default"
-        elif [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
-            :
-        else
-            echo "    $link already exists, preserving it."
         fi
     done
 }
@@ -681,44 +916,146 @@ install_node_lts() {
     return 0
 }
 
+install_direct_file() {
+    local name="$1" version="$2" src="$3" dst="$4"
+    chmod 755 "$src" || return 1
+    if install_managed_file "$src" "$dst" skip; then
+        record_direct_version "$dst" "$version" || return 1
+        echo "    $name $version -> $dst"
+        return 0
+    fi
+    return 1
+}
+
+validate_direct_manifest() {
+    local manifest="$1"
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 6 || $1 !~ /^(starship|atuin|fnm|bun|yazi|lazygit|fzf|nvim|delta|eza|yq)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(amd64|arm64)$/ || $4 !~ /^(tgz|zip|bin)$/ || $5 !~ /^https:\/\/github\.com\/[^[:space:]]+\/releases\/download\/[^[:space:]]+$/ || $5 ~ /\/(latest|HEAD|main)\// || $6 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1 SUBSEP $3]++ { bad=1 }
+      { count[$1]++ }
+      END {
+        split("starship atuin fnm bun yazi lazygit fzf nvim delta eza yq", names, " ")
+        for (i in names) if (count[names[i]] != 2) bad=1
+        exit bad
+      }
+    ' "$manifest"
+}
+
+install_direct_artifacts() {
+    local manifest="$ROOT/manifests/direct-artifacts.tsv" name version arch format url checksum
+    local work archive extract member anchor state tree target current failed=0
+    [[ "$ARCH" == amd64 || "$ARCH" == arm64 ]] || { echo "    [!] Unsupported direct artifact architecture: $ARCH" >&2; return 1; }
+    [[ -f "$manifest" ]] || { echo "    [!] $manifest not found" >&2; return 1; }
+    validate_direct_manifest "$manifest" || { echo "    [!] Invalid direct artifact manifest: $manifest" >&2; return 1; }
+    while IFS=$'\t' read -r name version arch format url checksum; do
+        [[ -n "$name" && "$name" != \#* && "$arch" == "$ARCH" ]] || continue
+        case "$name" in
+            fnm) anchor="$HOME/.local/share/fnm/fnm" ;;
+            bun) anchor="$HOME/.bun/bin/bun" ;;
+            *) anchor="$LOCAL_BIN/$name" ;;
+        esac
+        if [[ "$name" == nvim && ( -e "$anchor" || -L "$anchor" ) ]] && ! jq -e --arg path "$anchor" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+            echo "    [!] Unowned nvim launcher collision; preserving: $anchor" >&2
+            failed=1
+            continue
+        fi
+        direct_anchor_state "$anchor" "$version"; state="$DIRECT_STATE"
+        case "$state" in
+            current)
+                case "$name" in
+                    fnm) ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor" || failed=1; continue ;;
+                    bun)
+                        ensure_managed_symlink "$LOCAL_BIN/bun" "$anchor" || failed=1
+                        ensure_managed_symlink "$HOME/.bun/bin/bunx" bun || failed=1
+                        continue ;;
+                    yazi)
+                        direct_anchor_state "$LOCAL_BIN/ya" "$version"
+                        case "$DIRECT_STATE" in
+                            current) echo "    yazi $version already installed: $anchor"; continue ;;
+                            modified) echo "    [!] Managed ya artifact changed; preserving: $LOCAL_BIN/ya" >&2; failed=1; continue ;;
+                            upgrade-blocked) echo "    [!] ya version change requires DOTFILES_UPGRADE_DIRECT=1" >&2; failed=1; continue ;;
+                        esac ;;
+                    nvim)
+                        target="$HOME/.local/opt/nvim-v$version"
+                        if [[ -d "$target" && ! -L "$target" ]] &&
+                           [[ "$(tree_hash "$target")" == "$(jq -r --arg path "$target" '.artifacts[$path].installedTreeHash // empty' "$RECEIPT_PATH")" ]]; then
+                            echo "    nvim $version already installed: $target"
+                            continue
+                        fi
+                        echo "    [!] Managed nvim tree changed or missing; preserving: $target" >&2
+                        failed=1; continue ;;
+                    *) echo "    $name $version already installed: $anchor"; continue ;;
+                esac ;;
+            modified) echo "    [!] Managed direct artifact changed; preserving: $anchor" >&2; failed=1; continue ;;
+            upgrade-blocked)
+                if [[ "$name" == fnm ]] && ! ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor"; then failed=1; fi
+                echo "    [!] $name $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1" >&2
+                failed=1; continue ;;
+            upgrade) echo "    Upgrading $name: $DIRECT_INSTALLED_VERSION -> $version" ;;
+            new)
+                if command -v "$name" >/dev/null 2>&1; then
+                    if [[ "$name" == nvim ]]; then
+                        current="$(nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+                        [[ -n "$current" ]] && dpkg --compare-versions "$current" ge 0.10.0 && { echo "    nvim already provided outside the direct-artifact receipt: $(command -v nvim)"; continue; }
+                    elif [[ "$name" == fzf ]]; then
+                        current="$(fzf --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
+                        [[ -n "$current" ]] && dpkg --compare-versions "$current" ge 0.48.0 && { echo "    fzf already provided outside the direct-artifact receipt: $(command -v fzf)"; continue; }
+                    else
+                        echo "    $name already provided outside the direct-artifact receipt: $(command -v "$name")"
+                        continue
+                    fi
+                fi ;;
+        esac
+
+        work="$(mktemp -d)"; _TMPFILES+=("$work")
+        archive="$work/artifact"
+        if ! download_verified "$url" "$checksum" "$archive"; then failed=1; continue; fi
+        extract="$work/extract"; mkdir -p "$extract"
+        case "$format" in
+            tgz) tar -xzf "$archive" -C "$extract" || { failed=1; continue; } ;;
+            zip) unzip -q "$archive" -d "$extract" || { failed=1; continue; } ;;
+            bin) cp "$archive" "$extract/$name" || { failed=1; continue; } ;;
+            *) echo "    [!] Unsupported direct artifact format: $format" >&2; failed=1; continue ;;
+        esac
+
+        if [[ "$name" == nvim ]]; then
+            tree="$(find "$extract" -mindepth 1 -maxdepth 1 -type d -name 'nvim-linux-*' -print -quit)"
+            target="$HOME/.local/opt/nvim-v$version"
+            if [[ -z "$tree" ]] || ! install_managed_direct_tree "$tree" "$target" "$version"; then failed=1; continue; fi
+            if install_managed_symlink "$anchor" "$target/bin/nvim"; then
+                record_direct_version "$anchor" "$version" || { failed=1; continue; }
+                echo "    nvim $version -> $target"
+            else failed=1
+            fi
+            continue
+        fi
+
+        member="$(find "$extract" -type f -name "$name" -print -quit)"
+        if [[ -z "$member" ]] || ! install_direct_file "$name" "$version" "$member" "$anchor"; then failed=1; continue; fi
+        case "$name" in
+            yazi)
+                member="$(find "$extract" -type f -name ya -print -quit)"
+                [[ -n "$member" ]] && install_direct_file ya "$version" "$member" "$LOCAL_BIN/ya" || failed=1
+                ;;
+            fnm)
+                ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor" || failed=1
+                ;;
+            bun)
+                ensure_managed_symlink "$LOCAL_BIN/bun" "$anchor" || failed=1
+                ensure_managed_symlink "$HOME/.bun/bin/bunx" bun || failed=1
+                ;;
+        esac
+    done < "$manifest"
+    hash -r 2>/dev/null || true
+    return "$failed"
+}
+
 if [[ "${DOTFILES_FUNCTIONS_ONLY:-0}" == "1" ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
 receipt_preflight || exit 1
-
-install_gh_tar() {
-    # tar.gz → /usr/local/bin/$name. $1=name $2=url $3=bin_in_archive(default:$1)
-    local name="$1" url="$2" bin="${3:-$1}"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name.tar.gz" "$url"
-    tar -xzf "$TMP/$name.tar.gz" -C "$TMP"
-    run_privileged install -m 755 "$TMP/$bin" "/usr/local/bin/$name"
-    hash -r 2>/dev/null || true
-    echo "    $name installed."
-}
-
-install_gh_deb() {
-    # .deb → apt-get install. $1=name $2=url
-    local name="$1" url="$2"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP_DEB; TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP_DEB" "$url"
-    chmod 644 "$TMP_DEB"
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-    echo "    $name installed."
-}
-
-install_gh_bin() {
-    # 단일 바이너리 → /usr/local/bin/$name. $1=name $2=url
-    local name="$1" url="$2"
-    command -v "$name" >/dev/null 2>&1 && { echo "    $name already installed."; return; }
-    local TMP; TMP="$(mktemp -d)"; _TMPFILES+=("$TMP")
-    curl --retry 3 --retry-delay 2 -fsSL -o "$TMP/$name" "$url"
-    run_privileged install -m 755 "$TMP/$name" "/usr/local/bin/$name"
-    echo "    $name installed."
-}
 
 echo "==> Unix dotfiles setup starting..."
 echo "    Source: $ROOT"
@@ -731,13 +1068,8 @@ if [[ "$OS" == "Darwin" ]]; then
     # =============================================
     echo
     if ! command -v brew >/dev/null 2>&1; then
-      echo "    Installing Homebrew..."
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      if [[ "$(uname -m)" == "arm64" ]]; then
-          eval "$(/opt/homebrew/bin/brew shellenv)"
-      else
-          eval "$(/usr/local/bin/brew shellenv)"
-      fi
+      echo "    [!] Homebrew is required. Install it first from https://brew.sh/" >&2
+      exit 1
     fi
 
     BREWFILE="$ROOT/manifests/Brewfile"
@@ -868,21 +1200,15 @@ elif [[ "$OS" == "Linux" ]]; then
         receipt_init || exit 1
     fi
 
-    echo "    Setting timezone to Asia/Seoul..."
-    run_privileged ln -snf /usr/share/zoneinfo/Asia/Seoul /etc/localtime
-    echo "Asia/Seoul" | run_privileged tee /etc/timezone > /dev/null
-
     echo "    Refreshing font cache..."
     fc-cache -vf
 
     # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
     if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
-        ln -sf "$(command -v batcat)" "$LOCAL_BIN/bat"
-        echo "    Linked $LOCAL_BIN/bat -> batcat"
+        if ensure_managed_symlink "$LOCAL_BIN/bat" "$(command -v batcat)"; then echo "    Linked $LOCAL_BIN/bat -> batcat"; fi
     fi
     if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
-        ln -sf "$(command -v fdfind)" "$LOCAL_BIN/fd"
-        echo "    Linked $LOCAL_BIN/fd -> fdfind"
+        if ensure_managed_symlink "$LOCAL_BIN/fd" "$(command -v fdfind)"; then echo "    Linked $LOCAL_BIN/fd -> fdfind"; fi
     fi
 
     # =============================================
@@ -937,206 +1263,16 @@ if [[ -f "$ROOT/config/starship.toml" ]]; then
     if install_managed_file "$ROOT/config/starship.toml" "$STARSHIP_CONFIG" takeover; then echo "    Copied starship.toml to $STARSHIP_CONFIG"; fi
 fi
 
-# =============================================
-# 1-6. apt에 없거나 오래된 도구 — 공식 install one-liner
-# =============================================
-echo
-echo "==> Installing zoxide (official script)..."
-if ! command -v zoxide >/dev/null 2>&1; then
-    # --bin-dir로 사용자 디렉토리 지정 → sudo 없이 설치 (zoxide 기본도 ~/.local/bin이지만 명시)
-    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh \
-        | sh -s -- --bin-dir "$LOCAL_BIN"
-else
-    echo "    zoxide already installed."
-fi
-
-echo
-echo "==> Installing starship (official script)..."
-if ! command -v starship >/dev/null 2>&1; then
-    # -b 로 사용자 디렉토리 지정 → sudo 비밀번호 prompt 회피 (starship 기본은 /usr/local/bin)
-    curl -sS https://starship.rs/install.sh | sh -s -- -b "$LOCAL_BIN" -y
-else
-    echo "    starship already installed."
-fi
-
-echo
-echo "==> Installing atuin (official script, non-interactive)..."
-if ! command -v atuin >/dev/null 2>&1; then
-    curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh \
-        | sh -s -- --non-interactive || echo "    [!] atuin install returned non-zero (check log)."
-else
-    echo "    atuin already installed."
-fi
-
-echo
-echo "==> Installing fnm (official script, --skip-shell)..."
-if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-else
-    echo "    fnm already installed."
-fi
-if [[ -x "$HOME/.local/share/fnm/fnm" ]] && [[ ! -e "$LOCAL_BIN/fnm" ]]; then
-    ln -sf "$HOME/.local/share/fnm/fnm" "$LOCAL_BIN/fnm"
-    echo "    Linked $LOCAL_BIN/fnm -> fnm"
-fi
-
-echo
-echo "==> Installing bun (official script)..."
-if ! command -v bun >/dev/null 2>&1 && [[ ! -x "$HOME/.bun/bin/bun" ]]; then
-    curl -fsSL https://bun.sh/install | bash
-else
-    echo "    bun already installed."
-fi
-if [[ -x "$HOME/.bun/bin/bun" ]] && [[ ! -e "$LOCAL_BIN/bun" ]]; then
-    ln -sf "$HOME/.bun/bin/bun" "$LOCAL_BIN/bun"
-    echo "    Linked $LOCAL_BIN/bun -> bun"
-fi
-
 add_to_path_runtime "$LOCAL_BIN"
 add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
-# macOS already installed most of these via Brewfile. Skip Linux-only binary installs on macOS.
+# macOS는 Brewfile을 사용하고 Linux만 pinned, checksum-verified artifact를 설치한다.
 if [[ "$OS" == "Linux" ]]; then
-    # =============================================
-    # 1-7. GitHub releases 바이너리 (yazi, lazygit, neovim, delta, fzf, eza, yq)
-    # =============================================
-
-# GitHub API tag를 3개 병렬 선행 조회 (lazygit·delta·fzf에서 사용)
-_TAG_DIR="$(mktemp -d)"; _TMPFILES+=("$_TAG_DIR")
-gh_release_tag jesseduffield/lazygit > "$_TAG_DIR/lazygit"   &
-gh_release_tag dandavison/delta      > "$_TAG_DIR/delta"     &
-gh_release_tag junegunn/fzf          > "$_TAG_DIR/fzf"       &
-wait
-
-echo
-echo "==> Installing yazi from GitHub releases..."
-# musl 정적 빌드 사용 → glibc 버전 무관 (22.04 glibc 2.35 등 구버전에서도 동작)
-YAZI_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-musl|arm64:aarch64-unknown-linux-musl")"
-if command -v yazi >/dev/null 2>&1 && yazi --version >/dev/null 2>&1; then
-    echo "    yazi already installed: $(yazi --version | head -1)"
-elif [[ -n "$YAZI_TRIPLE" ]]; then
-    TMP_DEB="$(mktemp --suffix=.deb)"; _TMPFILES+=("$TMP_DEB")
-    curl -fsSL -o "$TMP_DEB" \
-        "https://github.com/sxyazi/yazi/releases/latest/download/yazi-${YAZI_TRIPLE}.deb"
-    chmod 644 "$TMP_DEB"
-    DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y "$TMP_DEB"
-    hash -r 2>/dev/null || true
-    echo "    yazi installed: $(yazi --version | head -1)"
-else
-    echo "    [!] Unsupported arch for yazi: $ARCH (skipping)"
+    echo
+    echo "==> Installing pinned direct artifacts..."
+    install_direct_artifacts || exit 1
 fi
-
-echo
-echo "==> Installing lazygit from GitHub releases..."
-LG_ARCH="$(arch_triple "amd64:Linux_x86_64|arm64:Linux_arm64")"
-if [[ -n "$LG_ARCH" ]]; then
-    LG_TAG="$(cat "$_TAG_DIR/lazygit")"
-    LG_VER="${LG_TAG#v}"
-    install_gh_tar "lazygit" \
-        "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LG_VER}_${LG_ARCH}.tar.gz"
-else
-    echo "    [!] Unsupported arch for lazygit: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing neovim from GitHub releases..."
-# 22.04 apt의 nvim은 0.6.x → lazy.nvim(>=0.8) 및 본 설정(0.10+) 미만이면 GitHub releases로 강제 업그레이드
-NVIM_MIN_VER="0.10.0"
-nvim_needs_install=true
-if command -v nvim >/dev/null 2>&1; then
-    nvim_cur_ver="$(nvim --version 2>/dev/null | head -1 \
-        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-    if [[ -n "$nvim_cur_ver" ]] \
-        && dpkg --compare-versions "$nvim_cur_ver" ge "$NVIM_MIN_VER"; then
-        nvim_needs_install=false
-        echo "    neovim already installed: $(nvim --version | head -1)"
-    else
-        echo "    nvim ${nvim_cur_ver:-unknown} < ${NVIM_MIN_VER}, upgrading from GitHub releases..."
-    fi
-fi
-if $nvim_needs_install; then
-    NVIM_ARCH="$(arch_triple "amd64:x86_64|arm64:aarch64")"
-    if [[ -n "$NVIM_ARCH" ]]; then
-        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
-        curl -fsSL -o "$TMP_DIR/nvim.tar.gz" \
-            "https://github.com/neovim/neovim/releases/latest/download/nvim-linux-${NVIM_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/nvim.tar.gz" -C "$TMP_DIR"
-        NVIM_DIR="$(find "$TMP_DIR" -maxdepth 1 -type d -name 'nvim-linux-*' 2>/dev/null | head -1)"
-        run_privileged cp -r "${NVIM_DIR}/." /usr/local/
-        hash -r 2>/dev/null || true
-        echo "    neovim installed: $(nvim --version | head -1)"
-    else
-        echo "    [!] Unsupported arch for neovim: $ARCH (skipping)"
-    fi
-fi
-
-echo
-echo "==> Installing git-delta from GitHub releases..."
-DELTA_ARCH="$(arch_triple "amd64:amd64|arm64:arm64")"
-if [[ -n "$DELTA_ARCH" ]]; then
-    DELTA_TAG="$(cat "$_TAG_DIR/delta")"
-    DELTA_VER="${DELTA_TAG#v}"
-    install_gh_deb "delta" \
-        "https://github.com/dandavison/delta/releases/download/${DELTA_TAG}/git-delta_${DELTA_VER}_${DELTA_ARCH}.deb"
-else
-    echo "    [!] Unsupported arch for delta: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing fzf from GitHub releases..."
-# 22.04 apt의 fzf는 0.29, --bash 플래그는 0.48.0+ 필요 → 0.48.0+ 강제
-FZF_MIN_VER="0.48.0"
-fzf_needs_install=true
-if command -v fzf >/dev/null 2>&1; then
-    fzf_cur_ver="$(fzf --version 2>/dev/null \
-        | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
-    if [[ -n "$fzf_cur_ver" ]] \
-        && dpkg --compare-versions "$fzf_cur_ver" ge "$FZF_MIN_VER"; then
-        fzf_needs_install=false
-        echo "    fzf already installed: $(fzf --version)"
-    else
-        echo "    fzf ${fzf_cur_ver:-unknown} < ${FZF_MIN_VER}, upgrading from GitHub releases..."
-    fi
-fi
-if $fzf_needs_install; then
-    FZF_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
-    if [[ -n "$FZF_ARCH" ]]; then
-        FZF_TAG="$(cat "$_TAG_DIR/fzf")"
-        FZF_VER="${FZF_TAG#v}"
-        TMP_DIR="$(mktemp -d)"; _TMPFILES+=("$TMP_DIR")
-        curl -fsSL -o "$TMP_DIR/fzf.tar.gz" \
-            "https://github.com/junegunn/fzf/releases/download/${FZF_TAG}/fzf-${FZF_VER}-${FZF_ARCH}.tar.gz"
-        tar -xzf "$TMP_DIR/fzf.tar.gz" -C "$TMP_DIR" fzf
-        run_privileged install -m 755 "$TMP_DIR/fzf" /usr/local/bin/fzf
-        hash -r 2>/dev/null || true
-        echo "    fzf installed: $(fzf --version)"
-    else
-        echo "    [!] Unsupported arch for fzf: $ARCH (skipping)"
-    fi
-fi
-
-echo
-echo "==> Installing eza from GitHub releases..."
-EZA_TRIPLE="$(arch_triple "amd64:x86_64-unknown-linux-gnu|arm64:aarch64-unknown-linux-gnu")"
-if [[ -n "$EZA_TRIPLE" ]]; then
-    install_gh_tar "eza" \
-        "https://github.com/eza-community/eza/releases/latest/download/eza_${EZA_TRIPLE}.tar.gz"
-else
-    echo "    [!] Unsupported arch for eza: $ARCH (skipping)"
-fi
-
-echo
-echo "==> Installing yq from GitHub releases..."
-YQ_ARCH="$(arch_triple "amd64:linux_amd64|arm64:linux_arm64")"
-if [[ -n "$YQ_ARCH" ]]; then
-    install_gh_bin "yq" \
-        "https://github.com/mikefarah/yq/releases/latest/download/yq_${YQ_ARCH}"
-    else
-    echo "    [!] Unsupported arch for yq: $ARCH (skipping)"
-    fi
-
-    fi
 
     # =============================================
     # 2. Node.js LTS (fnm)
@@ -1231,18 +1367,43 @@ else
 fi
 
 # =============================================
-# 3. Claude Code 네이티브 설치
+# 3. Claude Code package-manager 설치
 # =============================================
 echo
 if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
     echo "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)"
 else
-    echo "==> Installing Claude Code (native)..."
+    echo "==> Installing Claude Code via package manager..."
+    if [[ "$OS" == Darwin ]] && jq -e '.packages["cask:claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        reconcile_pending_claude_package cask:claude-code query_claude_cask "$command_present" || {
+            echo "    [!] Pending Claude cask identity unavailable; receipt left pending." >&2; exit 1;
+        }
+    elif [[ "$OS" == Linux ]] && jq -e '.packages["npm:@anthropic-ai/claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        reconcile_pending_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$command_present" || {
+            echo "    [!] Pending Claude npm identity unavailable; receipt left pending." >&2; exit 1;
+        }
+    fi
     if command -v claude >/dev/null 2>&1; then
         echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
+    elif [[ "$OS" == Darwin ]]; then
+        query_claude_cask || { echo "    [!] Claude cask identity query failed before installation." >&2; exit 1; }
+        before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
+        begin_managed_package cask:claude-code "$before_present" "$before" || exit 1
+        manager_status=0; brew install --cask claude-code || manager_status=$?
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        complete_managed_claude_package cask:claude-code query_claude_cask "$before_present" "$before" "$manager_status" "$command_present" || exit $?
+    elif command -v npm >/dev/null 2>&1 && [[ "$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge 22 ]]; then
+        query_claude_npm_package || { echo "    [!] Claude npm identity query failed before installation." >&2; exit 1; }
+        before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
+        begin_managed_package npm:@anthropic-ai/claude-code "$before_present" "$before" || exit 1
+        manager_status=0; npm install -g @anthropic-ai/claude-code || manager_status=$?
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        complete_managed_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$before_present" "$before" "$manager_status" "$command_present" || exit $?
     else
-        curl -fsSL https://claude.ai/install.sh | bash
-        echo "    Claude Code installed."
+        echo "    [!] Claude Code requires npm with Node.js 22+ on Linux." >&2
+        exit 1
     fi
 
     # =============================================

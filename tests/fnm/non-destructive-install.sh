@@ -7,6 +7,7 @@ export HOME="$TEST_ROOT/home"
 export FNM_DIR="$HOME/custom-fnm"
 export FNM_CALL_LOG="$TEST_ROOT/fnm-calls"
 export DOTFILES_FUNCTIONS_ONLY=1
+export DOTFILES_RECEIPT_PATH="$TEST_ROOT/state/install-receipt.json"
 mkdir -p "$HOME/bin" "$FNM_DIR/node-versions/v18.20.0/installation/bin" \
     "$FNM_DIR/node-versions/v22.18.0/installation/bin" "$FNM_DIR/aliases" \
     "$HOME/.claude" "$HOME/.local/bin"
@@ -42,6 +43,7 @@ export PATH="$HOME/bin:$PATH"
 # shellcheck source=/dev/null
 source "$ROOT/install.sh"
 trap 'rm -rf "$TEST_ROOT"' EXIT
+receipt_init
 
 output="$(install_node_lts)"
 if grep -q '^uninstall ' "$FNM_CALL_LOG"; then

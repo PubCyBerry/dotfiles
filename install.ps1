@@ -50,6 +50,48 @@ function Get-WingetVersion([string]$Text, [string]$Id) {
     }
     return ''
 }
+
+function Test-WingetDefinitiveAbsent([int]$Status) {
+    ('{0:X8}' -f $Status) -eq '8A150014'
+}
+
+function Complete-ManagedWingetPackage(
+    [string]$Name, [bool]$BeforePresent, [string]$BeforeVersion,
+    [int]$ManagerStatus, [int]$QueryStatus, [string]$AfterVersion,
+    [bool]$InstalledCommandPresent = $false
+) {
+    if ($AfterVersion) {
+        if ((-not $BeforePresent) -or $AfterVersion -ne $BeforeVersion) {
+            Record-ManagedPackage $Name $BeforePresent $BeforeVersion $AfterVersion
+        } else { Cancel-ManagedPackage $Name }
+    } elseif ($ManagerStatus -ne 0 -and -not $BeforePresent -and -not $InstalledCommandPresent -and (Test-WingetDefinitiveAbsent $QueryStatus)) {
+        Cancel-ManagedPackage $Name
+    }
+    if ($ManagerStatus -ne 0) { return $ManagerStatus }
+    if (-not $AfterVersion) { return 1 }
+    return 0
+}
+
+function Complete-PendingManagedWingetPackage(
+    [string]$Name, [int]$QueryStatus, [string]$AfterVersion,
+    [bool]$InstalledCommandPresent = $false
+) {
+    $entry = $script:Receipt.packages[$Name]
+    if (-not $entry.pending) { return $true }
+    if ($AfterVersion) {
+        if ($entry.pending.previousPresent -and $AfterVersion -eq $entry.pending.previousValue) {
+            Cancel-ManagedPackage $Name
+        } else {
+            Record-ManagedPackage $Name $entry.before.present $entry.before.value $AfterVersion
+        }
+        return $true
+    }
+    if (-not $entry.pending.previousPresent -and -not $InstalledCommandPresent -and (Test-WingetDefinitiveAbsent $QueryStatus)) {
+        Cancel-ManagedPackage $Name
+        return $true
+    }
+    return $false
+}
 $script:Receipt = $null
 $script:ReceiptReady = $false
 $script:FunctionsOnlyMode = $env:DOTFILES_FUNCTIONS_ONLY -eq '1'
@@ -956,21 +998,42 @@ if (Test-Path $temporalSrc) {
 }
 
 # =============================================
-# 3. Claude Code 설치 (native)
+# 3. Claude Code 설치 (WinGet)
 # =============================================
 Write-Host ""
-Write-Host "==> Installing Claude Code (native)..."
+if ($env:SKIP_CLAUDE_CODE -eq "1") {
+    Write-Host "==> [CI] Skipping Claude Code installation and config (SKIP_CLAUDE_CODE=1)"
+} else {
+    Write-Host "==> Installing Claude Code via WinGet..."
+if ($script:Receipt.packages['winget:Anthropic.ClaudeCode'].pending) {
+    $pendingOut = (winget list --id Anthropic.ClaudeCode --exact --accept-source-agreements 2>&1 | Out-String)
+    $pendingStatus = $LASTEXITCODE
+    $pendingVersion = Get-WingetVersion $pendingOut 'Anthropic.ClaudeCode'
+    if (-not (Complete-PendingManagedWingetPackage 'winget:Anthropic.ClaudeCode' $pendingStatus $pendingVersion ([bool](Get-Command claude -ErrorAction SilentlyContinue)))) {
+        throw "Pending Claude Code WinGet identity unavailable: $pendingStatus"
+    }
+}
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Host "    Claude Code already installed: $(claude --version)"
 } else {
-    Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
-    Write-Host "    Claude Code installed."
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "WinGet is required to install Claude Code." }
+    $claudePackage = 'Anthropic.ClaudeCode'
+    $beforeOut = (winget list --id $claudePackage --exact --accept-source-agreements 2>&1 | Out-String)
+    $beforeStatus = $LASTEXITCODE
+    $beforeVersion = Get-WingetVersion $beforeOut $claudePackage
+    if ($beforeStatus -eq 0 -and $beforeVersion) { $beforePresent = $true }
+    elseif (Test-WingetDefinitiveAbsent $beforeStatus) { $beforePresent = $false }
+    else { throw "Claude Code WinGet identity unavailable before installation: $beforeStatus" }
+    if (-not (Begin-ManagedPackage "winget:$claudePackage" $beforePresent $beforeVersion)) { throw "Claude Code receipt journal failed." }
+        winget install --id $claudePackage --exact --silent --accept-package-agreements --accept-source-agreements
+        $managerStatus = $LASTEXITCODE
+        $afterOut = (winget list --id $claudePackage --exact --accept-source-agreements 2>&1 | Out-String)
+        $afterStatus = $LASTEXITCODE
+        $afterVersion = Get-WingetVersion $afterOut $claudePackage
+        $completionStatus = Complete-ManagedWingetPackage "winget:$claudePackage" $beforePresent $beforeVersion $managerStatus $afterStatus $afterVersion ([bool](Get-Command claude -ErrorAction SilentlyContinue))
+        if ($completionStatus -ne 0) { throw "Claude Code WinGet installation/identity failed: $completionStatus (receipt pending when mutation is uncertain)" }
 }
 
-# claude native 바이너리는 ~\.local\bin 에 설치된다. 셸이 아닌 프로세스(MCP 서버 등)도
-# 찾을 수 있도록 User PATH에 등록한다.
-New-Item -ItemType Directory -Force -Path $LocalBin | Out-Null
-if (Add-ToUserPath $LocalBin) { Write-Host "    Added $LocalBin to User PATH" }
 
 # =============================================
 # 3-1. Claude Code 설정 배포 (config/claude/ + config/agents/global.md → ~/.claude/)
@@ -1037,6 +1100,8 @@ if (Test-Path $rolesSrc) {
 }
 
 # =============================================
+}
+
 # 4. PowerShell 프로파일 설정 (마커 방식)
 # =============================================
 Write-Host ""

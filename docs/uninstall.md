@@ -509,6 +509,8 @@ claude plugin marketplace list
 
 ## 선택적 제거 가이드
 
+Linux direct artifact(`~/.local/bin`, `~/.local/opt/nvim-v*`, `~/.local/share/fnm/fnm`, `~/.bun/bin`)는 install receipt에 exact hash/target으로 기록된다. 사용자 파일을 함께 지우지 않도록 receipt-based safe uninstall이 추가되기 전에는 전체 디렉토리를 수동 삭제하지 않는다.
+
 ### Claude 관련만 제거
 
 ```powershell
