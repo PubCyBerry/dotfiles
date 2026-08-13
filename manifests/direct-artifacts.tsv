@@ -1,0 +1,23 @@
+# Linux direct artifacts: name<TAB>version<TAB>arch<TAB>format<TAB>URL<TAB>SHA-256
+starship	1.26.0	amd64	tgz	https://github.com/starship/starship/releases/download/v1.26.0/starship-x86_64-unknown-linux-musl.tar.gz	b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3
+starship	1.26.0	arm64	tgz	https://github.com/starship/starship/releases/download/v1.26.0/starship-aarch64-unknown-linux-musl.tar.gz	dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
+atuin	18.19.0	amd64	tgz	https://github.com/atuinsh/atuin/releases/download/v18.19.0/atuin-x86_64-unknown-linux-gnu.tar.gz	4d7559ada42407ee8ddc62349acf134dd297568d032c45a746a7aef8a6860648
+atuin	18.19.0	arm64	tgz	https://github.com/atuinsh/atuin/releases/download/v18.19.0/atuin-aarch64-unknown-linux-gnu.tar.gz	61bf95ee819d1b1ed8f2cea2333c7ca26289f4f0755df24f9ac209f2ba5d0014
+fnm	1.39.0	amd64	zip	https://github.com/Schniz/fnm/releases/download/v1.39.0/fnm-linux.zip	7807664f39d39fc518da1c35ba0181e4b3267603c4b1dedeb4b5fc6ae440a224
+fnm	1.39.0	arm64	zip	https://github.com/Schniz/fnm/releases/download/v1.39.0/fnm-arm64.zip	4eaff58b2c5bf30d0934027572dd0b5bbb60d2a1af309230b53662d4b1d45599
+bun	1.3.14	amd64	zip	https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip	951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+bun	1.3.14	arm64	zip	https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip	a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b
+yazi	26.5.6	amd64	zip	https://github.com/sxyazi/yazi/releases/download/v26.5.6/yazi-x86_64-unknown-linux-musl.zip	1031a02560d053301537195a6661d227c15cb4ce5c30481050b31e2b88681bff
+yazi	26.5.6	arm64	zip	https://github.com/sxyazi/yazi/releases/download/v26.5.6/yazi-aarch64-unknown-linux-musl.zip	dff4a6774069bdde616c3cd145275b462a5887229cd9bf6341e78063da37e84f
+lazygit	0.64.0	amd64	tgz	https://github.com/jesseduffield/lazygit/releases/download/v0.64.0/lazygit_0.64.0_linux_x86_64.tar.gz	7996236f2c1dd2643d96c3d67a1f7fcd2560bf08bcb7f6be073e26fb29167ac6
+lazygit	0.64.0	arm64	tgz	https://github.com/jesseduffield/lazygit/releases/download/v0.64.0/lazygit_0.64.0_linux_arm64.tar.gz	d286487eb18b2b82fccfd0f1c55d8445e6eb82c08ced3b9eb3e5be0e7c627fd0
+fzf	0.74.2	amd64	tgz	https://github.com/junegunn/fzf/releases/download/v0.74.2/fzf-0.74.2-linux_amd64.tar.gz	b3648f48675612b69ee35371cf6dc99ca96d767e89b912d079080916ac8ba8bd
+fzf	0.74.2	arm64	tgz	https://github.com/junegunn/fzf/releases/download/v0.74.2/fzf-0.74.2-linux_arm64.tar.gz	1373e3f5ed3c468179d4529942ddd96c234bcad1bcacaf238916e26a5234b5b2
+nvim	0.12.4	amd64	tgz	https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-x86_64.tar.gz	012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
+nvim	0.12.4	arm64	tgz	https://github.com/neovim/neovim/releases/download/v0.12.4/nvim-linux-arm64.tar.gz	ceb7e88c6b681f0515d135dcdfad54f5eb4373b25ce6172197cd9a69c758063f
+delta	0.19.2	amd64	tgz	https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-unknown-linux-gnu.tar.gz	8e695c5f586a8c53d6c3b01be0b4a422ed218bfed2a56191caebe373a1c18ab2
+delta	0.19.2	arm64	tgz	https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-aarch64-unknown-linux-gnu.tar.gz	0bfce159a5cddd5feb3d6db4a616d883ff51253ce08ac7ec11cb1d208cfaab9e
+eza	0.23.5	amd64	tgz	https://github.com/eza-community/eza/releases/download/v0.23.5/eza_x86_64-unknown-linux-gnu.tar.gz	35c70c5c43c29108075e58b893234c67ef585f0b53a7eaf8e9e7d4eec9f339b4
+eza	0.23.5	arm64	tgz	https://github.com/eza-community/eza/releases/download/v0.23.5/eza_aarch64-unknown-linux-gnu.tar.gz	40b87ae8628aa2ff0f0d2dc24ab52f689631366385c3da630bae745671fd71ec
+yq	4.53.3	amd64	bin	https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64	fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
+yq	4.53.3	arm64	bin	https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_arm64	578648e463a11c1b6db6010cbf41eafed6bee79466fcffa1bb446672cf7945ea

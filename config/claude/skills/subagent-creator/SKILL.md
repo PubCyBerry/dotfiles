@@ -29,7 +29,12 @@ model: sonnet
 | `name` | O | kebab-case 식별자. **파일명(확장자 제외)과 일치**해야 한다 |
 | `description` | O | **언제 위임할지**를 설명. 자동 위임 판단의 핵심 |
 | `tools` | X | 콤마 구분 도구 allowlist. **생략 시 메인 스레드의 모든 도구를 상속** |
-| `model` | X | `sonnet` / `opus` / `haiku` / `inherit` 또는 전체 모델 ID. 생략 시 기본값 |
+| `model` | X | 모델 별칭(`sonnet`, `opus`, `haiku`, `fable` 등) 또는 전체 모델 ID. 생략 시 기본값 |
+| `effort` | X | `low` / `medium` / `high` / `xhigh` / `max` |
+| `maxTurns` | X | 최대 agentic turn 수(1 이상의 정수) |
+| `skills` | X | 시작할 때 preload할 skill 이름 목록 |
+| `isolation` | X | `worktree`이면 임시 git worktree에서 실행 |
+| `hooks` | X | 이 agent에만 적용할 lifecycle hook 매핑 |
 
 본문 전체가 subagent의 **시스템 프롬프트**다. 필드별 상세·도구 목록·경로 규칙은 `references/agent-format.md`를 참고한다.
 
@@ -72,10 +77,10 @@ model: sonnet
 정의 파일을 쓴 뒤 검증 스크립트를 돌려 형식 오류를 잡는다.
 
 ```bash
-python config/claude/skills/subagent-creator/scripts/validate_subagent.py <path-to-agent>.md
+uv run --with pyyaml --python 3.11 config/claude/skills/subagent-creator/scripts/validate_subagent.py <path-to-agent>.md
 ```
 
-스크립트가 설치된 위치에서 실행할 때는 skill 디렉터리 기준 경로를 쓴다(예: `~/.claude/skills/subagent-creator/scripts/validate_subagent.py`). 오류가 있으면 종료 코드 1과 함께 항목을 출력하고, 경고만 있거나 통과하면 0을 반환한다. 오류를 고친 뒤 다시 돌려 통과를 확인한다.
+스크립트가 설치된 위치에서도 같은 `uv run --with pyyaml --python 3.11` 명령과 skill 디렉터리 기준 경로를 쓴다(예: `~/.claude/skills/subagent-creator/scripts/validate_subagent.py`). 공용 validator가 malformed YAML, 알 수 없는 field와 tool 이름을 오류로 처리한다. 오류를 고친 뒤 다시 돌려 통과를 확인한다.
 
 ## 작성 모범 사례
 

@@ -9,6 +9,7 @@ on:
       - "config/**"
       - "manifests/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/pr-gate.yml"
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - "config/**"
       - "manifests/**"
       - "scripts/**"
+      - "tests/**"
       - ".github/workflows/pr-gate.yml"
 
 concurrency:
@@ -34,7 +36,7 @@ jobs:
   test-apt-install:
     name: Ubuntu install + verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
@@ -42,6 +44,13 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare isolated HOME
+        run: |
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
+          printf '%s\n' "$home/.local/bin" "$home/.local/share/fnm" "$home/.bun/bin" >> "$GITHUB_PATH"
 
       - name: Restore apt cache
         uses: actions/cache@v4
@@ -86,18 +95,9 @@ jobs:
             agent="$HOME/.codex/agents/$name.toml"
             [[ -f "$agent" ]] || { echo "missing agent toml: $name"; exit 1; }
             # TOML로 파싱되고, name이 맞고, developer_instructions가 소스 body.md와 같아야 한다
-            python3 - "$agent" "$d/body.md" "$name" <<'PY'
-          import sys, tomllib
-          agent_path, body_path, name = sys.argv[1:4]
-          with open(agent_path, "rb") as f:
-              data = tomllib.load(f)
-          if data.get("name") != name:
-              sys.exit(f"name 불일치: {data.get('name')!r} != {name!r}")
-          body = open(body_path, encoding="utf-8").read()
-          if data.get("developer_instructions", "").strip() != body.strip():
-              sys.exit(f"body drift: {name}")
-          print(f"OK: {name}")
-          PY
+            test "$(yq -p=toml -r '.name' "$agent")" = "$name"
+            yq -p=toml -r '.developer_instructions' "$agent" > "$RUNNER_TEMP/$name.body"
+            diff -u <(sed -e '${/^$/d;}' "$d/body.md") <(sed -e '${/^$/d;}' "$RUNNER_TEMP/$name.body")
           done
 
       - name: Assert legacy Codex skill path is not used
@@ -111,6 +111,27 @@ jobs:
           done
           echo "OK: no legacy skill paths"
 
+      - name: Seed existing user settings
+        run: |
+          set -euo pipefail
+          printf '%s\n' '[user]' 'sentinel = "keep"' >> "$HOME/.codex/config.toml"
+          printf '%s\n' '# user-sentinel' > "$HOME/.bashrc"
+          mkdir -p "$HOME/.claude"
+          node_ver="$(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1)"
+          printf '{"statusLine":{"command":"%s/.local/share/fnm/node-versions/%s/installation/bin/node /mock/claude-hud"}}\n' "$HOME" "$node_ver" > "$HOME/.claude/settings.json"
+
+      - name: Second install and sentinel verification
+        run: |
+          set -euo pipefail
+          bash install.sh
+          test "$(yq -p=toml -r '.user.sentinel' "$HOME/.codex/config.toml")" = keep
+          test "$(grep -Fxc '# user-sentinel' "$HOME/.bashrc")" -eq 1
+          test "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.bashrc")" -eq 1
+          jq -e '.statusLine.command | contains("/mock/claude-hud")' "$HOME/.claude/settings.json" > /dev/null
+
+      - name: Failure contract
+        run: bash tests/install/failure-contract.sh
+
   test-macos-install:
     name: macOS install + verify
     runs-on: macos-latest
@@ -122,30 +143,59 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run install.sh
-        run: bash install.sh --with-defaults
+      - name: Prepare isolated HOME
+        run: |
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
+
+      - name: Seed existing user settings
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.codex"
+          printf '%s\n' 'sentinel = "keep"' > "$HOME/.codex/config.toml"
+          printf '%s\n' '# user-sentinel' > "$HOME/.zshrc"
+          : > "$GIT_CONFIG_GLOBAL"
+
+      - name: First install (seeded environment)
+        run: /bin/bash install.sh --with-defaults
+
+      - name: Verify first install
+        run: |
+          set -euo pipefail
+          /bin/bash --version
+          command -v nvim
+          nvim --version
+
+      - name: Second install (idempotent / update path)
+        run: /bin/bash install.sh
+
+      - name: Verify install contract
+        run: |
+          set -euo pipefail
+          brew list --formula --versions neovim
+          command -v nvim
+          nvim --version
+
+          editor="$(git config --global --get core.editor)"
+          [[ "$editor" == "nvim -f" ]]
+          command -v "${editor%% *}"
+
+          yazi_run="$(yq -p=toml -r '.opener.edit[] | select(.for == "unix") | .run' "$HOME/.config/yazi/yazi.toml")"
+          [[ "$yazi_run" == 'nvim "%s"' ]]
+          command -v "${yazi_run%% *}"
+
+          [[ "$(yq -p=toml -r '.sentinel' "$HOME/.codex/config.toml")" == "keep" ]]
+          [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
 
   test-windows-install:
     name: Windows install + verify
     runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      SKIP_CLAUDE_CODE: "1"
-      SKIP_SKILLS: "1"
-      SKIP_PLUGINS: "1"
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run install.ps1
-        shell: pwsh
-        run: .\install.ps1
-
-  test-idempotent:
-    name: Ubuntu idempotent (update path)
-    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
+      SKIP_PACKAGES: "1"
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
@@ -153,35 +203,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore apt cache
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: apt-ubuntu-24.04-${{ hashFiles('manifests/apt.txt') }}
-          restore-keys: apt-ubuntu-24.04-
+      - name: Failure contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/install/failure-contract.ps1
 
-      - name: First install (fresh environment)
-        run: bash install.sh
-
-      # Bug 재현 조건 준비:
-      # - ~/.codex/config.toml 은 first install에서 이미 생성됨 → merge 경로 진입
-      # - ~/.claude/settings.json 은 SKIP_CLAUDE_CODE=1로 생성 안 됨 → 수동으로 생성해야
-      #   statusLine grep 파이프라인(pipefail 버그)이 실행됨
-      - name: Seed ~/.claude/settings.json with fnm statusLine (simulates existing install)
+      - name: Run isolated config install twice
+        shell: pwsh
         run: |
-          mkdir -p "$HOME/.claude"
-          node_ver="$(~/.local/share/fnm/fnm ls 2>/dev/null \
-            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || echo 'v22.0.0')"
-          cat > "$HOME/.claude/settings.json" <<EOF
-          {
-            "statusLine": {
-              "command": "$HOME/.local/share/fnm/node-versions/${node_ver}/installation/node /mock/claude-hud"
-            }
-          }
-          EOF
-
-      - name: Second install (idempotent / update path)
-        run: bash install.sh
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
+          $env:HOME = $env:USERPROFILE
+          $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:USERPROFILE '.gitconfig'
+          $env:DOTFILES_RECEIPT_PATH = Join-Path $env:LOCALAPPDATA 'dotfiles\install-receipt.json'
+          $env:DOTFILES_PS_PROFILE_PATH = Join-Path $env:USERPROFILE 'profile.ps1'
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex\hooks') | Out-Null
+          Set-Content $env:GIT_CONFIG_GLOBAL "[user]`n`tname = sentinel"
+          Set-Content $env:DOTFILES_PS_PROFILE_PATH '# user profile sentinel'
+          Set-Content (Join-Path $env:USERPROFILE '.codex\config.toml') "[user]`nkeep = true"
+          Set-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1') 'user-hook'
+          $pathBefore = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          $yaziBefore = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User')
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "first install failed: $LASTEXITCODE" }
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
+          if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
+          if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }
+          if ((Get-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1')) -ne 'user-hook') { throw 'hook sentinel changed' }
+          if ((git config --global user.name) -ne 'sentinel') { throw 'git sentinel changed' }
+          $pathAfter = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          if ($pathAfter -cne $pathBefore) { throw 'config install changed User PATH' }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
 
   test-configs:
     name: Config syntax
@@ -201,7 +254,7 @@ jobs:
           jq empty config/claude/claude-hud.json
 
       - name: TOML 문법
-        run: python3 -c 'import tomllib; tomllib.load(open("config/codex/config.toml", "rb"))'
+        run: yq -p=toml '.' config/codex/config.toml > /dev/null
 
   test-manifest-syntax:
     name: Manifest syntax
@@ -226,6 +279,7 @@ jobs:
             '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' 'npm package'
           _check_lines manifests/skills.txt \
             '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
+          bash tests/install/failure-contract.sh
 
   test-agent-roles:
     name: Agent role sources + composition
@@ -233,11 +287,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PyYAML
-        run: python3 -m pip install --break-system-packages --quiet pyyaml
+      - uses: astral-sh/setup-uv@v6
 
       - name: Validate role sources and composed frontmatter
-        run: python3 scripts/validate-agent-roles.py
+        run: uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py
+
+      - name: Test agent validator
+        run: uv run --with pyyaml --python 3.11 -m unittest discover -s tests -p test_agent_role_validation.py
 
       - name: Assert body stays platform-neutral
         run: |
@@ -252,7 +308,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-idempotent, test-macos-install, test-windows-install, test-configs, test-manifest-syntax, test-agent-roles]
+    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-configs, test-manifest-syntax, test-agent-roles]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -261,7 +317,6 @@ jobs:
           results=(
             "lint:${{ needs.lint.result }}"
             "test-apt-install:${{ needs.test-apt-install.result }}"
-            "test-idempotent:${{ needs.test-idempotent.result }}"
             "test-macos-install:${{ needs.test-macos-install.result }}"
             "test-windows-install:${{ needs.test-windows-install.result }}"
             "test-configs:${{ needs.test-configs.result }}"
