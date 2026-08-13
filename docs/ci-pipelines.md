@@ -151,7 +151,7 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 
 | 환경변수 | 스킵 대상 | 이유 |
 |---|---|---|
-| `SKIP_PACKAGES=1` | OS package manager, direct artifact, fnm/Node.js, npm 전역 패키지 설치 | config/profile uninstall 검증을 외부 package repository와 분리 |
+| `SKIP_PACKAGES=1` | OS package manager, direct artifact, fnm/Node.js, npm 전역 패키지와 Windows package-dependent User 환경변수 | Windows entrypoint 및 config/profile uninstall 검증을 외부 package repository와 HKCU 환경변수에서 분리 |
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `SKIP_PLUGINS=1` | Claude Code plugins 설치 | 외부 marketplace 의존 |

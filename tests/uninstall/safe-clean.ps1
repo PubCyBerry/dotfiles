@@ -7,6 +7,9 @@ try {
     New-Item -ItemType Directory -Force $env:USERPROFILE,$env:LOCALAPPDATA,$env:APPDATA,(Split-Path $env:DOTFILES_RECEIPT_PATH) | Out-Null
     . (Join-Path $root uninstall.ps1)
     function Assert($ok,$message) { if (-not $ok) { throw $message } }
+    $nullProbe = "DOTFILES_NULL_PROBE_$PID"
+    [Environment]::SetEnvironmentVariable($nullProbe,'managed','Process'); [Environment]::SetEnvironmentVariable($nullProbe,(ConvertTo-DotfilesEnvironmentValue $null),'Process')
+    Assert ($null -eq [Environment]::GetEnvironmentVariable($nullProbe,'Process')) env_delete_null
     $section = ''
     foreach ($line in Get-Content (Join-Path $root 'config\git\gitconfig')) {
         $trimmed = $line.Trim()

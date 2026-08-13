@@ -903,6 +903,7 @@ if (Test-Path $tmuxSrc) {
 # =============================================
 # 1-3. YAZI_FILE_ONE 환경 변수 설정 (Git file.exe)
 # =============================================
+Invoke-OptionalInstallStage 'SKIP_PACKAGES' "==> [CI] Skipping package-dependent YAZI_FILE_ONE (SKIP_PACKAGES=1)" {
 Write-Host ""
 Write-Host "==> Setting YAZI_FILE_ONE environment variable..."
 $gitFileExe = $GitFileExePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -933,6 +934,7 @@ if ($gitFileExe) {
     Write-Host "    [!] Git file.exe not found. Install Git for Windows first."
     Write-Host "        winget install --id Git.Git"
 }
+}
 
 # =============================================
 # 1-4. yazi 설정 파일 배포
@@ -950,6 +952,7 @@ if (Test-Path $yaziConfigSrc) {
 # =============================================
 # 1-5. Neovim PATH 환경변수 설정
 # =============================================
+Invoke-OptionalInstallStage 'SKIP_PACKAGES' "==> [CI] Skipping package-dependent User PATH (SKIP_PACKAGES=1)" {
 Write-Host ""
 Write-Host "==> Adding Neovim to PATH..."
 if (Test-Path $NvimBin) {
@@ -957,6 +960,7 @@ if (Test-Path $NvimBin) {
     elseif (@([System.Environment]::GetEnvironmentVariable("PATH", "User") -split ';') -contains $NvimBin) { Write-Host "    Neovim already in PATH." }
 } else {
     Write-Host "    [!] Neovim not found at $NvimBin. Install via winget: Neovim.Neovim"
+}
 }
 
 # =============================================

@@ -7,7 +7,11 @@ $script:Receipt = $null
 
 function Write-Preserve([string]$Message) { Write-Warning $Message }
 function Get-DotfilesUserEnvironment([string]$Name) { [Environment]::GetEnvironmentVariable($Name, 'User') }
-function Set-DotfilesUserEnvironment([string]$Name, [AllowNull()][object]$Value) { [Environment]::SetEnvironmentVariable($Name, $Value, 'User') }
+function ConvertTo-DotfilesEnvironmentValue([AllowNull()][object]$Value) {
+    # 일반 $null은 .NET string 인자에서 ""가 되므로 삭제용 null sentinel을 쓴다.
+    if ($null -eq $Value) { [System.Management.Automation.Language.NullString]::Value } else { [string]$Value }
+}
+function Set-DotfilesUserEnvironment([string]$Name, [AllowNull()][object]$Value) { [Environment]::SetEnvironmentVariable($Name, (ConvertTo-DotfilesEnvironmentValue $Value), 'User') }
 
 function Save-UninstallReceipt {
     $dir = Split-Path $script:ReceiptPath

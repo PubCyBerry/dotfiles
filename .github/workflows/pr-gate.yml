@@ -195,6 +195,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     env:
+      SKIP_PACKAGES: "1"
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
@@ -206,7 +207,7 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File tests/install/failure-contract.ps1
 
-      - name: Run isolated install twice
+      - name: Run isolated config install twice
         shell: pwsh
         run: |
           $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
@@ -222,10 +223,9 @@ jobs:
           Set-Content (Join-Path $env:USERPROFILE '.codex\config.toml') "[user]`nkeep = true"
           Set-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1') 'user-hook'
           $pathBefore = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          $yaziBefore = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User')
           & ./install.ps1
           if ($LASTEXITCODE -ne 0) { throw "first install failed: $LASTEXITCODE" }
-          $pathFirst = [Environment]::GetEnvironmentVariable('PATH', 'User')
-          $yaziInstalled = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User')
           & ./install.ps1
           if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
           if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
@@ -233,9 +233,8 @@ jobs:
           if ((Get-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1')) -ne 'user-hook') { throw 'hook sentinel changed' }
           if ((git config --global user.name) -ne 'sentinel') { throw 'git sentinel changed' }
           $pathAfter = [Environment]::GetEnvironmentVariable('PATH', 'User')
-          foreach ($entry in @($pathBefore -split ';' | Where-Object { $_ })) { if (@($pathAfter -split ';') -notcontains $entry) { throw "user PATH entry removed: $entry" } }
-          if ($pathAfter -ne $pathFirst) { throw 'second install changed User PATH' }
-          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User') -ne $yaziInstalled) { throw 'second install changed managed environment value' }
+          if ($pathAfter -cne $pathBefore) { throw 'config install changed User PATH' }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
 
   test-configs:
     name: Config syntax
