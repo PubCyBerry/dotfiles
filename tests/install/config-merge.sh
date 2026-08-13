@@ -9,6 +9,12 @@ source "$repo/install.sh"
 unset DOTFILES_FUNCTIONS_ONLY
 trap '_cleanup; rm -rf "$work"' EXIT
 
+yq -p=toml -o=json '.' "$repo/config/codex/config.toml" | jq -e '
+  (.features | has("js_repl") | not) and
+  (.features | has("remote_control") | not) and
+  .desktop.followUpQueueMode == "steer"
+' >/dev/null
+
 toml_src="$work/source.toml"
 toml_dst="$work/destination.toml"
 cat > "$toml_src" <<'TOML'
@@ -17,7 +23,9 @@ model_reasoning_effort = "xhigh"
 
 [features]
 hooks = true
-remote_control = true
+
+[desktop]
+followUpQueueMode = "steer"
 
 [windows]
 sandbox = "elevated"
@@ -38,9 +46,11 @@ yq -p=toml -o=json '.' "$toml_dst" | jq -e '
   .model == "user-model" and
   .model_reasoning_effort == "xhigh" and
   .features.hooks == false and
-  .features.remote_control == true and
+  (.features | has("js_repl") | not) and
+  (.features | has("remote_control") | not) and
   .features.user_sentinel == true and
   .custom.sentinel == "keep" and
+  .desktop.followUpQueueMode == "steer" and
   .windows.sandbox == "elevated"
 ' >/dev/null
 cp "$toml_dst" "$work/toml-first"
@@ -78,7 +88,7 @@ yq -p=toml -o=json '.' "$dotted_dst" | jq -e '
   .model == "user-model" and
   .windows.sandbox == "unelevated" and
   .features.hooks == false and
-  .features.remote_control == true
+  .desktop.followUpQueueMode == "steer"
 ' >/dev/null
 cp "$dotted_dst" "$work/dotted-first"
 merge_codex_config "$toml_src" "$dotted_dst"

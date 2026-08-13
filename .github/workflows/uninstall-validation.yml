@@ -32,6 +32,7 @@ jobs:
         run: |
           export HOME="$RUNNER_TEMP/dotfiles-home"
           export DOTFILES_RECEIPT_PATH="$HOME/.local/state/dotfiles/install-receipt.json"
+          export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
           mkdir -p "$HOME"
           printf 'user-sentinel\n' > "$HOME/user.txt"
           printf '# user profile sentinel\n' > "$HOME/.bashrc"
@@ -64,8 +65,10 @@ jobs:
           SKIP_PLUGINS: '1'
         run: |
           $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
+          $env:HOME = $env:USERPROFILE
           $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
           $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:USERPROFILE '.gitconfig'
           $env:DOTFILES_RECEIPT_PATH = Join-Path $env:LOCALAPPDATA 'dotfiles\install-receipt.json'
           $env:DOTFILES_PS_PROFILE_PATH = Join-Path $env:USERPROFILE 'profile.ps1'
           New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
@@ -74,15 +77,22 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex\hooks') | Out-Null
           Set-Content (Join-Path $env:USERPROFILE '.codex\config.toml') "[user]`nkeep = true"
           Set-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1') 'user-hook'
-          [Environment]::SetEnvironmentVariable('YAZI_FILE_ONE','user-env-sentinel','User')
+          $yaziBefore = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User')
+          $pathBefore = [Environment]::GetEnvironmentVariable('PATH','User')
           $gitBefore = git --version
           & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "first install failed: $LASTEXITCODE" }
           & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
           & ./uninstall.ps1 -KeepPackages
+          if ($LASTEXITCODE -ne 0) { throw "first uninstall failed: $LASTEXITCODE" }
           & ./uninstall.ps1 -KeepPackages
+          if ($LASTEXITCODE -ne 0) { throw "second uninstall failed: $LASTEXITCODE" }
           if ((Get-Content (Join-Path $env:USERPROFILE 'user.txt')) -ne 'user-sentinel') { throw 'user sentinel changed' }
           if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
           if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }
           if ((Get-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1')) -ne 'user-hook') { throw 'hook sentinel changed' }
-          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User') -ne 'user-env-sentinel') { throw 'environment sentinel changed' }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User') -ne $yaziBefore) { throw 'environment value not restored' }
+          $pathAfter = [Environment]::GetEnvironmentVariable('PATH','User')
+          if ($pathAfter -cne $pathBefore) { throw 'User PATH not restored exactly' }
           if ((git --version) -ne $gitBefore) { throw 'pre-existing package sentinel changed' }

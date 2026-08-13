@@ -14,7 +14,6 @@ shellcheck
 unzip
 
 # 개발 환경 기초
-git                             # Git
 gh                              # Github CLI
 vim
 # neovim # X, GitHub releases로 설치 (apt는 22.04/24.04에서 0.9.x 제공)

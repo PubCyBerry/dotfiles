@@ -13,6 +13,13 @@ try {
     . (Join-Path $repo "install.ps1")
     Remove-Item Env:DOTFILES_FUNCTIONS_ONLY
 
+    yq -p=toml -o=json '.' (Join-Path $repo 'config\codex\config.toml') | jq -e '
+      (.features | has("js_repl") | not) and
+      (.features | has("remote_control") | not) and
+      .desktop.followUpQueueMode == "steer"
+    ' | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) '실제 Codex config에 dead key가 남았거나 stable key가 없습니다.'
+
     $tomlSrc = Join-Path $work "source.toml"
     $tomlDst = Join-Path $work "destination.toml"
     @'
@@ -21,7 +28,9 @@ model_reasoning_effort = "xhigh"
 
 [features]
 hooks = true
-remote_control = true
+
+[desktop]
+followUpQueueMode = "steer"
 
 [windows]
 sandbox = "elevated"
@@ -42,9 +51,11 @@ sentinel = "keep"
       .model == "user-model" and
       .model_reasoning_effort == "xhigh" and
       .features.hooks == false and
-      .features.remote_control == true and
+      (.features | has("js_repl") | not) and
+      (.features | has("remote_control") | not) and
       .features.user_sentinel == true and
       .custom.sentinel == "keep" and
+      .desktop.followUpQueueMode == "steer" and
       .windows.sandbox == "elevated"
     ' | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "TOML 병합 결과가 기대와 다릅니다."
@@ -85,7 +96,7 @@ features.hooks = false
       .model == "user-model" and
       .windows.sandbox == "unelevated" and
       .features.hooks == false and
-      .features.remote_control == true
+      .desktop.followUpQueueMode == "steer"
     ' | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "dotted TOML 사용자 값이 보존되지 않았습니다."
     $dottedFirst = Get-FileHash $dottedDst

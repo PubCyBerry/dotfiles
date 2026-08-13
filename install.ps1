@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
 $ROOT = $PSScriptRoot
+$script:InstallFailures = [Collections.Generic.List[string]]::new()
 
 # =============================================
 # 경로 상수
@@ -39,6 +40,112 @@ $script:ReceiptPath = if ($env:DOTFILES_RECEIPT_PATH) {
     $env:DOTFILES_RECEIPT_PATH
 } else {
     Join-Path $env:LOCALAPPDATA "dotfiles\install-receipt.json"
+}
+
+function Add-InstallFailure([string]$Message) {
+    Write-Warning $Message
+    $script:InstallFailures.Add($Message)
+}
+
+function Complete-Install {
+    if ($script:InstallFailures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "==> Installation failed ($($script:InstallFailures.Count))"
+        $script:InstallFailures | ForEach-Object { Write-Host "    [!] $_" }
+        return $false
+    }
+    Write-Host ""
+    Write-Host "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."
+    return $true
+}
+
+function Get-ValidatedPluginRows([string]$Path) {
+    $rows = [Collections.Generic.List[object]]::new()
+    foreach ($line in (Get-ManifestLines $Path)) {
+        $fields = @($line -split '\s+')
+        if ($fields.Count -notin 2, 3) { throw "Invalid plugins manifest field count: $line" }
+        $scope = if ($fields.Count -eq 3) { $fields[2] } else { 'user' }
+        if ($scope -cnotin 'user', 'project', 'local') { throw "Invalid plugin scope: $line" }
+        if ($fields[1] -notmatch '^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$') { throw "Invalid plugin ID: $line" }
+        $rows.Add([pscustomobject]@{ Market = $fields[0]; Plugin = $fields[1]; Scope = $scope })
+    }
+    if ($rows.Count -eq 0) { throw "plugins manifest has no entries: $Path" }
+    return $rows.ToArray()
+}
+
+function Restore-ClaudePlugins([object[]]$Rows) {
+    $ok = $true
+    foreach ($row in $rows) {
+        Write-Host "    Adding marketplace: $($row.Market) (scope: $($row.Scope))..."
+        claude plugin marketplace add $row.Market --scope $row.Scope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Failed to add marketplace: $($row.Market)"
+            $ok = $false
+            continue
+        }
+        Write-Host "    Installing plugin: $($row.Plugin) (scope: $($row.Scope))..."
+        claude plugin install $row.Plugin --scope $row.Scope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Failed to install plugin: $($row.Plugin)"
+            $ok = $false
+        }
+    }
+    return $ok
+}
+
+function Restore-ClaudeSkills([string]$Path) {
+    $rows = @(Get-ManifestLines $Path)
+    if ($rows.Count -eq 0) { throw "skills manifest has no entries: $Path" }
+    foreach ($row in $rows) {
+        if ($row -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$') {
+            throw "Invalid skills manifest row: $row"
+        }
+    }
+    $ok = $true
+    foreach ($row in $rows) {
+        $repoSlug, $skillName = $row -split '@', 2
+        Write-Host "    Adding skill: $skillName from $repoSlug..."
+        npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Failed: $row"
+            $ok = $false
+        }
+    }
+    return $ok
+}
+
+function Test-InstallStageSkipped([string]$Name) {
+    [Environment]::GetEnvironmentVariable($Name) -eq '1'
+}
+
+function Invoke-OptionalInstallStage([string]$Name, [string]$SkipMessage, [scriptblock]$Action) {
+    if (Test-InstallStageSkipped $Name) { Write-Host $SkipMessage; return }
+    & $Action
+}
+
+function Invoke-ClaudeSkillsStage([string]$Path) {
+    if (Test-InstallStageSkipped 'SKIP_SKILLS') { Write-Host "    [CI] Skills skipped."; return }
+    if (-not (Test-Path $Path)) { Add-InstallFailure "Required manifest missing: manifests\skills.txt"; return }
+    if (-not (Get-Command npx -ErrorAction SilentlyContinue)) { Add-InstallFailure "npx is required for manifests\skills.txt."; return }
+    try {
+        if (Restore-ClaudeSkills $Path) { Write-Host "    Skills restored." }
+        else { Add-InstallFailure "One or more Claude skills failed." }
+    } catch { Add-InstallFailure $_.Exception.Message }
+}
+
+function Invoke-ClaudePluginsStage([string]$Path) {
+    if (Test-InstallStageSkipped 'SKIP_PLUGINS') { Write-Host "    [CI] Plugins skipped."; return }
+    if (-not (Test-Path $Path)) { Add-InstallFailure "Required manifest missing: manifests\plugins.txt"; return }
+    try {
+        $rows = @(Get-ValidatedPluginRows $Path)
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+            Add-InstallFailure "claude is required for manifests\plugins.txt."
+        } elseif (Restore-ClaudePlugins $rows) {
+            Write-Host "    Plugins restored."
+        } else {
+            Add-InstallFailure "One or more Claude plugins failed."
+        }
+    } catch { Add-InstallFailure $_.Exception.Message }
 }
 
 function Get-WingetVersion([string]$Text, [string]$Id) {
@@ -713,9 +820,15 @@ if (Test-Path $wingetFile) {
             $why  = if ($codes.ContainsKey($hex)) { " — $($codes[$hex])" } else { '' }
             $pad  = $package.PadRight(28)
             $afterOut = (winget list --id $package --exact --accept-source-agreements 2>&1 | Out-String)
+            $afterCode = $LASTEXITCODE
             $afterVer = & $parseVer $afterOut $package
 
-            if ($code -eq 0) {
+            if ($code -eq 0 -and -not $afterVer) {
+                $afterHex = '{0:X8}' -f $afterCode
+                Write-Host "    [!] $verb identity check failed: $pad 0x$afterHex"
+                $status = 'failed'
+                $hex = $afterHex
+            } elseif ($code -eq 0) {
                 if ($verb -eq 'install') {
                     Write-Host "    [install]  $pad $afterVer"
                     $status = 'install'
@@ -748,6 +861,7 @@ if (Test-Path $wingetFile) {
         $failed = @($results | Where-Object { $_.Status -eq 'failed' })
         foreach ($f in $failed) {
             Write-Host "    [!] 실패: $($f.Package) (0x$($f.Code))"
+            Add-InstallFailure "winget package failed: $($f.Package) (0x$($f.Code))"
         }
         foreach ($r in $results) {
             if ($r.AfterVersion -and ((-not $r.BeforePresent) -or $r.BeforeVersion -ne $r.AfterVersion)) {
@@ -757,10 +871,10 @@ if (Test-Path $wingetFile) {
             }
         }
     } else {
-        Write-Host "    [!] winget not found. Skipping package installation."
+        Add-InstallFailure "winget is required for manifests\winget.txt."
     }
 } else {
-    Write-Host "    [!] manifests\winget.txt not found, skipping."
+    Add-InstallFailure "Required manifest missing: manifests\winget.txt"
 }
 
 # =============================================
@@ -864,11 +978,17 @@ if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
 Write-Host ""
 Write-Host "==> Installing Node.js LTS..."
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
-    fnm env --shell powershell | Out-String | Invoke-Expression
+    $fnmOk = $true
+    $fnmEnv = fnm env --shell powershell | Out-String
+    if ($LASTEXITCODE -ne 0) { Add-InstallFailure "fnm env failed."; $fnmOk = $false }
+    else { $fnmEnv | Invoke-Expression }
     fnm install --lts
+    if ($LASTEXITCODE -ne 0) { Add-InstallFailure "fnm install --lts failed."; $fnmOk = $false }
     fnm default lts-latest
+    if ($LASTEXITCODE -ne 0) { Add-InstallFailure "fnm default lts-latest failed."; $fnmOk = $false }
     fnm use lts-latest
-    Write-Host "    Node.js LTS installed."
+    if ($LASTEXITCODE -ne 0) { Add-InstallFailure "fnm use lts-latest failed."; $fnmOk = $false }
+    if ($fnmOk) { Write-Host "    Node.js LTS installed." }
 
     Invoke-FnmPruneIfRequested
 
@@ -888,8 +1008,7 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
     $settingsPath = Join-Path $ClaudeDir "settings.json"
     if ($nodeVer) { $null = Update-FnmStatusLine $settingsPath $fnmRoot $nodeVer }
 } else {
-    Write-Host "    [!] fnm not found. Restart terminal and run:"
-    Write-Host "        fnm install --lts && fnm default lts-latest"
+    Add-InstallFailure "fnm is required to install Node.js LTS."
 }
 
 # =============================================
@@ -898,12 +1017,17 @@ if (Get-Command fnm -ErrorAction SilentlyContinue) {
 Write-Host ""
 Write-Host "==> Installing global npm packages..."
 $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
-if (Test-Path $npmFile) {
+if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
     $npmRoot = npm root -g 2>$null
+    $npmRootStatus = $LASTEXITCODE
     $npmPrefix = npm prefix -g 2>$null
+    $npmPrefixStatus = $LASTEXITCODE
     $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
-    if (-not $jqPath) {
-        Write-Warning "jq unavailable; skipping npm mutations to preserve package provenance."
+    if ($npmRootStatus -ne 0 -or $npmPrefixStatus -ne 0 -or -not $npmRoot -or -not $npmPrefix) {
+        Add-InstallFailure "npm global root/prefix query failed."
+        $npmResults = @()
+    } elseif (-not $jqPath) {
+        Add-InstallFailure "jq is required to record npm package provenance."
         $npmResults = @()
     } else {
         $npmStates = Get-ManifestLines $npmFile | ForEach-Object {
@@ -930,14 +1054,17 @@ if (Test-Path $npmFile) {
         } -ThrottleLimit 4
     }
     foreach ($r in $npmResults) {
+        if (-not $r.Success) { Add-InstallFailure "npm package failed: $($r.Package)" }
         if ($r.AfterVersion -and $r.BeforeVersion -ne $r.AfterVersion) {
             Record-ManagedPackage "npm:$($r.Package)" ([bool]$r.BeforeVersion) $r.BeforeVersion $r.AfterVersion $npmPrefix
         } else {
             Cancel-ManagedPackage "npm:$($r.Package)"
         }
     }
+} elseif (-not (Test-Path $npmFile)) {
+    Add-InstallFailure "Required manifest missing: manifests\npm-global.txt"
 } else {
-    Write-Host "    [!] manifests\npm-global.txt not found, skipping."
+    Add-InstallFailure "npm is required for manifests\npm-global.txt."
 }
 
 # =============================================
@@ -1008,9 +1135,7 @@ if (Test-Path $temporalSrc) {
 # 3. Claude Code 설치 (WinGet)
 # =============================================
 Write-Host ""
-if ($env:SKIP_CLAUDE_CODE -eq "1") {
-    Write-Host "==> [CI] Skipping Claude Code installation and config (SKIP_CLAUDE_CODE=1)"
-} else {
+Invoke-OptionalInstallStage 'SKIP_CLAUDE_CODE' "==> [CI] Skipping Claude Code installation and config (SKIP_CLAUDE_CODE=1)" {
     Write-Host "==> Installing Claude Code via WinGet..."
 if ($script:Receipt.packages['winget:Anthropic.ClaudeCode'].pending) {
     $pendingOut = (winget list --id Anthropic.ClaudeCode --exact --accept-source-agreements 2>&1 | Out-String)
@@ -1106,9 +1231,9 @@ if (Test-Path $rolesSrc) {
     }
 }
 
-# =============================================
 }
 
+# =============================================
 # 4. PowerShell 프로파일 설정 (마커 방식)
 # =============================================
 Write-Host ""
@@ -1167,20 +1292,7 @@ if (Test-Path $bashrcSrc) {
 Write-Host ""
 Write-Host "==> Restoring Claude Code skills..."
 $skillsFile = Join-Path $ROOT "manifests\skills.txt"
-if ($env:SKIP_SKILLS -eq '1') { Write-Host "    [CI] Skills skipped." }
-elseif (Test-Path $skillsFile) {
-    Get-ManifestLines $skillsFile | ForEach-Object {
-        if ($_ -match '^([^@]+)@(.+)$') {
-            $repoSlug  = $Matches[1]
-            $skillName = $Matches[2]
-            Write-Host "    Adding skill: $skillName from $repoSlug..."
-            npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
-        }
-    }
-    Write-Host "    Skills restored."
-} else {
-    Write-Host "    [!] manifests\skills.txt not found, skipping skills."
-}
+Invoke-ClaudeSkillsStage $skillsFile
 
 # =============================================
 # 7. Claude Code 플러그인 설치 (manifests/plugins.txt)
@@ -1188,33 +1300,7 @@ elseif (Test-Path $skillsFile) {
 Write-Host ""
 Write-Host "==> Restoring Claude Code plugins..."
 $pluginsFile = Join-Path $ROOT "manifests\plugins.txt"
-if ($env:SKIP_PLUGINS -eq '1') { Write-Host "    [CI] Plugins skipped." }
-elseif ((Test-Path $pluginsFile) -and (Get-Command claude -ErrorAction SilentlyContinue)) {
-    Get-ManifestLines $pluginsFile | ForEach-Object {
-        # <marketplace-source> <plugin>@<marketplace> [scope]
-        $fields = $_ -split '\s+'
-        if ($fields.Count -lt 2) { return }
-        $market = $fields[0]
-        $plugin = $fields[1]
-        $scope  = if ($fields.Count -ge 3 -and $fields[2]) { $fields[2] } else { "user" }
+Invoke-ClaudePluginsStage $pluginsFile
 
-        Write-Host "    Adding marketplace: $market (scope: $scope)..."
-        claude plugin marketplace add $market --scope $scope 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "    [!] Failed to add marketplace: $market"
-            return
-        }
-
-        Write-Host "    Installing plugin: $plugin (scope: $scope)..."
-        claude plugin install $plugin --scope $scope 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "    [!] Failed to install plugin: $plugin"
-        }
-    }
-    Write-Host "    Plugins restored."
-} else {
-    Write-Host "    [!] manifests\plugins.txt or claude not found, skipping plugins."
-}
-
-Write-Host ""
-Write-Host "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."
+if (-not (Complete-Install)) { exit 1 }
+exit 0

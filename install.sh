@@ -40,6 +40,129 @@ manifest_lines() {
     LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
 }
 
+INSTALL_FAILURES=""
+record_install_failure() {
+    echo "    [!] $1" >&2
+    INSTALL_FAILURES="${INSTALL_FAILURES}${INSTALL_FAILURES:+
+}$1"
+}
+
+finish_install() {
+    if [[ -n "$INSTALL_FAILURES" ]]; then
+        echo
+        echo "==> Installation failed"
+        while IFS= read -r failure; do echo "    [!] $failure"; done <<< "$INSTALL_FAILURES"
+        return 1
+    fi
+    echo
+    echo "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."
+}
+
+validate_plugin_manifest() {
+    local path="$1" content line market plugin scope extra count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        count=$((count + 1))
+        read -r market plugin scope extra <<< "$line"
+        [[ -n "$market" && -n "$plugin" && -z "$extra" ]] || {
+            echo "Invalid plugins manifest field count: $line" >&2; return 1;
+        }
+        scope="${scope:-user}"
+        [[ "$scope" =~ ^(user|project|local)$ ]] || {
+            echo "Invalid plugin scope: $line" >&2; return 1;
+        }
+        [[ "$plugin" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || {
+            echo "Invalid plugin ID: $line" >&2; return 1;
+        }
+    done <<< "$content"
+    (( count > 0 )) || { echo "plugins manifest has no entries: $path" >&2; return 1; }
+}
+
+restore_claude_plugins() {
+    local path="$1" content line market plugin scope extra failed=0 count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        count=$((count + 1))
+        read -r market plugin scope extra <<< "$line"
+        [[ -n "$market" && -n "$plugin" && -z "$extra" ]] || return 1
+        scope="${scope:-user}"
+        [[ "$scope" =~ ^(user|project|local)$ && "$plugin" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || return 1
+    done <<< "$content"
+    (( count > 0 )) || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r market plugin scope <<< "$line"
+        scope="${scope:-user}"
+        echo "    Adding marketplace: $market (scope: $scope)..."
+        if ! claude plugin marketplace add "$market" --scope "$scope" </dev/null >/dev/null 2>&1; then
+            echo "    [!] Failed to add marketplace: $market"
+            failed=1
+            continue
+        fi
+        echo "    Installing plugin: $plugin (scope: $scope)..."
+        if ! claude plugin install "$plugin" --scope "$scope" </dev/null >/dev/null 2>&1; then
+            echo "    [!] Failed to install plugin: $plugin"
+            failed=1
+        fi
+    done <<< "$content"
+    (( failed == 0 ))
+}
+
+restore_claude_skills() {
+    local path="$1" content row repo skill failed=0 count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r row; do
+        [[ -n "$row" ]] || continue
+        count=$((count + 1))
+        [[ "$row" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || {
+            echo "Invalid skills manifest row: $row" >&2; return 1;
+        }
+    done <<< "$content"
+    (( count > 0 )) || { echo "skills manifest has no entries: $path" >&2; return 1; }
+    while IFS= read -r row; do
+        repo="${row%@*}"; skill="${row##*@}"
+        echo "    Adding skill: $skill from $repo..."
+        if ! npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+            echo "    [!] Failed: $row"
+            failed=1
+        fi
+    done <<< "$content"
+    (( failed == 0 ))
+}
+
+stage_is_skipped() { [[ "${!1:-0}" == 1 ]]; }
+
+run_optional_stage() {
+    local flag="$1" message="$2" action="$3"
+    if stage_is_skipped "$flag"; then echo "$message"; return; fi
+    "$action"
+}
+
+run_skills_stage() {
+    local path="$1"
+    if stage_is_skipped SKIP_SKILLS; then echo "==> [CI] Skipping Claude Code skills (SKIP_SKILLS=1)"; return; fi
+    echo "==> Restoring Claude Code skills..."
+    if [[ ! -f "$path" ]]; then record_install_failure "Required manifest missing: manifests/skills.txt"
+    elif ! command -v npx >/dev/null 2>&1; then record_install_failure "npx is required for manifests/skills.txt."
+    elif restore_claude_skills "$path"; then echo "    Skills restored."
+    else record_install_failure "One or more Claude skills failed."
+    fi
+}
+
+run_plugins_stage() {
+    local path="$1"
+    if stage_is_skipped SKIP_PLUGINS; then echo "==> [CI] Skipping Claude Code plugins (SKIP_PLUGINS=1)"; return; fi
+    echo "==> Restoring Claude Code plugins..."
+    if [[ ! -f "$path" ]]; then record_install_failure "Required manifest missing: manifests/plugins.txt"
+    elif ! validate_plugin_manifest "$path"; then record_install_failure "Invalid manifests/plugins.txt."
+    elif ! command -v claude >/dev/null 2>&1; then record_install_failure "claude is required for manifests/plugins.txt."
+    elif restore_claude_plugins "$path"; then echo "    Plugins restored."
+    else record_install_failure "One or more Claude plugins failed."
+    fi
+}
+
 RECEIPT_PATH="${DOTFILES_RECEIPT_PATH:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install-receipt.json}"
 RECEIPT_READY=false
 FUNCTIONS_ONLY_MODE="${DOTFILES_FUNCTIONS_ONLY:-0}"
@@ -909,16 +1032,21 @@ install_node_lts() {
     if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
         echo "    [!] fnm not found. Restart terminal and run:"
         echo "        fnm install --lts"
-        return
+        return 1
     fi
 
-    eval "$(fnm env --shell bash)"
+    local fnm_env
+    if ! fnm_env="$(fnm env --shell bash)"; then
+        echo "    [!] fnm env failed"
+        return 1
+    fi
+    eval "$fnm_env"
     if ! fnm install --lts; then
         echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
-        return
+        return 1
     fi
-    fnm default lts-latest
-    fnm use lts-latest
+    if ! fnm default lts-latest; then echo "    [!] fnm default lts-latest failed"; return 1; fi
+    if ! fnm use lts-latest; then echo "    [!] fnm use lts-latest failed"; return 1; fi
 
     local node_ver
     node_ver="$(node --version 2>/dev/null || true)"
@@ -1095,6 +1223,10 @@ if [[ "$OS" == "Darwin" ]]; then
             before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
             printf '%s\t%s\t%s\t%s\n' "$kind" "$package" "$before_present" "$before"
         done > "$BREW_BEFORE"
+    else
+        record_install_failure "Required manifest missing: manifests/Brewfile"
+        finish_install
+        exit 1
     fi
     if ! $RECEIPT_READY; then
         jq_before="$(awk -F'\t' '$1=="brew" && $2=="jq" {print $3 "\t" $4}' "$BREW_BEFORE")"
@@ -1211,7 +1343,7 @@ elif [[ "$OS" == "Linux" ]]; then
         done < "$APT_BEFORE"
         (( apt_status == 0 )) || exit "$apt_status"
     else
-        echo "    [!] manifests/apt.txt not found, skipping."
+        record_install_failure "Required manifest missing: manifests/apt.txt"
         receipt_init || exit 1
     fi
 
@@ -1292,7 +1424,7 @@ fi
     # =============================================
     # 2. Node.js LTS (fnm)
     # =============================================
-    install_node_lts
+    install_node_lts || record_install_failure "Node.js LTS installation failed."
 # =============================================
 # 2-1. npm 전역 패키지 (manifests/npm-global.txt)
 # =============================================
@@ -1321,9 +1453,11 @@ if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
             cancel_managed_package "npm:$pkg"
         fi
     done < <(manifest_lines "$NPM_FILE")
-    (( npm_failed == 0 )) || exit 1
+    (( npm_failed == 0 )) || record_install_failure "One or more npm packages failed."
+elif [[ ! -f "$NPM_FILE" ]]; then
+    record_install_failure "Required manifest missing: manifests/npm-global.txt"
 else
-    echo "    [!] manifests/npm-global.txt or npm not found, skipping."
+    record_install_failure "npm is required for manifests/npm-global.txt."
 fi
 
 # =============================================
@@ -1384,9 +1518,7 @@ fi
 # 3. Claude Code package-manager 설치
 # =============================================
 echo
-if [[ "${SKIP_CLAUDE_CODE:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)"
-else
+install_claude_code_stage() {
     echo "==> Installing Claude Code via package manager..."
     if [[ "$OS" == Darwin ]] && jq -e '.packages["cask:claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
@@ -1489,7 +1621,8 @@ else
             if install_managed_file "$tmp_agent" "$CLAUDE_DIR/agents/$name.md" skip; then echo "    Deployed agent: $name"; fi
         done
     fi
-fi
+}
+run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
 
 # =============================================
 # 4. shell 프로파일 설정 (bash + macOS zsh, 마커 방식)
@@ -1501,59 +1634,12 @@ install_shell_profiles
 # 6. Claude Code skills 설치 (manifests/skills.txt)
 # =============================================
 echo
-if [[ "${SKIP_SKILLS:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping Claude Code skills (SKIP_SKILLS=1)"
-else
-    echo "==> Restoring Claude Code skills..."
-    SKILLS_FILE="$ROOT/manifests/skills.txt"
-    if [[ -f "$SKILLS_FILE" ]] && command -v npx >/dev/null 2>&1; then
-        while IFS= read -r line; do
-            [[ "$line" =~ ^([^@]+)@(.+)$ ]] || continue
-            repo="${BASH_REMATCH[1]}"
-            skill="${BASH_REMATCH[2]}"
-            echo "    Adding skill: $skill from $repo..."
-            if ! npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
-                echo "    [!] Failed: $repo@$skill"
-            fi
-        done < <(manifest_lines "$SKILLS_FILE")
-        echo "    Skills restored."
-    else
-        echo "    [!] manifests/skills.txt or npx not found, skipping skills."
-    fi
-fi
+run_skills_stage "$ROOT/manifests/skills.txt"
 
 # =============================================
 # 7. Claude Code 플러그인 설치 (manifests/plugins.txt)
 # =============================================
 echo
-if [[ "${SKIP_PLUGINS:-0}" == "1" ]]; then
-    echo "==> [CI] Skipping Claude Code plugins (SKIP_PLUGINS=1)"
-else
-    echo "==> Restoring Claude Code plugins..."
-    PLUGINS_FILE="$ROOT/manifests/plugins.txt"
-    if [[ -f "$PLUGINS_FILE" ]] && command -v claude >/dev/null 2>&1; then
-        while IFS= read -r line; do
-            # <marketplace-source> <plugin>@<marketplace> [scope]
-            read -r market plugin scope <<<"$line"
-            [[ -n "$market" && -n "$plugin" ]] || continue
-            scope="${scope:-user}"
+run_plugins_stage "$ROOT/manifests/plugins.txt"
 
-            echo "    Adding marketplace: $market (scope: $scope)..."
-            if ! claude plugin marketplace add "$market" --scope "$scope" </dev/null >/dev/null 2>&1; then
-                echo "    [!] Failed to add marketplace: $market"
-                continue
-            fi
-
-            echo "    Installing plugin: $plugin (scope: $scope)..."
-            if ! claude plugin install "$plugin" --scope "$scope" </dev/null >/dev/null 2>&1; then
-                echo "    [!] Failed to install plugin: $plugin"
-            fi
-        done < <(manifest_lines "$PLUGINS_FILE")
-        echo "    Plugins restored."
-    else
-        echo "    [!] manifests/plugins.txt or claude not found, skipping plugins."
-    fi
-fi
-
-echo
-echo "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."
+finish_install || exit 1
