@@ -138,7 +138,7 @@ dotfiles/
 skills는 두 경로로 관리한다.
 
 - **원격 skill**: `manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지한다. 새 skill 추가 시 manifest에만 추가 후 install 스크립트를 다시 실행하면 `npx skills add --global`로 설치된다.
-- **로컬 skill**: 이 저장소가 소유한 skill은 `config/claude/skills/<name>/`에 둔다. install 스크립트의 3-1 단계가 디렉터리 단위로 `~/.claude/skills/`에 배포하며, 원격 skill 경로는 건드리지 않는다. 예: `subagent-creator`(Claude Code subagent 정의 생성 skill).
+- **로컬 skill**: 이 저장소가 소유한 skill은 `config/claude/skills/<name>/`에 둔다. install 스크립트의 3-1 단계가 디렉터리 단위로 `~/.claude/skills/`에 배포하며, 원격 skill 경로는 건드리지 않는다. 현재 `subagent-creator`(Claude Code subagent 정의 생성), `repo-scaffold`(저장소를 에이전트 탐색용 형태로 스캐폴딩) 두 개다.
 
 ### plugin 관리
 

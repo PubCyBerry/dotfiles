@@ -70,3 +70,19 @@ codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agen
 | 스킬 | 설명 |
 |------|------|
 | `subagent-creator` | Claude Code subagent 정의(`.claude/agents/<name>.md`) 대화형 생성·검증 |
+| `repo-scaffold` | 저장소를 에이전트 탐색용 형태로 스캐폴딩 — AGENTS.md 문서 인덱스 자동 생성, `docs/` 계층과 front matter 규약, pre-commit 검증 훅 |
+
+### repo-scaffold
+
+에이전트가 사전학습 기억이 아니라 저장소 안 문서를 근거로 판단하게 만드는 것이 목적이다. 세 가지를 한 번에 깐다.
+
+- `AGENTS.md`의 문서 인덱스 — `git ls-files`로 `.md`/`.mdx`를 훑어 디렉터리별 한 줄로 직렬화하고, 마커 사이에 삽입한다
+- `docs/{standards,guides,references,generated}/` 계층 — 디렉터리명과 front matter `type`이 1:1이라 위치만 보고 성격을 안다
+- pre-commit 훅 4개 — 인덱스 갱신, 문서 규약, `.env` 키 동기화, 자격 증명 스캔. 전부 `repo: local`이라 폐쇄망에서도 clone 실패로 막히지 않는다
+
+```bash
+SKILL_DIR="$HOME/.claude/skills/repo-scaffold"
+bash "$SKILL_DIR/assets/scaffold.sh" --target /path/to/repo --name MYREPO --dry-run
+```
+
+기존 파일은 덮어쓰지 않고 `SKIP`으로 보고만 한다. 여러 번 돌려도 결과가 같아서, 이미 파일이 있는 저장소에 얹을 때는 `--dry-run` 출력이 그대로 진단 결과가 된다.
