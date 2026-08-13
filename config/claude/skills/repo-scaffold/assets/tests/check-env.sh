@@ -66,7 +66,10 @@ value_empty() {
     [ -z "$(printf '%s' "$raw" | tr -d "[:space:]\"'")" ]
 }
 
-mapfile -t EXAMPLES < <(git -C "$REPO_ROOT" ls-files -- '*.env.example' | sort)
+EXAMPLES=()
+while IFS= read -r example; do
+    EXAMPLES[${#EXAMPLES[@]}]="$example"
+done < <(git -C "$REPO_ROOT" ls-files -- '*.env.example' | sort)
 
 if [ "${#EXAMPLES[@]}" -eq 0 ]; then
     echo "SKIP 추적 중인 .env.example 이 없다. 검사할 대상이 없다"

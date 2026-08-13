@@ -23,7 +23,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 MODE="staged"
 case "${1:-}" in
@@ -57,10 +57,15 @@ report_hit() {
 }
 
 if [ "$MODE" = "staged" ]; then
-    mapfile -t FILES < <(git diff --cached --name-only --diff-filter=ACM)
+    FILE_LIST_COMMAND=(git diff --cached --name-only --diff-filter=ACMR)
 else
-    mapfile -t FILES < <(git ls-files)
+    FILE_LIST_COMMAND=(git ls-files)
 fi
+
+FILES=()
+while IFS= read -r f; do
+    FILES[${#FILES[@]}]="$f"
+done < <("${FILE_LIST_COMMAND[@]}")
 
 if [ "${#FILES[@]}" -eq 0 ]; then
     echo "SKIP 검사할 파일이 없다"

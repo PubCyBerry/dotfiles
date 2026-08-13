@@ -42,7 +42,10 @@ esac
 # 다시 넣으려면 아래 제외 pathspec 을 지운다.
 EXCLUDE=(':!.agents/*')
 
-mapfile -t FILES < <(git ls-files -- '*.md' '*.mdx' "${EXCLUDE[@]}" | sort)
+FILES=()
+while IFS= read -r f; do
+    FILES[${#FILES[@]}]="$f"
+done < <(git ls-files -- '*.md' '*.mdx' "${EXCLUDE[@]}" | sort)
 
 if [ "${#FILES[@]}" -eq 0 ]; then
     echo "대상 문서가 없다" >&2
@@ -50,23 +53,32 @@ if [ "${#FILES[@]}" -eq 0 ]; then
 fi
 
 # --- 2. 디렉터리별 그룹화 -----------------------------------------------------
-declare -A GROUP
-for f in "${FILES[@]}"; do
-    base="${f##*/}"
-    if [ "$base" = "$f" ]; then
-        dir="."
-    else
-        dir="${f%/*}"
-    fi
-    GROUP["$dir"]="${GROUP[$dir]:+${GROUP[$dir]},}$base"
-done
+parts=("$TITLE" "root: ." "$NOTE")
+dir_count=0
+
+while IFS= read -r group; do
+    parts[${#parts[@]}]="$group"
+    dir_count=$((dir_count + 1))
+done < <(
+    printf '%s\n' "${FILES[@]}" \
+        | awk '{
+            base = $0
+            sub(/^.*\//, "", base)
+            dir = $0
+            if (dir == base) dir = "."
+            else sub(/\/[^/]*$/, "", dir)
+            print dir "\t" base
+        }' \
+        | sort \
+        | awk -F '\t' '
+            NR == 1 { dir = $1; files = $2; next }
+            $1 != dir { print dir ":{" files "}"; dir = $1; files = $2; next }
+            { files = files "," $2 }
+            END { if (NR) print dir ":{" files "}" }
+        '
+)
 
 # --- 3. 직렬화 ----------------------------------------------------------------
-parts=("$TITLE" "root: ." "$NOTE")
-while IFS= read -r dir; do
-    parts+=("$dir:{${GROUP[$dir]}}")
-done < <(printf '%s\n' "${!GROUP[@]}" | sort)
-
 INDEX="$(printf '%s' "${parts[0]}"; printf '|%s' "${parts[@]:1}")"
 
 if [ "$MODE" = "print" ]; then
@@ -85,7 +97,8 @@ fi
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
-awk -v start="$START" -v end="$END" -v index_line="$INDEX" '
+INDEX_LINE="$INDEX" awk -v start="$START" -v end="$END" '
+    BEGIN { index_line = ENVIRON["INDEX_LINE"] }
     $0 == start { print; print "```"; print index_line; print "```"; skip = 1; next }
     $0 == end   { skip = 0 }
     !skip       { print }
@@ -102,7 +115,7 @@ if [ "$MODE" = "check" ]; then
 fi
 
 cat "$TMP" > "$TARGET"
-echo "문서 인덱스 갱신: 디렉터리 ${#GROUP[@]}개, 문서 ${#FILES[@]}개"
+echo "문서 인덱스 갱신: 디렉터리 ${dir_count}개, 문서 ${#FILES[@]}개"
 
 if [ "$MODE" = "stage" ]; then
     git add "$TARGET"

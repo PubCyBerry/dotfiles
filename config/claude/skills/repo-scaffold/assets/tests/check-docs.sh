@@ -27,6 +27,7 @@ TIMEOUT=10
 
 # 백틱으로 써도 되는 경로. 저장소에 실재하지만 링크 대상으로 부적절한 것들.
 BACKTICK_ALLOW=".env .git .gitignore"
+BACKTICK_PATTERN="\`[^\`]\\+\`"
 
 REQUIRED_KEYS="id title type status summary scope read_when"
 TYPE_ENUM="index standard guide reference generated"
@@ -37,7 +38,16 @@ SUMMARY_STYLE="{{SUMMARY_STYLE}}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-net)  CHECK_NET=0; shift ;;
-        --timeout) TIMEOUT="${2:-10}"; shift 2 ;;
+        --timeout)
+            if [ "$#" -lt 2 ]; then
+                echo "FAIL: --timeout 값이 없다" >&2
+                exit 2
+            fi
+            case "$2" in
+                ''|*[!0-9]*) echo "FAIL: --timeout 은 0 이상의 정수다: $2" >&2; exit 2 ;;
+            esac
+            TIMEOUT="$2"
+            shift 2 ;;
         -h|--help) sed -n '2,21p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)         echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
     esac
@@ -62,7 +72,10 @@ if [ ! -d "$DOCS_ROOT" ]; then
     exit 1
 fi
 
-mapfile -t DOC_FILES < <(find "$DOCS_ROOT" -type f -name '*.md' | sort)
+DOC_FILES=()
+while IFS= read -r doc; do
+    DOC_FILES[${#DOC_FILES[@]}]="$doc"
+done < <(find "$DOCS_ROOT" -type f -name '*.md' | sort)
 
 if [ "${#DOC_FILES[@]}" -eq 0 ]; then
     echo "FAIL: $DOCS_ROOT 에 문서가 없다" >&2
@@ -73,7 +86,7 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-rel_path() { printf '%s\n' "${1#$REPO_ROOT/}"; }
+rel_path() { printf '%s\n' "${1#"$REPO_ROOT"/}"; }
 
 # ---------------------------------------------------------------- front matter
 
@@ -175,10 +188,10 @@ REF_LIST="$TMP_DIR/refs"
             printf '%s\t%s\n' "$r" "$rel" >> "$REF_LIST"
         done
 
-        if ! printf '%s\n' $TYPE_ENUM | grep -qx "$doc_type"; then
-            report FAIL "$rel" "type '$doc_type' 는 enum 밖 ($TYPE_ENUM)"
-            continue
-        fi
+        case " $TYPE_ENUM " in
+            *" $doc_type "*) ;;
+            *) report FAIL "$rel" "type '$doc_type' 는 enum 밖 ($TYPE_ENUM)"; continue ;;
+        esac
 
         want="$(expected_type "$rel")"
         if [ -n "$want" ] && [ "$want" != "$doc_type" ]; then
@@ -239,7 +252,7 @@ echo
 echo "[2/4] 백틱 경로"
 # 코드 블록 안은 규약 예외이므로 제외한다.
 awk '/^[[:space:]]*```/ { fence = !fence; next } !fence' "${DOC_FILES[@]}" \
-    | grep -o '`[^`]\+`' \
+    | grep -o "$BACKTICK_PATTERN" \
     | tr -d '`' \
     | sed 's:/*$::' \
     | grep -E '(/|\.(md|yaml|yml|sh|properties|example|Dockerfile))' \

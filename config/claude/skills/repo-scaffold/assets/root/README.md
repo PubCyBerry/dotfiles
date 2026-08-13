@@ -18,8 +18,6 @@
 ├── scripts/
 │   └── gen-doc-index.sh   AGENTS.md 문서 인덱스 생성
 ├── .pre-commit-config.yaml  커밋 직전 인덱스 갱신과 검증
-├── .agents/skills/        에이전트 스킬 원본
-├── .claude/skills         → ../.agents/skills 심링크
 ├── .env.example  →  .env  자격 증명 키 목록
 ├── AGENTS.md              에이전트 작업 규칙
 ├── CLAUDE.md              AGENTS.md 를 가리키는 포인터

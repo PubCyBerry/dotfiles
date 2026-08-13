@@ -5,7 +5,7 @@
 # 무엇을 왜 두는지는 references/layout.md 에 있다.
 #
 # 원칙:
-#   - 기존 파일을 덮어쓰지 않는다. 이미 있으면 SKIP 하고 보고만 한다 (--force 로 해제)
+#   - 기존 파일을 덮어쓰지 않는다. 이미 있으면 SKIP 하고 보고만 한다
 #   - 여러 번 돌려도 결과가 같다 (idempotent)
 #   - --dry-run 이 기본 확인 수단이다. 먼저 돌려서 계획을 본다
 #
@@ -19,7 +19,6 @@
 #   --lang ko|en      문서 언어. 검증 스크립트의 summary 문체 검사에만 영향. 기본 ko
 #   --init            대상이 git 저장소가 아니면 git init 한다
 #   --dry-run         쓰지 않고 계획만 출력한다
-#   --force           기존 파일을 덮어쓴다
 #
 # 종료 코드: 실패가 있으면 1, 아니면 0
 
@@ -34,24 +33,37 @@ PRODUCT=""
 LANG_CODE="ko"
 DO_INIT=0
 DRY_RUN=0
-FORCE=0
+
+require_option_value() {
+    if [ "$#" -lt 2 ]; then
+        echo "FAIL: $1 값이 없다" >&2
+        return 1
+    fi
+    case "$2" in
+        --*|-h) echo "FAIL: $1 값이 없다" >&2; return 1 ;;
+    esac
+}
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --target)  TARGET="${2:-}"; shift 2 ;;
-        --name)    NAME="${2:-}"; shift 2 ;;
-        --desc)    DESC="${2:-}"; shift 2 ;;
-        --product) PRODUCT="${2:-}"; shift 2 ;;
-        --lang)    LANG_CODE="${2:-ko}"; shift 2 ;;
+        --target|--name|--desc|--product|--lang)
+            require_option_value "$@" || exit 2 ;;
+    esac
+    case "$1" in
+        --target)  TARGET="$2"; shift 2 ;;
+        --name)    NAME="$2"; shift 2 ;;
+        --desc)    DESC="$2"; shift 2 ;;
+        --product) PRODUCT="$2"; shift 2 ;;
+        --lang)    LANG_CODE="$2"; shift 2 ;;
         --init)    DO_INIT=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
-        --force)   FORCE=1; shift ;;
         -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)         echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
     esac
 done
 
 [ -n "$TARGET" ] || { echo "FAIL: --target 이 없다" >&2; exit 2; }
+[ ! -L "$TARGET" ] || { echo "FAIL: 대상 경로가 심링크다: $TARGET" >&2; exit 2; }
 [ -d "$TARGET" ] || { echo "FAIL: 대상 디렉터리가 없다: $TARGET" >&2; exit 2; }
 
 case "$LANG_CODE" in
@@ -66,6 +78,17 @@ esac
 TARGET="$(cd "$TARGET" && pwd)"
 [ -n "$NAME" ] || NAME="$(basename "$TARGET")"
 [ -n "$DESC" ] || DESC="$NAME 저장소"
+
+for value in "$NAME" "$DESC" "$PRODUCT"; do
+    case "$value" in
+        *$'\r'*|*$'\n'*)
+            echo "FAIL: 이름, 설명, 제품 디렉터리는 한 줄이어야 한다" >&2
+            exit 2 ;;
+    esac
+done
+case "$NAME" in
+    *"'"*) echo "FAIL: 저장소 이름에 작은따옴표를 쓸 수 없다" >&2; exit 2 ;;
+esac
 
 # summary 문체 검사는 한국어 종결어미 기준이라 한국어 문서에만 건다.
 SUMMARY_STYLE="none"
@@ -93,6 +116,9 @@ fi
 add_count=0
 skip_count=0
 fail_count=0
+GENERATED_PATHS=()
+GENERATED_INDEX=0
+GENERATED_AGENTS=0
 
 report() {
     # $1: 판정, $2: 대상, $3: 사유
@@ -106,49 +132,95 @@ report() {
 
 # --- 치환 --------------------------------------------------------------------
 
+symlink_component() {
+    local path="$1"
+    while :; do
+        if [ -L "$path" ]; then
+            SYMLINK_COMPONENT="$path"
+            return 0
+        fi
+        [ "$path" = "$TARGET" ] && return 1
+        path="$(dirname "$path")"
+    done
+}
+
 # render SRC DEST [KEY=VALUE ...]
 # 전역 플레이스홀더에 호출별 추가 쌍을 얹어 치환한다.
 render() {
     local src="$ASSET_DIR/$1" dest_rel="$2"; shift 2
     local dest="$TARGET/$dest_rel"
+    local parent tmp=""
 
     if [ ! -f "$src" ]; then
         report FAIL "$dest_rel" "템플릿 없음: $src"
         return
     fi
 
-    if [ -e "$dest" ] && [ "$FORCE" -eq 0 ]; then
+    if symlink_component "$dest"; then
+        report FAIL "$dest_rel" "심링크 경로 거부: $SYMLINK_COMPONENT"
+        return
+    fi
+
+    if [ -e "$dest" ]; then
         report SKIP "$dest_rel" "이미 있음"
         return
     fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        report PLAN "$dest_rel" "$([ -e "$dest" ] && echo '덮어씀' || echo '새로 만듦')"
+        report PLAN "$dest_rel" "새로 만듦"
         return
     fi
 
-    mkdir -p "$(dirname "$dest")"
-
-    # sed 구분자로 | 를 쓴다. 값에 | 가 들어가면 치환이 깨지므로 미리 거른다.
+    # sed replacement 메타문자는 escape 하고 줄바꿈은 옵션 검증에서 거른다.
     local args=("REPO_NAME=$NAME" "REPO_DESC=$DESC" "PRODUCT_DIR=$PRODUCT"
                 "SUMMARY_STYLE=$SUMMARY_STYLE" "DOC_LANG=$LANG_CODE" "$@")
-    local script="" pair key value
+    local script="" pair key value escaped
     for pair in "${args[@]}"; do
         key="${pair%%=*}"
         value="${pair#*=}"
         case "$value" in
-            *"|"*) report FAIL "$dest_rel" "치환값에 | 가 있다: $key"; return ;;
+            *$'\r'*|*$'\n'*) report FAIL "$dest_rel" "치환값은 한 줄이어야 한다: $key"; return ;;
         esac
-        script="${script}s|{{$key}}|$value|g;"
+        escaped="$(printf '%s' "$value" | sed 's/[\\&|]/\\&/g')"
+        script="${script}s|{{$key}}|$escaped|g;"
     done
 
-    if sed "$script" "$src" > "$dest"; then
+    parent="$(dirname "$dest")"
+    if ! mkdir -p "$parent"; then
+        report FAIL "$dest_rel" "상위 디렉터리 생성 실패"
+        return
+    fi
+    if symlink_component "$dest"; then
+        report FAIL "$dest_rel" "심링크 경로 거부: $SYMLINK_COMPONENT"
+        return
+    fi
+
+    tmp="$(mktemp "$parent/.repo-scaffold.XXXXXX")" || {
+        report FAIL "$dest_rel" "임시 파일 생성 실패"
+        return
+    }
+
+    if ! sed "$script" "$src" > "$tmp" \
+        || ! { case "$dest_rel" in *.sh) chmod 755 "$tmp" ;; *) chmod 644 "$tmp" ;; esac; }; then
+        rm -f "$tmp"
+        report FAIL "$dest_rel" "쓰기 실패"
+        return
+    fi
+
+    if ln "$tmp" "$dest" 2>/dev/null; then
+        rm -f "$tmp"
+        GENERATED_PATHS[${#GENERATED_PATHS[@]}]="$dest_rel"
         case "$dest_rel" in
-            *.sh) chmod +x "$dest" ;;
+            scripts/gen-doc-index.sh) GENERATED_INDEX=1 ;;
+            AGENTS.md)                GENERATED_AGENTS=1 ;;
         esac
         report ADD "$dest_rel"
+    elif [ -e "$dest" ] || [ -L "$dest" ]; then
+        rm -f "$tmp"
+        report SKIP "$dest_rel" "생성 중 다른 파일이 생김"
     else
-        report FAIL "$dest_rel" "쓰기 실패"
+        rm -f "$tmp"
+        report FAIL "$dest_rel" "파일 게시 실패"
     fi
 }
 
@@ -250,12 +322,16 @@ fi
 
 echo "결과: ADD $add_count, SKIP $skip_count, FAIL $fail_count"
 
-if [ -f "$TARGET/scripts/gen-doc-index.sh" ] && [ -f "$TARGET/AGENTS.md" ]; then
+if [ "$GENERATED_INDEX" -eq 1 ] && [ "$GENERATED_AGENTS" -eq 1 ]; then
     echo
     echo "문서 인덱스 생성"
     # git ls-files 는 인덱스를 읽는다. 새 파일이 아직 추적 전이면 인덱스가 비므로 먼저 등록한다.
-    git -C "$TARGET" add -N . >/dev/null 2>&1
-    (cd "$TARGET" && bash scripts/gen-doc-index.sh) || report FAIL "AGENTS.md" "인덱스 생성 실패"
+    if git -C "$TARGET" add -N -- "${GENERATED_PATHS[@]}" >/dev/null 2>&1; then
+        (cd "$TARGET" && bash scripts/gen-doc-index.sh) \
+            || report FAIL "AGENTS.md" "인덱스 생성 실패"
+    else
+        report FAIL "AGENTS.md" "생성 경로를 git index 에 등록하지 못함"
+    fi
 fi
 
 cat <<EOF

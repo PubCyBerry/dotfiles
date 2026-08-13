@@ -32,16 +32,6 @@ pre-commit hook으로 커밋 직전에 자동 생성한다.
 제품이나 프레임워크에 종속되는 자료는 `docs/` 아래 별도 도메인 디렉터리로 분리한다.
 그 안에서도 `standards/`, `guides/`, `references/` 구분은 같다.
 
-## 에이전트 설정
-
-MCP 서버, 서브에이전트, 스킬, 훅, 권한 설정은 전부 이 저장소 안의 `./.claude/` 또는 `./.agents/`에서 관리한다.
-스킬 원본은 도구 중립 위치인 `.agents/skills/`에 두고, 도구별 디렉터리는 심링크만 갖는다.
-
-```bash
-# 심링크가 깨졌거나 새 클론에서 다시 만들 때 (Windows는 개발자 모드 필요)
-MSYS=winsymlinks:nativestrict ln -s ../.agents/skills .claude/skills
-```
-
 ## 작업 전 확인
 
 - 커밋 전에 [tests/check-docs.sh](tests/check-docs.sh) 가 통과하는가

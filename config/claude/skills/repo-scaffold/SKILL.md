@@ -33,10 +33,10 @@ description: 저장소를 에이전트가 탐색하기 좋은 형태로 스캐�
 
 ## 2. dry-run 으로 계획을 본다
 
-스킬 위치를 먼저 잡는다. 전역 설치본과 저장소 안 사본 중 있는 쪽을 쓴다.
+전역 설치된 스킬 위치를 잡는다.
 
 ```bash
-SKILL_DIR="$(ls -d ~/.claude/skills/repo-scaffold .agents/skills/repo-scaffold 2>/dev/null | head -1)"
+SKILL_DIR="$HOME/.claude/skills/repo-scaffold"
 ```
 
 ```bash
@@ -57,10 +57,10 @@ bash "$SKILL_DIR/assets/scaffold.sh" \
 ```
 
 기존 파일은 절대 덮어쓰지 않는다. 여러 번 돌려도 결과가 같다.
-덮어써야 할 근거가 있으면 `--force` 를 쓰되, 사용자에게 무엇이 사라지는지 먼저 알린다.
 
-스크립트가 마지막에 `git add -N` 으로 새 파일을 인덱스에 등록하고 문서 인덱스를 생성한다.
-`add -N` 은 내용을 스테이징하지 않는다. 경로만 등록해서 `git ls-files` 가 보게 하는 것이다.
+스크립트가 이번 실행에서 만든 경로만 `git add -N` 으로 인덱스에 등록한다.
+`scripts/gen-doc-index.sh` 와 `AGENTS.md` 를 둘 다 만든 실행에서만 문서 인덱스를 생성한다.
+둘 중 하나라도 `SKIP` 이면 기존 스크립트를 실행하거나 기존 `AGENTS.md` 를 바꾸지 않는다.
 
 ## 4. 검증한다
 

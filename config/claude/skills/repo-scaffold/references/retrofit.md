@@ -10,7 +10,7 @@
 ## 진단
 
 ```bash
-SKILL_DIR="$(ls -d ~/.claude/skills/repo-scaffold .agents/skills/repo-scaffold 2>/dev/null | head -1)"
+SKILL_DIR="$HOME/.claude/skills/repo-scaffold"
 bash "$SKILL_DIR/assets/scaffold.sh" --target /path/to/repo --dry-run
 ```
 
@@ -43,7 +43,8 @@ pre-commit hook으로 커밋 직전에 자동 생성한다.
 넣고 나서 인덱스를 생성한다.
 
 ```bash
-git add -N . && bash scripts/gen-doc-index.sh
+git add -N -- AGENTS.md scripts/gen-doc-index.sh docs
+bash scripts/gen-doc-index.sh
 ```
 
 마커 사이에 손으로 쓴 내용을 넣으면 다음 커밋에 사라진다.
