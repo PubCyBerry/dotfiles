@@ -277,7 +277,7 @@ function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet(
     return $success
 }
 
-function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue) {
+function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue, [string]$Prefix = '') {
     if (-not $script:ReceiptReady -or ($BeforePresent -and $BeforeValue -eq $InstalledValue)) { return }
     if (-not $BeforePresent -and -not $InstalledValue) { return }
     if (-not $script:Receipt.packages.Contains($Name)) {
@@ -285,13 +285,18 @@ function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$Bef
     } else {
         $script:Receipt.packages[$Name].installed = $InstalledValue
     }
+    if ($Prefix) { $script:Receipt.packages[$Name].prefix = $Prefix }
     $null = $script:Receipt.packages[$Name].Remove('pending')
     Save-InstallReceipt
 }
 
-function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue) {
+function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$Prefix = '') {
     if (-not $script:ReceiptReady) { return $false }
     $existing = $script:Receipt.packages[$Name]
+    if ($Prefix -and $existing -and ((-not $existing.prefix) -or $existing.prefix -cne $Prefix)) {
+        Write-Warning "npm prefix changed or missing in receipt; preserving package ownership: $Name"
+        return $false
+    }
     if ($existing.pending -and ($BeforePresent -ne $existing.pending.previousPresent -or ($BeforePresent -and $BeforeValue -ne $existing.pending.previousValue))) {
         Record-ManagedPackage $Name $existing.before.present $existing.before.value $BeforeValue
     }
@@ -303,6 +308,7 @@ function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$Befo
         }
     }
     $script:Receipt.packages[$Name].pending = [ordered]@{ previousPresent = $BeforePresent; previousValue = $(if ($BeforePresent) { $BeforeValue } else { $null }); newEntry = $isNew }
+    if ($Prefix) { $script:Receipt.packages[$Name].prefix = $Prefix }
     Save-InstallReceipt
     return $true
 }
@@ -894,6 +900,7 @@ Write-Host "==> Installing global npm packages..."
 $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if (Test-Path $npmFile) {
     $npmRoot = npm root -g 2>$null
+    $npmPrefix = npm prefix -g 2>$null
     $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
     if (-not $jqPath) {
         Write-Warning "jq unavailable; skipping npm mutations to preserve package provenance."
@@ -902,7 +909,7 @@ if (Test-Path $npmFile) {
         $npmStates = Get-ManifestLines $npmFile | ForEach-Object {
             $packageJson = Join-Path $npmRoot "$_\package.json"
             $beforeVersion = if (Test-Path $packageJson) { (& $jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
-            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion)) { throw "npm receipt journal failed: $_" }
+            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion $npmPrefix)) { throw "npm receipt journal failed: $_" }
             [pscustomobject]@{ Package = $_; BeforeVersion = $beforeVersion }
         }
         $npmResults = $npmStates | ForEach-Object -Parallel {
@@ -924,7 +931,7 @@ if (Test-Path $npmFile) {
     }
     foreach ($r in $npmResults) {
         if ($r.AfterVersion -and $r.BeforeVersion -ne $r.AfterVersion) {
-            Record-ManagedPackage "npm:$($r.Package)" ([bool]$r.BeforeVersion) $r.BeforeVersion $r.AfterVersion
+            Record-ManagedPackage "npm:$($r.Package)" ([bool]$r.BeforeVersion) $r.BeforeVersion $r.AfterVersion $npmPrefix
         } else {
             Cancel-ManagedPackage "npm:$($r.Package)"
         }
@@ -1112,7 +1119,7 @@ if (Test-Path $profileSrc) {
     $claudeAlias = "function global:ccd { claude --dangerously-skip-permissions @args }"
     $block = "$profileContent`n$claudeAlias"
 
-    $profilePaths = @($PROFILE.CurrentUserCurrentHost)
+    $profilePaths = @(if ($env:DOTFILES_PS_PROFILE_PATH) { $env:DOTFILES_PS_PROFILE_PATH } else { $PROFILE.CurrentUserCurrentHost })
     foreach ($prof in $profilePaths) {
         New-Item -ItemType Directory -Force -Path (Split-Path $prof) | Out-Null
         Set-ProfileBlock $prof $block
@@ -1160,7 +1167,8 @@ if (Test-Path $bashrcSrc) {
 Write-Host ""
 Write-Host "==> Restoring Claude Code skills..."
 $skillsFile = Join-Path $ROOT "manifests\skills.txt"
-if (Test-Path $skillsFile) {
+if ($env:SKIP_SKILLS -eq '1') { Write-Host "    [CI] Skills skipped." }
+elseif (Test-Path $skillsFile) {
     Get-ManifestLines $skillsFile | ForEach-Object {
         if ($_ -match '^([^@]+)@(.+)$') {
             $repoSlug  = $Matches[1]
@@ -1180,7 +1188,8 @@ if (Test-Path $skillsFile) {
 Write-Host ""
 Write-Host "==> Restoring Claude Code plugins..."
 $pluginsFile = Join-Path $ROOT "manifests\plugins.txt"
-if ((Test-Path $pluginsFile) -and (Get-Command claude -ErrorAction SilentlyContinue)) {
+if ($env:SKIP_PLUGINS -eq '1') { Write-Host "    [CI] Plugins skipped." }
+elseif ((Test-Path $pluginsFile) -and (Get-Command claude -ErrorAction SilentlyContinue)) {
     Get-ManifestLines $pluginsFile | ForEach-Object {
         # <marketplace-source> <plugin>@<marketplace> [scope]
         $fields = $_ -split '\s+'

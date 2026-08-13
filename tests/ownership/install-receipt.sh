@@ -210,7 +210,7 @@ git config --global test.receipt user-edit
 set_managed_git_value test.receipt should-not-win
 [[ "$(git config --global --get test.receipt)" == user-edit ]] || fail 'modified managed Git value overwritten'
 if [[ "$(uname -s)" == Linux || "$(uname -s)" == Darwin ]]; then
-  [[ "$(stat -c '%a' "$dst.dotfiles-backup" 2>/dev/null || stat -f '%Lp' "$dst.dotfiles-backup")" == 600 ]] || fail 'backup mode is not 0600'
+  [[ "$(stat -c '%a' "$dst.dotfiles-backup" 2>/dev/null || stat -f '%Lp' "$dst.dotfiles-backup")" == "$(jq -r --arg path "$dst" '.artifacts[$path].before.mode' "$RECEIPT_PATH")" ]] || fail 'backup mode did not preserve original'
 fi
 [[ -z "$(find "$(dirname "$RECEIPT_PATH")" -maxdepth 1 -name '.install-receipt.*' -print -quit)" ]] || fail 'receipt temp file leaked'
 
@@ -229,6 +229,6 @@ update_fnm_statusline v23.0.0
 [[ "$(cat "$settings")" == "$user_settings" ]] || fail 'fnm overwrote user-modified settings'
 
 ! grep -Fq 'chmod +x "$HOOKS_DST"/*.sh' "$ROOT/install.sh" || fail 'Claude hook wildcard chmod returned'
-grep -Fq 'chmod +x "$HOOKS_DST/$hook_rel"' "$ROOT/install.sh" || fail 'managed Claude hook chmod missing'
+grep -Fq 'chmod +x "$managed_hook"' "$ROOT/install.sh" || fail 'managed Claude hook identity missing'
 
 echo 'Unix install receipt: PASS'

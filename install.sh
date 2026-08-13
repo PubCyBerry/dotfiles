@@ -135,6 +135,7 @@ file_hash() {
     else shasum -a 256 "$1" | awk '{print $1}'
     fi
 }
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
 managed_parent_is_safe() {
     local path="$1" parent next boundary=""
@@ -152,7 +153,7 @@ managed_parent_is_safe() {
 install_managed_file() {
     local src="$1" dst="$2" collision="${3:-takeover}"
     local entry_hash="" before_hash="" source_hash backup="" n=0 tmp pending expected_hash expected_exists current_exists=false
-    local before_exists installed_hash backup_tmp
+    local before_exists installed_hash backup_tmp before_mode="" current_mode="" expected_mode="" source_mode
     $RECEIPT_READY && [[ -f "$src" ]] || return 1
     if ! managed_parent_is_safe "$dst"; then
         echo "    [!] Unsupported destination parent path; preserving: $dst" >&2
@@ -163,13 +164,15 @@ install_managed_file() {
         return 1
     fi
     source_hash="$(file_hash "$src")"
-    [[ -f "$dst" ]] && before_hash="$(file_hash "$dst")"
+    source_mode="$(file_mode "$src")"
+    if [[ -f "$dst" ]]; then before_hash="$(file_hash "$dst")"; before_mode="$(file_mode "$dst")"; fi
     entry_hash="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
     pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
 
     if jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
         if [[ "$pending" == true && -f "$dst" && "$before_hash" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" ]]; then
-            receipt_commit --arg path "$dst" '.artifacts[$path].installedHash=.artifacts[$path].targetHash | .artifacts[$path].pending=false | del(.artifacts[$path].targetHash,.artifacts[$path].previousHash,.artifacts[$path].previousExists)' || return 1
+            [[ "$(file_mode "$dst")" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetMode // empty' "$RECEIPT_PATH")" ]] || { echo "    [!] Pending managed file mode changed; preserving: $dst" >&2; return 1; }
+            receipt_commit --arg path "$dst" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash=.artifacts[$path].targetHash | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending=false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
             pending=false
             entry_hash="$before_hash"
             [[ "$before_hash" != "$source_hash" ]] || return 0
@@ -180,11 +183,13 @@ install_managed_file() {
             expected_exists="$(jq -r --arg path "$dst" '.artifacts[$path] | if has("previousExists") then .previousExists else .before.exists end' "$RECEIPT_PATH")"
         fi
         if [[ -f "$dst" ]]; then current_exists=true; fi
-        if [[ "$current_exists" != "$expected_exists" || ( -f "$dst" && "$before_hash" != "$expected_hash" ) ]]; then
+        if [[ -f "$dst" ]]; then current_mode="$(file_mode "$dst")"; fi
+        expected_mode="$(jq -r --arg path "$dst" '.artifacts[$path] | if .pending then (.previousMode // .before.mode // "") else (.installedMode // "") end' "$RECEIPT_PATH")"
+        if [[ "$current_exists" != "$expected_exists" || ( -f "$dst" && ( "$before_hash" != "$expected_hash" || ( -n "$expected_mode" && "$current_mode" != "$expected_mode" ) ) ) ]]; then
             echo "    [!] Managed file changed or missing; preserving: $dst" >&2
             return 1
         fi
-        [[ "$pending" == true || "$before_hash" != "$source_hash" ]] || return 0
+        [[ "$pending" == true || "$before_hash" != "$source_hash" || "$current_mode" != "$source_mode" ]] || return 0
     elif [[ -f "$dst" && "$collision" == "skip" ]]; then
         echo "    [!] Unowned file collision; preserving: $dst" >&2
         return 1
@@ -198,17 +203,17 @@ install_managed_file() {
             backup="$dst.dotfiles-backup"
             while [[ -e "$backup" || -L "$backup" ]]; do n=$((n + 1)); backup="$dst.dotfiles-backup.$n"; done
         fi
-        receipt_commit --arg path "$dst" --arg hash "$before_hash" --arg backup "$backup" --arg installed "$source_hash" \
-            '.artifacts[$path] = {before:{exists:($hash != ""),hash:(if $hash=="" then null else $hash end),backup:(if $backup=="" then null else $backup end)},installedHash:null,pending:true,targetHash:$installed,previousHash:(if $hash=="" then null else $hash end),previousExists:($hash != "")}' || return 1
+        receipt_commit --arg path "$dst" --arg hash "$before_hash" --arg mode "$before_mode" --arg backup "$backup" --arg installed "$source_hash" \
+            --arg source_mode "$source_mode" '.artifacts[$path] = {before:{exists:($hash != ""),hash:(if $hash=="" then null else $hash end),mode:(if $mode=="" then null else $mode end),backup:(if $backup=="" then null else $backup end)},installedHash:null,pending:true,targetHash:$installed,targetMode:$source_mode,previousHash:(if $hash=="" then null else $hash end),previousMode:(if $mode=="" then null else $mode end),previousExists:($hash != "")}' || return 1
         pending=true
     fi
 
     if [[ "$pending" != true ]]; then
-        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --argjson previous_exists "$current_exists" \
-            '.artifacts[$path].pending=true | .artifacts[$path].targetHash=$installed | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousExists=$previous_exists' || return 1
-    elif [[ "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" != "$source_hash" ]]; then
-        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --argjson previous_exists "$current_exists" \
-            '.artifacts[$path].targetHash=$installed | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --arg previous_mode "$before_mode" --argjson previous_exists "$current_exists" \
+            --arg source_mode "$source_mode" '.artifacts[$path].pending=true | .artifacts[$path].targetHash=$installed | .artifacts[$path].targetMode=$source_mode | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousMode=(if $previous_mode=="" then null else $previous_mode end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+    elif [[ "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" != "$source_hash" || "$(jq -r --arg path "$dst" '.artifacts[$path].targetMode // empty' "$RECEIPT_PATH")" != "$source_mode" ]]; then
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --arg previous_mode "$before_mode" --argjson previous_exists "$current_exists" \
+            --arg source_mode "$source_mode" '.artifacts[$path].targetHash=$installed | .artifacts[$path].targetMode=$source_mode | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousMode=(if $previous_mode=="" then null else $previous_mode end) | .artifacts[$path].previousExists=$previous_exists' || return 1
     fi
 
     before_exists="$(jq -r --arg path "$dst" '.artifacts[$path].before.exists' "$RECEIPT_PATH")"
@@ -228,7 +233,7 @@ install_managed_file() {
                 echo "    [!] Destination changed before backup; preserving: $dst" >&2
                 return 1
             fi
-            chmod 600 "$backup_tmp" || return 1
+            chmod "$before_mode" "$backup_tmp" || return 1
             mv "$backup_tmp" "$backup" || return 1
         fi
     fi
@@ -237,7 +242,7 @@ install_managed_file() {
     tmp="$(mktemp "$(dirname "$dst")/.$(basename "$dst").XXXXXX")" || return 1; _TMPFILES+=("$tmp")
     cp -p "$src" "$tmp" || return 1
     mv "$tmp" "$dst" || return 1
-    receipt_commit --arg path "$dst" --arg installed "$source_hash" '.artifacts[$path].installedHash = $installed | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].previousHash,.artifacts[$path].previousExists)' || return 1
+    receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash = $installed | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
 }
 
 install_managed_symlink() {
@@ -394,7 +399,7 @@ install_managed_tree() {
 tree_hash() {
     local root="$1"
     {
-        printf 'root\0%s\0' "$(stat -c '%a' "$root")"
+        printf 'root\0%s\0' "$(file_mode "$root")"
         find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
         printf 'content\0'
         tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
@@ -459,18 +464,26 @@ install_managed_direct_tree() {
 }
 
 record_managed_package() {
-    local name="$1" before_present="$2" before_value="$3" installed="$4"
+    local name="$1" before_present="$2" before_value="$3" installed="$4" prefix="${5:-}"
     $RECEIPT_READY || return 0
     [[ "$before_present" != "true" || "$before_value" != "$installed" ]] || return 0
     [[ "$before_present" == "true" || -n "$installed" ]] || return 0
-    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" '
+    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" --arg prefix "$prefix" '
         (if .packages[$name] then .packages[$name].installed=$installed | del(.packages[$name].pending)
-        else .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:$installed} end) | del(.bootstrap)'
+        else .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:$installed} end) |
+        (if $prefix != "" then .packages[$name].prefix=$prefix else . end) | del(.bootstrap)'
 }
 
 begin_managed_package() {
-    local name="$1" present="$2" before="$3" current_previous current_present original_present original_before
+    local name="$1" present="$2" before="$3" prefix="${4:-}" current_previous current_present original_present original_before
     $RECEIPT_READY || return 1
+    if [[ -n "$prefix" ]] && jq -e --arg name "$name" '.packages|has($name)' "$RECEIPT_PATH" >/dev/null; then
+        current_prefix="$(jq -r --arg name "$name" '.packages[$name].prefix // empty' "$RECEIPT_PATH")"
+        if [[ -z "$current_prefix" || "$current_prefix" != "$prefix" ]]; then
+            echo "    [!] npm prefix changed or missing in receipt; preserving package ownership: $name" >&2
+            return 1
+        fi
+    fi
     if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
         current_previous="$(jq -r --arg name "$name" '.packages[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
         current_present="$(jq -r --arg name "$name" '.packages[$name].pending.previousPresent' "$RECEIPT_PATH")"
@@ -480,10 +493,11 @@ begin_managed_package() {
             record_managed_package "$name" "$original_present" "$original_before" "$before" || return 1
         fi
     fi
-    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" '
+    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" --arg prefix "$prefix" '
         (.packages|has($name)|not) as $new |
         if $new then .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:null} else . end |
-        .packages[$name].pending={previousPresent:$present,previousValue:(if $present then $before else null end),newEntry:$new}'
+        .packages[$name].pending={previousPresent:$present,previousValue:(if $present then $before else null end),newEntry:$new} |
+        (if $prefix != "" then .packages[$name].prefix=$prefix else . end)'
 }
 
 cancel_managed_package() {
@@ -495,9 +509,10 @@ cancel_managed_package() {
 }
 
 query_claude_npm_package() {
-    local npm_root package_json
+    local npm_root package_json prefix="${CLAUDE_NPM_PREFIX:-}"
     CLAUDE_QUERY_STATE=error; CLAUDE_QUERY_VERSION=""
-    npm_root="$(npm root -g 2>/dev/null)" || return 1
+    [[ -n "$prefix" ]] || prefix="$(npm prefix -g 2>/dev/null)" || return 1
+    npm_root="$(npm root -g --prefix "$prefix" 2>/dev/null)" || return 1
     [[ -n "$npm_root" ]] || return 1
     package_json="$npm_root/@anthropic-ai/claude-code/package.json"
     if [[ ! -e "$package_json" && ! -L "$package_json" ]]; then CLAUDE_QUERY_STATE=absent; return 0; fi
@@ -541,11 +556,11 @@ reconcile_pending_claude_package() {
 }
 
 complete_managed_claude_package() {
-    local name="$1" query="$2" before_present="$3" before_value="$4" manager_status="$5" command_present="$6"
+    local name="$1" query="$2" before_present="$3" before_value="$4" manager_status="$5" command_present="$6" prefix="${7:-}"
     if "$query"; then
         if [[ "$CLAUDE_QUERY_STATE" == present ]]; then
             if [[ "$before_present" != true || "$CLAUDE_QUERY_VERSION" != "$before_value" ]]; then
-                record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION" || return 1
+                record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION" "$prefix" || return 1
             else
                 cancel_managed_package "$name" || return 1
             fi
@@ -1285,14 +1300,14 @@ echo
 echo "==> Installing global npm packages..."
 NPM_FILE="$ROOT/manifests/npm-global.txt"
 if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
-    npm_root="$(npm root -g)"
+    npm_root="$(npm root -g)"; npm_prefix="$(npm prefix -g)"
     npm_failed=0
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         package_json="$npm_root/$pkg/package.json"
         before="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
         before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
-        begin_managed_package "npm:$pkg" "$before_present" "$before" || exit 1
+        begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix" || exit 1
         if npm install -g "$pkg" >/dev/null 2>&1; then
             echo "    Installed $pkg"
         else
@@ -1301,7 +1316,7 @@ if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
         fi
         after="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
         if [[ -n "$after" && ( "$before_present" != true || "$before" != "$after" ) ]]; then
-            record_managed_package "npm:$pkg" "$before_present" "$before" "$after"
+            record_managed_package "npm:$pkg" "$before_present" "$before" "$after" "$npm_prefix"
         else
             cancel_managed_package "npm:$pkg"
         fi
@@ -1359,7 +1374,6 @@ CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
 TEMPORAL_SRC="$ROOT/config/codex/hooks/temporal-context.sh"
 if [[ -f "$TEMPORAL_SRC" ]]; then
     if install_managed_file "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh" skip; then
-        chmod +x "$CODEX_HOOKS_DIR/temporal-context.sh"
         echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
     fi
 else
@@ -1380,6 +1394,8 @@ else
             echo "    [!] Pending Claude cask identity unavailable; receipt left pending." >&2; exit 1;
         }
     elif [[ "$OS" == Linux ]] && jq -e '.packages["npm:@anthropic-ai/claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        CLAUDE_NPM_PREFIX="$(jq -r '.packages["npm:@anthropic-ai/claude-code"].prefix // empty' "$RECEIPT_PATH")"
+        [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix missing; receipt preserved." >&2; exit 1; }
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
         reconcile_pending_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$command_present" || {
             echo "    [!] Pending Claude npm identity unavailable; receipt left pending." >&2; exit 1;
@@ -1395,12 +1411,14 @@ else
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
         complete_managed_claude_package cask:claude-code query_claude_cask "$before_present" "$before" "$manager_status" "$command_present" || exit $?
     elif command -v npm >/dev/null 2>&1 && [[ "$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge 22 ]]; then
+        CLAUDE_NPM_PREFIX="$(npm prefix -g)" || exit 1
         query_claude_npm_package || { echo "    [!] Claude npm identity query failed before installation." >&2; exit 1; }
         before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
-        begin_managed_package npm:@anthropic-ai/claude-code "$before_present" "$before" || exit 1
+        npm_prefix="$CLAUDE_NPM_PREFIX"
+        begin_managed_package npm:@anthropic-ai/claude-code "$before_present" "$before" "$npm_prefix" || exit 1
         manager_status=0; npm install -g @anthropic-ai/claude-code || manager_status=$?
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
-        complete_managed_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$before_present" "$before" "$manager_status" "$command_present" || exit $?
+        complete_managed_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$before_present" "$before" "$manager_status" "$command_present" "$npm_prefix" || exit $?
     else
         echo "    [!] Claude Code requires npm with Node.js 22+ on Linux." >&2
         exit 1
@@ -1434,9 +1452,12 @@ else
         hook_status=0
         while IFS= read -r -d '' hook_src; do
             hook_rel="${hook_src#"$HOOKS_SRC"/}"
-            if install_managed_file "$hook_src" "$HOOKS_DST/$hook_rel" skip; then
-                if [[ "$hook_src" == *.sh ]]; then chmod +x "$HOOKS_DST/$hook_rel"; fi
-            else
+            managed_hook="$hook_src"
+            if [[ "$hook_src" == *.sh ]]; then
+                managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
+                if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
+            fi
+            if ! install_managed_file "$managed_hook" "$HOOKS_DST/$hook_rel" skip; then
                 hook_status=1
             fi
         done < <(find "$HOOKS_SRC" -type f -print0)
