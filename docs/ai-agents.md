@@ -9,7 +9,7 @@ Claude Code, Codex와 관련 에이전트/스킬 설정 상세.
 | `config/agents/global.md` | `~/.claude/CLAUDE.md` | 공통 전역 행동 설정 |
 | `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한, hook 설정 |
 
-Linux에서는 settings.json은 `jq -s '.[0]*.[1]'`로 기존 설정과 병합된다. Windows에서는 settings.json은 기존 키를 보존하는 병합으로 설정된다. `config/agents/global.md`는 Claude가 읽는 파일명에 맞춰 `~/.claude/CLAUDE.md`로 복사된다.
+모든 OS에서 settings.json은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합한다. dotfiles가 등록하는 env·hook 항목만 갱신하고 사용자 키와 사용자 registry 항목은 보존한다. `config/agents/global.md`는 Claude가 읽는 파일명에 맞춰 `~/.claude/CLAUDE.md`로 복사된다.
 
 ## Codex 설정 파일
 

@@ -239,7 +239,7 @@ bun install        # npm install 대체 (빠름)
 
 | OS | 설치 방법 |
 |----|-----------|
-| Linux | 수동 설치 (`curl -fsSL https://bun.sh/install | bash`) |
+| Linux | `install.sh` (`manifests/direct-artifacts.tsv` pin·SHA-256 검증) |
 | Windows | `winget install Oven-sh.Bun` |
 
 ## 셸 설정

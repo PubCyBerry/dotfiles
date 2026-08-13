@@ -8,6 +8,4 @@ sandbox = "elevated"
 followUpQueueMode = "steer"
 
 [features]
-js_repl = false
 hooks = true
-remote_control = true

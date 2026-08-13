@@ -17,14 +17,15 @@ if ($fnmExe) {
 
     # SSH(원격 로그온)에서는 fnm이 node를 노출하는 junction/reparse 경로 탐색이
     # 막혀 bash hook 등 자식 프로세스에서 `node`를 못 찾는다. 실제 설치 디렉터리
-    # (reparse 아님)를 PATH에 직접 prepend 해서 어디서든 node를 찾도록 한다.
+    # (reparse 아님)를 PATH 뒤에 fallback으로 추가한다. fnm multishell 경로가 앞에
+    # 남으므로 `fnm use`/`--use-on-cd`가 선택한 버전을 덮어쓰지 않는다.
     $fnmRoot = if ($env:FNM_DIR) { $env:FNM_DIR } else { "$env:APPDATA\fnm" }
     $nodeVerDir = Get-ChildItem "$fnmRoot\node-versions" -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path "$($_.FullName)\installation\node.exe" } |
-        Sort-Object Name -Descending | Select-Object -First 1
+        Sort-Object { [version]$_.Name.TrimStart('v') } -Descending | Select-Object -First 1
     if ($nodeVerDir) {
         $nodeDir = "$($nodeVerDir.FullName)\installation"
-        if ($env:PATH -notlike "*$nodeDir*") { $env:PATH = "$nodeDir;$env:PATH" }
+        if (($env:PATH -split ';') -notcontains $nodeDir) { $env:PATH = "$env:PATH;$nodeDir" }
     }
 }
 
