@@ -29,17 +29,20 @@ try {
     Assert-True $output.Contains('==> Done!') '성공인데 Done을 출력하지 않았습니다.'
 
     $script:ClaudeCalls = 0
+    $script:PackageCalls = 0
     $script:NpxCalls = 0
     function global:claude { $script:ClaudeCalls++; $global:LASTEXITCODE = 0 }
     function global:npx { $script:NpxCalls++; $global:LASTEXITCODE = 0 }
-    $env:SKIP_CLAUDE_CODE = $env:SKIP_SKILLS = $env:SKIP_PLUGINS = '1'
+    $env:SKIP_PACKAGES = $env:SKIP_CLAUDE_CODE = $env:SKIP_SKILLS = $env:SKIP_PLUGINS = '1'
     Invoke-ClaudeSkillsStage (Join-Path $repo 'manifests\skills.txt')
     Invoke-ClaudePluginsStage (Join-Path $repo 'manifests\plugins.txt')
     Invoke-OptionalInstallStage 'SKIP_CLAUDE_CODE' 'claude skipped' { $script:ClaudeCalls++ }
-    Assert-True ($script:ClaudeCalls -eq 0 -and $script:NpxCalls -eq 0) 'skip stage가 외부 CLI를 호출했습니다.'
-    Remove-Item Env:SKIP_CLAUDE_CODE, Env:SKIP_SKILLS, Env:SKIP_PLUGINS
+    Invoke-OptionalInstallStage 'SKIP_PACKAGES' 'packages skipped' { $script:PackageCalls++ }
+    Assert-True ($script:PackageCalls -eq 0 -and $script:ClaudeCalls -eq 0 -and $script:NpxCalls -eq 0) 'skip stage가 외부 CLI를 호출했습니다.'
+    Remove-Item Env:SKIP_PACKAGES, Env:SKIP_CLAUDE_CODE, Env:SKIP_SKILLS, Env:SKIP_PLUGINS
     Invoke-OptionalInstallStage 'SKIP_CLAUDE_CODE' 'claude skipped' { $script:ClaudeCalls++ }
-    Assert-True ($script:ClaudeCalls -eq 1) 'enabled Claude stage action이 호출되지 않았습니다.'
+    Invoke-OptionalInstallStage 'SKIP_PACKAGES' 'packages skipped' { $script:PackageCalls++ }
+    Assert-True ($script:PackageCalls -eq 1 -and $script:ClaudeCalls -eq 1) 'enabled optional stage action이 호출되지 않았습니다.'
     $script:ClaudeCalls = 0
 
     foreach ($invalid in @(
@@ -80,7 +83,7 @@ try {
     Write-Host 'install failure contract checks passed'
 } finally {
     Remove-Item Env:DOTFILES_FUNCTIONS_ONLY -ErrorAction SilentlyContinue
-    Remove-Item Env:SKIP_CLAUDE_CODE, Env:SKIP_SKILLS, Env:SKIP_PLUGINS -ErrorAction SilentlyContinue
+    Remove-Item Env:SKIP_PACKAGES, Env:SKIP_CLAUDE_CODE, Env:SKIP_SKILLS, Env:SKIP_PLUGINS -ErrorAction SilentlyContinue
     Remove-Item Function:\claude -ErrorAction SilentlyContinue
     Remove-Item Function:\npx -ErrorAction SilentlyContinue
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

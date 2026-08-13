@@ -145,21 +145,22 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 
 ---
 
-## install.sh CI 모드
+## 설치 스크립트 CI 모드
 
-파이프라인은 계정이 필요하거나 외부 서비스에 의존하는 단계를 환경변수로 skip한다.
+`install.sh`와 `install.ps1`은 계정이 필요하거나 외부 서비스에 의존하는 단계를 같은 환경변수로 skip한다.
 
 | 환경변수 | 스킵 대상 | 이유 |
 |---|---|---|
+| `SKIP_PACKAGES=1` | OS package manager, direct artifact, fnm/Node.js, npm 전역 패키지 설치 | config/profile uninstall 검증을 외부 package repository와 분리 |
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `SKIP_PLUGINS=1` | Claude Code plugins 설치 | 외부 marketplace 의존 |
 | `GITHUB_TOKEN=...` | `gh_release_tag()` 함수 | API rate limit 우회 |
 
-로컬에서 CI와 동일하게 실행하려면:
+Safe-Clean-Uninstall의 config/profile 시나리오처럼 외부 패키지 설치를 제외해 실행하려면:
 
 ```bash
-SKIP_CLAUDE_CODE=1 SKIP_SKILLS=1 SKIP_PLUGINS=1 bash install.sh
+SKIP_PACKAGES=1 SKIP_CLAUDE_CODE=1 SKIP_SKILLS=1 SKIP_PLUGINS=1 bash install.sh
 ```
 
 ---

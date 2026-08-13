@@ -109,7 +109,7 @@ function Test-PackageKeyAllowed([string]$Key) {
     return @(Get-Content $manifest | ForEach-Object{($_ -split '#')[0].Trim()} | Where-Object{$_ -ceq $name}).Count -eq 1
 }
 function Test-ValueKeyAllowed([string]$Key) {
-    if ($Key -in @('git:core.pager','git:core.editor','git:core.fileMode','git:core.autocrlf','git:core.eol','git:interactive.diffFilter','git:delta.navigate','git:delta.dark','git:delta.side-by-side','git:delta.line-numbers','git:merge.conflictStyle','env:YAZI_FILE_ONE','env:PATH:C:\Program Files\Neovim\bin')) { return $true }
+    if ($Key -in @('git:core.pager','git:core.editor','git:core.fileMode','git:core.autocrlf','git:core.eol','git:core.quotepath','git:init.defaultBranch','git:interactive.diffFilter','git:delta.navigate','git:delta.dark','git:delta.side-by-side','git:delta.line-numbers','git:merge.conflictStyle','git:credential.credentialStore','env:YAZI_FILE_ONE','env:PATH:C:\Program Files\Neovim\bin')) { return $true }
     $fnmRoot=[IO.Path]::GetFullPath($(if($env:FNM_DIR){$env:FNM_DIR}else{Join-Path $env:APPDATA 'fnm'})).TrimEnd('\')
     $Key -ieq ('env:PATH:' + (Join-Path $fnmRoot 'aliases\default'))
 }

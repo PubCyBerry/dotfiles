@@ -31,15 +31,18 @@ printf 'call\n' >> "$CALL_LOG"
 SH
 chmod +x "$work/bin/npx"
 
-export SKIP_CLAUDE_CODE=1 SKIP_SKILLS=1 SKIP_PLUGINS=1
+export SKIP_PACKAGES=1 SKIP_CLAUDE_CODE=1 SKIP_SKILLS=1 SKIP_PLUGINS=1
 run_skills_stage "$repo/manifests/skills.txt"
 run_plugins_stage "$repo/manifests/plugins.txt"
 mock_claude_stage() { printf 'call\n' >> "$CALL_LOG"; }
+mock_packages_stage() { printf 'call\n' >> "$CALL_LOG"; }
 run_optional_stage SKIP_CLAUDE_CODE 'claude skipped' mock_claude_stage
+run_optional_stage SKIP_PACKAGES 'packages skipped' mock_packages_stage
 [[ ! -e "$CALL_LOG" ]]
-unset SKIP_CLAUDE_CODE SKIP_SKILLS SKIP_PLUGINS
+unset SKIP_PACKAGES SKIP_CLAUDE_CODE SKIP_SKILLS SKIP_PLUGINS
 run_optional_stage SKIP_CLAUDE_CODE 'claude skipped' mock_claude_stage
-[[ "$(wc -l < "$CALL_LOG" | tr -d ' ')" == 1 ]]
+run_optional_stage SKIP_PACKAGES 'packages skipped' mock_packages_stage
+[[ "$(wc -l < "$CALL_LOG" | tr -d ' ')" == 2 ]]
 rm -f "$CALL_LOG"
 
 for invalid in \

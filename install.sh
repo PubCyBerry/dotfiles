@@ -1206,6 +1206,7 @@ echo "    OS:     ${OS:-unknown}"
 echo "    Arch:   $ARCH"
 
 if [[ "$OS" == "Darwin" ]]; then
+    install_system_packages() {
     # =============================================
     # [macOS] Homebrew 및 Brewfile
     # =============================================
@@ -1269,6 +1270,8 @@ if [[ "$OS" == "Darwin" ]]; then
         fi
     done < "$BREW_BEFORE"
     (( brew_status == 0 )) || exit "$brew_status"
+    }
+    run_optional_stage SKIP_PACKAGES "==> [CI] Skipping Homebrew packages (SKIP_PACKAGES=1)" install_system_packages
 
     if $APPLY_DEFAULTS; then
       echo "==> Applying macOS system defaults..."
@@ -1285,6 +1288,7 @@ if [[ "$OS" == "Darwin" ]]; then
     set_managed_git_value core.fileMode true
 
 elif [[ "$OS" == "Linux" ]]; then
+    install_system_packages() {
     # =============================================
     # [Linux] apt 및 github releases
     # =============================================
@@ -1357,6 +1361,8 @@ elif [[ "$OS" == "Linux" ]]; then
     if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
         if ensure_managed_symlink "$LOCAL_BIN/fd" "$(command -v fdfind)"; then echo "    Linked $LOCAL_BIN/fd -> fdfind"; fi
     fi
+    }
+    run_optional_stage SKIP_PACKAGES "==> [CI] Skipping apt packages (SKIP_PACKAGES=1)" install_system_packages
 
     # =============================================
     # 1-1. gitconfig 병합 + Linux 전용 override
@@ -1415,6 +1421,7 @@ add_to_path_runtime "$HOME/.bun/bin"
 add_to_path_runtime "$HOME/.local/share/fnm"
 
 # macOS는 Brewfile을 사용하고 Linux만 pinned, checksum-verified artifact를 설치한다.
+install_runtime_packages() {
 if [[ "$OS" == "Linux" ]]; then
     echo
     echo "==> Installing pinned direct artifacts..."
@@ -1459,6 +1466,8 @@ elif [[ ! -f "$NPM_FILE" ]]; then
 else
     record_install_failure "npm is required for manifests/npm-global.txt."
 fi
+}
+run_optional_stage SKIP_PACKAGES "==> [CI] Skipping direct, Node.js, and npm packages (SKIP_PACKAGES=1)" install_runtime_packages
 
 # =============================================
 # 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)

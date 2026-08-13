@@ -7,6 +7,15 @@ try {
     New-Item -ItemType Directory -Force $env:USERPROFILE,$env:LOCALAPPDATA,$env:APPDATA,(Split-Path $env:DOTFILES_RECEIPT_PATH) | Out-Null
     . (Join-Path $root uninstall.ps1)
     function Assert($ok,$message) { if (-not $ok) { throw $message } }
+    $section = ''
+    foreach ($line in Get-Content (Join-Path $root 'config\git\gitconfig')) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match '^\[(.+)\]$') { $section = $Matches[1] }
+        elseif ($trimmed -match '^([^#\s=]+)\s*=') { Assert (Test-ValueKeyAllowed "git:$section.$($Matches[1])") "git_value_allowlist:$section.$($Matches[1])" }
+    }
+    Assert (Test-ValueKeyAllowed 'git:core.autocrlf') git_autocrlf_allowlist
+    Assert (Test-ValueKeyAllowed 'git:core.fileMode') git_filemode_allowlist
+    Assert (-not (Test-ValueKeyAllowed 'git:user.name')) unmanaged_git_value_allowed
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.toml')) agent_allowlist
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.md'))) agent_extension
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\nested\planner.toml'))) agent_nested

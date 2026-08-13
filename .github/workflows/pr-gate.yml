@@ -42,16 +42,15 @@ jobs:
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      HOME: ${{ runner.temp }}/dotfiles-home
-      GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dotfiles-home/.gitconfig
-      DOTFILES_RECEIPT_PATH: ${{ runner.temp }}/dotfiles-home/.local/state/dotfiles/install-receipt.json
     steps:
       - uses: actions/checkout@v4
 
       - name: Prepare isolated HOME
         run: |
-          mkdir -p "$HOME"
-          printf '%s\n' "$HOME/.local/bin" "$HOME/.local/share/fnm" "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
+          printf '%s\n' "$home/.local/bin" "$home/.local/share/fnm" "$home/.bun/bin" >> "$GITHUB_PATH"
 
       - name: Restore apt cache
         uses: actions/cache@v4
@@ -141,14 +140,14 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
-      HOME: ${{ runner.temp }}/dotfiles-home
-      GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dotfiles-home/.gitconfig
-      DOTFILES_RECEIPT_PATH: ${{ runner.temp }}/dotfiles-home/.local/state/dotfiles/install-receipt.json
     steps:
       - uses: actions/checkout@v4
 
       - name: Prepare isolated HOME
-        run: mkdir -p "$HOME"
+        run: |
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
 
       - name: Seed existing user settings
         run: |

@@ -9,6 +9,13 @@ if [[ "$(uname -s)" == Darwin ]]; then tree_hash(){ tar -cf - -C "$1" . 2>/dev/n
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # Actual installer receipt allowlist를 stub 없이 검증한다.
+while IFS= read -r key; do value_key_allowed "git:$key" || fail "git-value-allowlist:$key"; done < <(
+  awk '/^[[:space:]]*\[/ { section=$0; sub(/^[[:space:]]*\[/,"",section); sub(/\].*$/,"",section); next }
+       /^[[:space:]]*[^#[:space:]][^=]*=/ { key=$0; sub(/^[[:space:]]*/,"",key); sub(/[[:space:]]*=.*/,"",key); print section "." key }' "$ROOT/config/git/gitconfig"
+)
+value_key_allowed git:core.autocrlf || fail git-autocrlf-allowlist
+value_key_allowed git:core.fileMode || fail git-filemode-allowlist
+! value_key_allowed git:user.name || fail unmanaged-git-value-allowed
 artifact_allowed "$HOME/.local/share/fnm/fnm" || fail fnm-anchor-allowlist
 artifact_allowed "$HOME/.bun/bin/bun" || fail bun-anchor-allowlist
 artifact_allowed "$HOME/.bun/bin/bunx" || fail bunx-anchor-allowlist

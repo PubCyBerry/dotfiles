@@ -739,6 +739,7 @@ Write-Host "    Source: $ROOT"
 # =============================================
 # 1. winget 패키지 설치 (manifests/winget.txt)
 # =============================================
+function Invoke-WingetPackagesStage {
 Write-Host ""
 Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
@@ -876,6 +877,8 @@ if (Test-Path $wingetFile) {
 } else {
     Add-InstallFailure "Required manifest missing: manifests\winget.txt"
 }
+}
+Invoke-OptionalInstallStage 'SKIP_PACKAGES' "==> [CI] Skipping winget packages (SKIP_PACKAGES=1)" { Invoke-WingetPackagesStage }
 
 # =============================================
 # 1-1. gitconfig 설정 병합 (config/git/gitconfig)
@@ -975,6 +978,7 @@ if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
 # =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
+function Invoke-NodePackagesStage {
 Write-Host ""
 Write-Host "==> Installing Node.js LTS..."
 if (Get-Command fnm -ErrorAction SilentlyContinue) {
@@ -1066,6 +1070,8 @@ if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
 } else {
     Add-InstallFailure "npm is required for manifests\npm-global.txt."
 }
+}
+Invoke-OptionalInstallStage 'SKIP_PACKAGES' "==> [CI] Skipping Node.js and npm packages (SKIP_PACKAGES=1)" { Invoke-NodePackagesStage }
 
 # =============================================
 # 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)

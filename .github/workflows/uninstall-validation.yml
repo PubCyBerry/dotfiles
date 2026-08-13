@@ -26,6 +26,7 @@ jobs:
         run: bash tests/uninstall/safe-clean.sh
       - name: Real scripts twice in isolated HOME
         env:
+          SKIP_PACKAGES: '1'
           SKIP_CLAUDE_CODE: '1'
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
@@ -60,6 +61,7 @@ jobs:
       - name: Real scripts twice in isolated profile
         shell: pwsh
         env:
+          SKIP_PACKAGES: '1'
           SKIP_CLAUDE_CODE: '1'
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'

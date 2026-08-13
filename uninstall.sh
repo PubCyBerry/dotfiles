@@ -43,7 +43,7 @@ package_key_allowed() {
     esac
 }
 value_key_allowed() {
-    case "$1" in git:core.pager|git:core.editor|git:core.fileMode|git:core.autocrlf|git:core.eol|git:interactive.diffFilter|git:delta.navigate|git:delta.dark|git:delta.side-by-side|git:delta.line-numbers|git:merge.conflictStyle) return 0;; esac
+    case "$1" in git:core.pager|git:core.editor|git:core.fileMode|git:core.autocrlf|git:core.eol|git:core.quotepath|git:init.defaultBranch|git:interactive.diffFilter|git:delta.navigate|git:delta.dark|git:delta.side-by-side|git:delta.line-numbers|git:merge.conflictStyle|git:credential.credentialStore) return 0;; esac
     return 1
 }
 npm_prefix_allowed() {
