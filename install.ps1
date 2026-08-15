@@ -249,6 +249,29 @@ function Get-ManagedPath([string]$Path) {
     [IO.Path]::GetFullPath($Path)
 }
 
+function Resolve-ManagedLinkPath([string]$Path) {
+    # reparse point 체인을 끝까지 따라가 실제 경로를 얻는다.
+    # fnm은 셸마다 `fnm_multishells\<PID>_<timestamp>` 링크를 새로 만들기 때문에
+    # `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다.
+    if (-not $Path) { return '' }
+    $current = Get-ManagedPath $Path
+    for ($hop = 0; $hop -lt 8; $hop++) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.LinkTarget) { break }
+        $target = $item.LinkTarget
+        if (-not [IO.Path]::IsPathRooted($target)) { $target = Join-Path (Split-Path $current -Parent) $target }
+        $current = Get-ManagedPath $target
+    }
+    return $current.TrimEnd('\')
+}
+
+function Test-EphemeralNpmPrefix([string]$Path) {
+    # fnm multishell 경로는 셸 수명 동안만 유효하다. receipt에 남아 있으면 링크를 풀지 않고 기록한 잔재다.
+    if (-not $Path -or -not $env:LOCALAPPDATA) { return $false }
+    $root = (Get-ManagedPath (Join-Path $env:LOCALAPPDATA 'fnm_multishells')).TrimEnd('\') + '\'
+    (Get-ManagedPath $Path).StartsWith($root, [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-ManagedParentPath([string]$Path) {
     $parent = [IO.Path]::GetDirectoryName((Get-ManagedPath $Path))
     $boundary = if ($env:USERPROFILE) { (Get-ManagedPath $env:USERPROFILE).TrimEnd('\') } else { $null }
@@ -401,8 +424,13 @@ function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$Befo
     if (-not $script:ReceiptReady) { return $false }
     $existing = $script:Receipt.packages[$Name]
     if ($Prefix -and $existing -and ((-not $existing.prefix) -or $existing.prefix -cne $Prefix)) {
-        Write-Warning "npm prefix changed or missing in receipt; preserving package ownership: $Name"
-        return $false
+        # 이전 버전은 링크를 풀지 않은 fnm multishell 경로를 기록했다. 그 값은 셸마다 달라져
+        # 소유권 판단에 쓸 수 없으므로, 새 prefix가 안정 경로일 때만 잔재를 교정하고 진행한다.
+        if (-not (Test-EphemeralNpmPrefix $existing.prefix) -or (Test-EphemeralNpmPrefix $Prefix)) {
+            Write-Warning "npm prefix changed or missing in receipt; preserving package ownership: $Name"
+            return $false
+        }
+        Write-Warning "Repairing ephemeral npm prefix recorded in receipt: $Name"
     }
     if ($existing.pending -and ($BeforePresent -ne $existing.pending.previousPresent -or ($BeforePresent -and $BeforeValue -ne $existing.pending.previousValue))) {
         Record-ManagedPackage $Name $existing.before.present $existing.before.value $BeforeValue
@@ -1028,8 +1056,10 @@ $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
     $npmRoot = npm root -g 2>$null
     $npmRootStatus = $LASTEXITCODE
-    $npmPrefix = npm prefix -g 2>$null
+    $npmPrefixRaw = npm prefix -g 2>$null
     $npmPrefixStatus = $LASTEXITCODE
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다. uninstall도 이 실경로를 요구한다.
+    $npmPrefix = Resolve-ManagedLinkPath $npmPrefixRaw
     $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
     if ($npmRootStatus -ne 0 -or $npmPrefixStatus -ne 0 -or -not $npmRoot -or -not $npmPrefix) {
         Add-InstallFailure "npm global root/prefix query failed."
@@ -1041,10 +1071,14 @@ if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
         $npmStates = Get-ManifestLines $npmFile | ForEach-Object {
             $packageJson = Join-Path $npmRoot "$_\package.json"
             $beforeVersion = if (Test-Path $packageJson) { (& $jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
-            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion $npmPrefix)) { throw "npm receipt journal failed: $_" }
+            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion $npmPrefix)) {
+                # 소유권을 판정할 수 없는 패키지 하나 때문에 이후 설치 단계 전체를 중단하지 않는다.
+                Add-InstallFailure "npm receipt journal failed; skipping package: $_"
+                return
+            }
             [pscustomobject]@{ Package = $_; BeforeVersion = $beforeVersion }
         }
-        $npmResults = $npmStates | ForEach-Object -Parallel {
+        $npmResults = @($npmStates) | Where-Object { $_ } | ForEach-Object -Parallel {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         $package = $_.Package
         $packageJson = Join-Path $using:npmRoot "$package\package.json"

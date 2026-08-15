@@ -138,6 +138,37 @@ try {
     Assert (Initialize-InstallReceipt) 'package pending reload failed'
     Assert (Begin-ManagedPackage 'test:crash-package' $true '1') 'package pending reconcile failed'
     Cancel-ManagedPackage 'test:crash-package'
+
+    # fnm은 셸마다 새 multishell 링크를 만든다. prefix를 링크째로 기록하면 매 실행 소유권 판정이 깨진다.
+    $stablePrefix = Join-Path $env:APPDATA 'fnm\node-versions\v1.0.0\installation'
+    $ephemeralPrefix = Join-Path $env:LOCALAPPDATA 'fnm_multishells\1234_5678'
+    Assert (Test-EphemeralNpmPrefix $ephemeralPrefix) 'multishell prefix not detected as ephemeral'
+    Assert (-not (Test-EphemeralNpmPrefix $stablePrefix)) 'stable prefix flagged as ephemeral'
+    New-Item -ItemType Directory -Force -Path $stablePrefix | Out-Null
+    $prefixLinkCreated = $false
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $ephemeralPrefix) | Out-Null
+        New-Item -ItemType SymbolicLink -Path $ephemeralPrefix -Target $stablePrefix -ErrorAction Stop | Out-Null
+        $prefixLinkCreated = $true
+    } catch { }
+    if ($prefixLinkCreated) {
+        Assert ((Resolve-ManagedLinkPath $ephemeralPrefix) -eq (Get-ManagedPath $stablePrefix).TrimEnd('\')) 'ephemeral prefix link not resolved'
+    }
+
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $false '' $stablePrefix) 'npm prefix journal failed'
+    Record-ManagedPackage 'npm:test-prefix' $false '' '1' $stablePrefix
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $true '1' $stablePrefix) 'matching npm prefix was rejected'
+    Cancel-ManagedPackage 'npm:test-prefix'
+    Assert (-not (Begin-ManagedPackage 'npm:test-prefix' $true '1' (Join-Path $env:APPDATA 'other\prefix'))) 'changed npm prefix was adopted'
+    Assert (-not (Begin-ManagedPackage 'npm:test-prefix' $true '1' $ephemeralPrefix)) 'ephemeral npm prefix was recorded'
+    Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'rejected npm prefix overwrote receipt'
+
+    # 이전 버그가 남긴 multishell prefix는 안정 경로로 교정되어야 한다.
+    $script:Receipt.packages['npm:test-prefix'].prefix = $ephemeralPrefix
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $true '1' $stablePrefix) 'ephemeral npm prefix was not repaired'
+    Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'repaired npm prefix not persisted'
+    Cancel-ManagedPackage 'npm:test-prefix'
+
     Record-ManagedValue 'env:PATH:C:\Tools' $false $null 'present' $false
     Record-ManagedValue 'env:SECRET_TOKEN' $true 'do-not-store' 'new-secret'
     git config --global test.receipt before

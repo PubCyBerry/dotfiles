@@ -260,6 +260,24 @@ file_hash() {
 }
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
+# symlink 체인을 끝까지 풀어 실경로를 얻는다.
+# fnm은 셸마다 `<tmp>/fnm_multishells/<pid>_<timestamp>` 링크를 새로 만들기 때문에
+# `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다. `cd -P`는 POSIX라 macOS에서도 동작한다.
+resolve_link_path() {
+    local path="$1"
+    [[ -n "$path" ]] || return 1
+    if [[ -d "$path" ]]; then (cd -P -- "$path" 2>/dev/null && pwd -P) && return 0; fi
+    printf '%s\n' "${path%/}"
+}
+
+# fnm multishell 경로는 셸 수명 동안만 유효하다. receipt에 남아 있으면 링크를 풀지 않고 기록한 잔재다.
+is_ephemeral_npm_prefix() {
+    local path="${1:-}" tmp="${TMPDIR:-/tmp}"
+    [[ -n "$path" ]] || return 1
+    case "${path%/}/" in "${tmp%/}/fnm_multishells/"*|/tmp/fnm_multishells/*) return 0 ;; esac
+    return 1
+}
+
 managed_parent_is_safe() {
     local path="$1" parent next boundary=""
     case "$path" in "$HOME"/*) boundary="${HOME%/}"; [[ -n "$boundary" ]] || boundary=/ ;; esac
@@ -603,8 +621,13 @@ begin_managed_package() {
     if [[ -n "$prefix" ]] && jq -e --arg name "$name" '.packages|has($name)' "$RECEIPT_PATH" >/dev/null; then
         current_prefix="$(jq -r --arg name "$name" '.packages[$name].prefix // empty' "$RECEIPT_PATH")"
         if [[ -z "$current_prefix" || "$current_prefix" != "$prefix" ]]; then
-            echo "    [!] npm prefix changed or missing in receipt; preserving package ownership: $name" >&2
-            return 1
+            # 이전 버전은 링크를 풀지 않은 fnm multishell 경로를 기록했다. 그 값은 셸마다 달라져
+            # 소유권 판단에 쓸 수 없으므로, 새 prefix가 안정 경로일 때만 잔재를 교정하고 진행한다.
+            if ! is_ephemeral_npm_prefix "$current_prefix" || is_ephemeral_npm_prefix "$prefix"; then
+                echo "    [!] npm prefix changed or missing in receipt; preserving package ownership: $name" >&2
+                return 1
+            fi
+            echo "    [!] Repairing ephemeral npm prefix recorded in receipt: $name" >&2
         fi
     fi
     if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
@@ -1440,13 +1463,19 @@ echo "==> Installing global npm packages..."
 NPM_FILE="$ROOT/manifests/npm-global.txt"
 if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
     npm_root="$(npm root -g)"; npm_prefix="$(npm prefix -g)"
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다. uninstall도 이 실경로를 요구한다.
+    npm_prefix="$(resolve_link_path "$npm_prefix")"
     npm_failed=0
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         package_json="$npm_root/$pkg/package.json"
         before="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
         before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
-        begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix" || exit 1
+        # 소유권을 판정할 수 없는 패키지 하나 때문에 이후 설치 단계 전체를 중단하지 않는다.
+        if ! begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix"; then
+            record_install_failure "npm receipt journal failed; skipping package: $pkg"
+            continue
+        fi
         if npm install -g "$pkg" >/dev/null 2>&1; then
             echo "    Installed $pkg"
         else
@@ -1553,6 +1582,8 @@ install_claude_code_stage() {
         complete_managed_claude_package cask:claude-code query_claude_cask "$before_present" "$before" "$manager_status" "$command_present" || exit $?
     elif command -v npm >/dev/null 2>&1 && [[ "$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge 22 ]]; then
         CLAUDE_NPM_PREFIX="$(npm prefix -g)" || exit 1
+        # npm 전역 패키지와 같은 이유로 fnm multishell 링크를 풀어 안정 경로로 기록한다.
+        CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
         query_claude_npm_package || { echo "    [!] Claude npm identity query failed before installation." >&2; exit 1; }
         before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
         npm_prefix="$CLAUDE_NPM_PREFIX"

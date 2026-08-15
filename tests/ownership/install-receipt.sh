@@ -104,6 +104,33 @@ begin_managed_package test:crash-package false ''
 receipt_init
 begin_managed_package test:crash-package true 1
 cancel_managed_package test:crash-package
+
+# fnm은 셸마다 새 multishell 링크를 만든다. prefix를 링크째로 기록하면 매 실행 소유권 판정이 깨진다.
+stable_prefix="$HOME/.local/share/fnm/node-versions/v1.0.0/installation"
+ephemeral_prefix="${TMPDIR:-/tmp}/fnm_multishells/1234_5678"
+is_ephemeral_npm_prefix "$ephemeral_prefix" || fail 'multishell prefix not detected as ephemeral'
+! is_ephemeral_npm_prefix "$stable_prefix" || fail 'stable prefix flagged as ephemeral'
+mkdir -p "$stable_prefix" "$(dirname "$ephemeral_prefix")"
+# Git Bash는 기본적으로 symlink 대신 디렉터리를 복사하므로 링크가 실제로 생겼을 때만 검증한다.
+ln -sfn "$stable_prefix" "$ephemeral_prefix" 2>/dev/null || true
+if [[ -L "$ephemeral_prefix" ]]; then
+    [[ "$(resolve_link_path "$ephemeral_prefix")" == "$(cd -P "$stable_prefix" && pwd -P)" ]] || fail 'ephemeral prefix link not resolved'
+fi
+
+begin_managed_package npm:test-prefix false '' "$stable_prefix" || fail 'npm prefix journal'
+record_managed_package npm:test-prefix false '' 1 "$stable_prefix"
+begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'matching npm prefix rejected'
+cancel_managed_package npm:test-prefix
+! begin_managed_package npm:test-prefix true 1 "$HOME/other/prefix" || fail 'changed npm prefix adopted'
+! begin_managed_package npm:test-prefix true 1 "$ephemeral_prefix" || fail 'ephemeral npm prefix recorded'
+[[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'rejected npm prefix overwrote receipt'
+
+# 이전 버그가 남긴 multishell prefix는 안정 경로로 교정되어야 한다.
+receipt_commit --arg prefix "$ephemeral_prefix" '.packages["npm:test-prefix"].prefix=$prefix'
+begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'ephemeral npm prefix not repaired'
+[[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'repaired npm prefix not persisted'
+cancel_managed_package npm:test-prefix
+
 record_managed_value 'env:PATH:/tools' false '' present false
 record_managed_value env:SECRET_TOKEN true do-not-store new-secret
 git config --global test.receipt before
