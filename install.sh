@@ -1029,8 +1029,18 @@ prune_node_versions() {
     done < <(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
 }
 
+get_fnm_dir() {
+    if [[ -n "${FNM_DIR:-}" ]]; then
+        echo "$FNM_DIR"
+    elif [[ "${OS:-}" == "Darwin" ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+        echo "$HOME/Library/Application Support/fnm"
+    else
+        echo "$HOME/.local/share/fnm"
+    fi
+}
+
 link_fnm_default_bins() {
-    local default_path="${FNM_DIR:-$HOME/.local/share/fnm}/aliases/default"
+    local default_path="$(get_fnm_dir)/aliases/default"
     local bin target link legacy_target
     for bin in node npm npx; do
         target="$default_path/bin/$bin"
@@ -1047,7 +1057,7 @@ link_fnm_default_bins() {
 }
 
 update_fnm_statusline() {
-    local node_ver="$1" fnm_root="${FNM_DIR:-$HOME/.local/share/fnm}"
+    local node_ver="$1" fnm_root="$(get_fnm_dir)"
     local target settings command rest old="" tmp
     target="$fnm_root/node-versions/$node_ver/installation/bin/node"
     settings="$CLAUDE_DIR/settings.json"

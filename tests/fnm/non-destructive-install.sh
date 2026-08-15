@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TEST_ROOT="$(mktemp -d)"
+TEST_ROOT="$(mktemp -d)"; command -v cygpath >/dev/null 2>&1 && TEST_ROOT="$(cygpath -m "$TEST_ROOT")"
 export HOME="$TEST_ROOT/home"
 export FNM_DIR="$HOME/custom-fnm"
 export FNM_CALL_LOG="$TEST_ROOT/fnm-calls"
@@ -30,6 +30,7 @@ for version in v18.20.0 v22.18.0; do
     done
 done
 mkdir -p "$FNM_DIR/node-versions/v18.20.0/installation/lib/node_modules/sentinel"
+touch "$FNM_DIR/node-versions/v22.18.0/installation/node" "$TEST_ROOT/user-owned-npm"
 ln -s "$FNM_DIR/node-versions/v22.18.0/installation" "$FNM_DIR/aliases/default"
 ln -s "$FNM_DIR/aliases/default/node" "$HOME/.local/bin/node"
 ln -s "$TEST_ROOT/user-owned-npm" "$HOME/.local/bin/npm"
