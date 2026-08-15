@@ -5,7 +5,6 @@ TMP="$(mktemp -d)"; command -v cygpath >/dev/null 2>&1 && TMP="$(cygpath -m "$TM
 export HOME="$TMP/home" FNM_DIR="$TMP/home/.local/share/fnm" DOTFILES_RECEIPT_PATH="$TMP/home/.state/receipt.json" DOTFILES_FUNCTIONS_ONLY=1
 mkdir -p "$HOME" "$(dirname "$DOTFILES_RECEIPT_PATH")"
 source "$ROOT/uninstall.sh"
-if [[ "$(uname -s)" == Darwin ]]; then tree_hash(){ tar -cf - -C "$1" . 2>/dev/null | shasum -a 256 | awk '{print $1}'; }; fi
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # Actual installer receipt allowlist를 stub 없이 검증한다.

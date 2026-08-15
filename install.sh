@@ -553,13 +553,46 @@ install_managed_tree() {
     return "$status"
 }
 
+# GNU find -printf와 tar --sort는 BSD(macOS)에 없다. 두 경로의 출력 형식은 서로 다르며,
+# 그래도 되는 이유는 tree 해시가 같은 머신 안에서 install↔uninstall 사이에서만 비교되기 때문이다.
+# GNU 쪽 형식은 기존 receipt와 계속 일치해야 하므로 바꾸지 않는다.
+# uninstall.sh에도 같은 구현이 있다 — 한쪽만 고치면 소유권 판정이 어긋난다.
+tree_hash_supports_gnu_find() { find "$1" -mindepth 1 -printf '' >/dev/null 2>&1; }
+
+# BSD 경로는 개행이 든 경로명을 구분하지 못한다. 그런 tree는 해시하지 않고 실패시킨다.
+tree_hash_paths_are_line_safe() {
+    local lines nulls
+    lines="$(find "$1" -mindepth 1 | wc -l)"
+    nulls="$(find "$1" -mindepth 1 -print0 | tr -cd '\0' | wc -c)"
+    [[ "${lines// /}" == "${nulls// /}" ]]
+}
+
 tree_hash() {
-    local root="$1"
+    local root="$1" entry rel
+    if ! tree_hash_supports_gnu_find "$root" && ! tree_hash_paths_are_line_safe "$root"; then
+        echo "    [!] Tree path contains a newline; refusing to hash: $root" >&2
+        return 1
+    fi
     {
         printf 'root\0%s\0' "$(file_mode "$root")"
-        find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
-        printf 'content\0'
-        tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+        if tree_hash_supports_gnu_find "$root"; then
+            find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
+            printf 'content\0'
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+        else
+            find "$root" -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+                rel="${entry#"$root"/}"
+                if [[ -L "$entry" ]]; then printf '%s\tl\t\t%s\t\0' "$rel" "$(readlink "$entry")"
+                elif [[ -d "$entry" ]]; then printf '%s\td\t%s\t\t\0' "$rel" "$(file_mode "$entry")"
+                elif [[ -f "$entry" ]]; then printf '%s\tf\t%s\t\t%s\0' "$rel" "$(file_mode "$entry")" "$(wc -c < "$entry" | tr -d ' ')"
+                else printf '%s\t?\t\t\t\0' "$rel"
+                fi
+            done
+            printf 'content\0'
+            find "$root" -type f | LC_ALL=C sort | while IFS= read -r entry; do
+                printf '%s\0%s\0' "${entry#"$root"/}" "$(file_hash "$entry")"
+            done
+        fi
     } | {
         if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
         else shasum -a 256 | awk '{print $1}'

@@ -117,6 +117,23 @@ value_key_allowed mcp:claude:rhwp || fail value-allowlist-claude
 artifact_allowed "$HOME/rhwp" || fail artifact-allowlist
 ! artifact_allowed "$HOME/rhwp/rhwp" || fail artifact-allowlist-child
 
+# tree_hash는 GNU find -printf / tar --sort가 없는 BSD(macOS)에서도 성립해야 한다.
+# 그 분기를 강제해 안정성·내용 민감도·구조 민감도를 확인한다.
+mkdir -p "$TMP/th/sub"; printf a > "$TMP/th/f"; printf b > "$TMP/th/sub/g"
+(
+  tree_hash_supports_gnu_find() { return 1; }
+  base="$(tree_hash "$TMP/th")" || fail tree-hash-bsd-failed
+  [[ "$base" =~ ^[0-9a-f]{64}$ ]] || fail tree-hash-bsd-format
+  [[ "$base" == "$(tree_hash "$TMP/th")" ]] || fail tree-hash-bsd-unstable
+  printf c > "$TMP/th/sub/g"
+  [[ "$base" != "$(tree_hash "$TMP/th")" ]] || fail tree-hash-bsd-content-blind
+  printf b > "$TMP/th/sub/g"
+  mkdir -p "$TMP/th/added"
+  [[ "$base" != "$(tree_hash "$TMP/th")" ]] || fail tree-hash-bsd-structure-blind
+  rmdir "$TMP/th/added"
+  [[ "$base" == "$(tree_hash "$TMP/th")" ]] || fail tree-hash-bsd-not-restored
+) || exit 1
+
 mkdir -p "$HOME/rhwp"; printf binary > "$HOME/rhwp/rhwp"; printf license > "$HOME/rhwp/LICENSE"
 rhwp_tree_hash="$(tree_hash "$HOME/rhwp")"
 jq -n --arg p "$HOME/rhwp" --arg h "$rhwp_tree_hash" \
