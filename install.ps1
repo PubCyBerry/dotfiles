@@ -407,6 +407,23 @@ function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet(
     return $success
 }
 
+function Sync-ManagedFileHash([string]$Path) {
+    # `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
+    # receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
+    # 설치가 끝난 시점의 내용으로 도장을 다시 찍어 소유권을 유지한다.
+    if (-not $script:ReceiptReady) { return $false }
+    $key = Get-ManagedPath $Path
+    $entry = $script:Receipt.artifacts[$key]
+    if (-not $entry -or $entry.pending) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($hash -eq $entry.installedHash) { return $false }
+    $entry.installedHash = $hash
+    Save-InstallReceipt
+    return $true
+}
+
 function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue, [string]$Prefix = '') {
     if (-not $script:ReceiptReady -or ($BeforePresent -and $BeforeValue -eq $InstalledValue)) { return }
     if (-not $BeforePresent -and -not $InstalledValue) { return }
@@ -661,13 +678,16 @@ function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
 }
 
 function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
+    # 이번 실행에서 실제로 파일을 썼는지 남긴다. 나중 단계가 그 파일을 다시 쓸 때만
+    # 소유권 해시를 갱신하기 위한 것이라, 보존으로 끝난 경우와 반드시 구분해야 한다.
+    $script:LastJsonRegistryDeployed = $false
     if (-not (Test-Path $SourcePath)) {
         Write-Host "    [!] $SourcePath not found, skipping."
         return
     }
     if (-not (Test-Path $DestPath)) {
-        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
-        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied $(Split-Path $DestPath -Leaf)"; $script:LastJsonRegistryDeployed = $true }
+        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied $(Split-Path $DestPath -Leaf)"; $script:LastJsonRegistryDeployed = $true }
         return
     }
     if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
@@ -690,8 +710,10 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
         if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
             Move-Item $tmp $DestPath -Force
             Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+            $script:LastJsonRegistryDeployed = $true
         } elseif (Install-ManagedFile $tmp $DestPath Takeover) {
             Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+            $script:LastJsonRegistryDeployed = $true
         }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -1223,6 +1245,7 @@ $settingsSrc = Join-Path $ROOT "config\claude\settings.json"
 $settingsDst = Join-Path $ClaudeDir "settings.json"
 if (Test-Path $settingsSrc) {
     Merge-JsonRegistry $settingsSrc $settingsDst
+    $script:ClaudeSettingsDeployed = $script:LastJsonRegistryDeployed
 } else {
     Write-Host "    [!] config\claude\settings.json not found"
 }
@@ -1345,6 +1368,12 @@ Write-Host ""
 Write-Host "==> Restoring Claude Code plugins..."
 $pluginsFile = Join-Path $ROOT "manifests\plugins.txt"
 Invoke-ClaudePluginsStage $pluginsFile
+
+# 플러그인 CLI가 settings.json을 자기 형식으로 다시 쓰므로 3-1이 기록한 해시가 낡는다.
+# 3-1이 실제로 배포한 경우에만 갱신한다 — 보존으로 끝난 파일까지 소유권에 넣지 않는다.
+if ($script:ClaudeSettingsDeployed -and (Sync-ManagedFileHash (Join-Path $ClaudeDir 'settings.json'))) {
+    Write-Host "    Refreshed settings.json ownership hash."
+}
 
 if (-not (Complete-Install)) { exit 1 }
 exit 0

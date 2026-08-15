@@ -131,6 +131,17 @@ begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'ephemeral
 [[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'repaired npm prefix not persisted'
 cancel_managed_package npm:test-prefix
 
+# 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
+sync_dst="$TMP/sync-target.txt"
+install_managed_file "$src" "$sync_dst" takeover || fail 'sync fixture install'
+! sync_managed_file_hash "$sync_dst" || fail 'unchanged managed file restamped'
+printf rewritten-by-external-tool > "$sync_dst"
+sync_managed_file_hash "$sync_dst" || fail 'externally rewritten managed file not restamped'
+[[ "$(jq -r --arg p "$sync_dst" '.artifacts[$p].installedHash' "$RECEIPT_PATH")" == "$(file_hash "$sync_dst")" ]] || fail 'restamped hash mismatch'
+install_managed_file "$src" "$sync_dst" takeover || fail 'restamped file preserved on next install'
+[[ "$(cat "$sync_dst")" == "$(cat "$src")" ]] || fail 'restamped file not updated'
+! sync_managed_file_hash "$TMP/never-managed.txt" || fail 'unmanaged path restamped'
+
 record_managed_value 'env:PATH:/tools' false '' present false
 record_managed_value env:SECRET_TOKEN true do-not-store new-secret
 git config --global test.receipt before

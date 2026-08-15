@@ -169,6 +169,18 @@ try {
     Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'repaired npm prefix not persisted'
     Cancel-ManagedPackage 'npm:test-prefix'
 
+    # 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
+    $syncDst = Join-Path $temp 'sync-target.txt'
+    Assert (Install-ManagedFile $src $syncDst Takeover) 'sync fixture install failed'
+    Assert (-not (Sync-ManagedFileHash $syncDst)) 'unchanged managed file was restamped'
+    Set-Content $syncDst 'rewritten-by-external-tool' -NoNewline
+    Assert (Sync-ManagedFileHash $syncDst) 'externally rewritten managed file was not restamped'
+    $syncEntry = $script:Receipt.artifacts[[IO.Path]::GetFullPath($syncDst)]
+    Assert ($syncEntry.installedHash -eq (Get-FileHash $syncDst -Algorithm SHA256).Hash.ToLowerInvariant()) 'restamped hash mismatch'
+    Assert (Install-ManagedFile $src $syncDst Takeover) 'restamped file was preserved on next install'
+    Assert ((Get-Content $syncDst -Raw) -eq (Get-Content $src -Raw)) 'restamped file was not updated'
+    Assert (-not (Sync-ManagedFileHash (Join-Path $temp 'never-managed.txt'))) 'unmanaged path was restamped'
+
     Record-ManagedValue 'env:PATH:C:\Tools' $false $null 'present' $false
     Record-ManagedValue 'env:SECRET_TOKEN' $true 'do-not-store' 'new-secret'
     git config --global test.receipt before

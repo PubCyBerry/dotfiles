@@ -386,6 +386,21 @@ install_managed_file() {
     receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash = $installed | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
 }
 
+# `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
+# receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
+# 설치가 끝난 시점의 내용으로 도장을 다시 찍어 소유권을 유지한다.
+sync_managed_file_hash() {
+    local dst="$1" current installed
+    $RECEIPT_READY || return 1
+    jq -e --arg path "$dst" '.artifacts[$path] != null and (.artifacts[$path].pending | not)' "$RECEIPT_PATH" >/dev/null || return 1
+    [[ -f "$dst" && ! -L "$dst" ]] || return 1
+    current="$(file_hash "$dst")"
+    installed="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    [[ "$current" != "$installed" ]] || return 1
+    receipt_commit --arg path "$dst" --arg hash "$current" --arg mode "$(file_mode "$dst")" \
+        '.artifacts[$path].installedHash=$hash | .artifacts[$path].installedMode=$mode'
+}
+
 install_managed_symlink() {
     local dst="$1" target="$2" legacy_target="${3:-}" current_target="" installed="" pending=false
     local previous_exists=false previous_type=missing previous_target="" tmp
@@ -933,6 +948,9 @@ merge_codex_config() {
 
 merge_json_registry() {
     local src="$1" dst="$2" tmp
+    # 이번 실행에서 실제로 파일을 썼는지 남긴다. 나중 단계가 그 파일을 다시 쓸 때만
+    # 소유권 해시를 갱신하기 위한 것이라, 보존으로 끝난 경우와 반드시 구분해야 한다.
+    LAST_JSON_REGISTRY_DEPLOYED=false
     if [[ ! -f "$src" ]]; then
         echo "    [!] $src not found, skipping."
         return 0
@@ -941,6 +959,7 @@ merge_json_registry() {
         if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
         else install_managed_file "$src" "$dst" takeover || return 0
         fi
+        LAST_JSON_REGISTRY_DEPLOYED=true
         echo "    Copied $(basename "$dst")"
         return 0
     fi
@@ -958,8 +977,10 @@ merge_json_registry() {
     if jq -s -f "$filter" "$dst" "$src" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
         if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
             mv "$tmp" "$dst"
+            LAST_JSON_REGISTRY_DEPLOYED=true
             echo "    Merged $(basename "$dst")"
         elif install_managed_file "$tmp" "$dst" takeover; then
+            LAST_JSON_REGISTRY_DEPLOYED=true
             echo "    Merged $(basename "$dst")"
         fi
     else
@@ -1607,6 +1628,7 @@ install_claude_code_stage() {
     SETTINGS_DST="$CLAUDE_DIR/settings.json"
     if [[ -f "$SETTINGS_SRC" ]]; then
         merge_json_registry "$SETTINGS_SRC" "$SETTINGS_DST"
+        CLAUDE_SETTINGS_DEPLOYED="$LAST_JSON_REGISTRY_DEPLOYED"
     else
         echo "    [!] config/claude/settings.json not found"
     fi
@@ -1681,5 +1703,11 @@ run_skills_stage "$ROOT/manifests/skills.txt"
 # =============================================
 echo
 run_plugins_stage "$ROOT/manifests/plugins.txt"
+
+# 플러그인 CLI가 settings.json을 자기 형식으로 다시 쓰므로 3-1이 기록한 해시가 낡는다.
+# 3-1이 실제로 배포한 경우에만 갱신한다 — 보존으로 끝난 파일까지 소유권에 넣지 않는다.
+if [[ "${CLAUDE_SETTINGS_DEPLOYED:-false}" == true ]] && sync_managed_file_hash "$CLAUDE_DIR/settings.json"; then
+    echo "    Refreshed settings.json ownership hash."
+fi
 
 finish_install || exit 1
