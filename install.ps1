@@ -406,7 +406,7 @@ function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet(
         return $false
     }
     $success = $true
-    Get-ChildItem $SourceDir -Recurse -File | ForEach-Object {
+    Get-ChildItem $SourceDir -Recurse -File | Where-Object { $_.FullName -notmatch '[\\/](__pycache__|\.git)[\\/]' } | ForEach-Object {
         $relative = [IO.Path]::GetRelativePath($SourceDir, $_.FullName)
         if (-not (Install-ManagedFile $_.FullName (Join-Path $DestDir $relative) $Collision)) { $success = $false }
     }

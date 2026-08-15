@@ -61,6 +61,7 @@ function Test-ArtifactAllowed([string]$Path) {
         (Join-Path $homeRoot '.tmux.conf'),
         (Join-Path $homeRoot '.codex\AGENTS.md'), (Join-Path $homeRoot '.codex\config.toml'), (Join-Path $homeRoot '.codex\hooks.json'),
         (Join-Path $homeRoot '.claude\CLAUDE.md'), (Join-Path $homeRoot '.claude\settings.json'),
+        (Join-Path $homeRoot '.gemini\config\GEMINI.md'), (Join-Path $homeRoot '.gemini\GEMINI.md'), (Join-Path $homeRoot '.gemini\config\hooks.json'),
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests\rhwp.tsv).
         (Join-Path $homeRoot 'rhwp')
     )
@@ -70,7 +71,9 @@ function Test-ArtifactAllowed([string]$Path) {
         @((Join-Path $script:Root 'config\nvim'), (Join-Path $env:LOCALAPPDATA 'nvim')),
         @((Join-Path $script:Root 'config\codex\hooks'), (Join-Path $homeRoot '.codex\hooks')),
         @((Join-Path $script:Root 'config\claude\hooks'), (Join-Path $homeRoot '.claude\hooks')),
-        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.claude\skills'))
+        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.claude\skills')),
+        @((Join-Path $script:Root 'config\agy\hooks'), (Join-Path $homeRoot '.gemini\hooks')),
+        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.gemini\config\skills'))
     )
     foreach ($pair in $pairs) {
         $prefix = [IO.Path]::GetFullPath($pair[1]).TrimEnd('\') + '\'

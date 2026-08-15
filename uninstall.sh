@@ -211,12 +211,14 @@ artifact_allowed() {
     for pair in \
         "$ROOT/config/yazi|$HOME/.config/yazi" "$ROOT/config/nvim|$HOME/.config/nvim" \
         "$ROOT/config/codex/hooks|$HOME/.codex/hooks" "$ROOT/config/claude/hooks|$HOME/.claude/hooks" \
-        "$ROOT/config/claude/skills|$HOME/.claude/skills"; do
+        "$ROOT/config/claude/skills|$HOME/.claude/skills" \
+        "$ROOT/config/agy/hooks|$HOME/.gemini/hooks" \
+        "$ROOT/config/claude/skills|$HOME/.gemini/config/skills"; do
         src="${pair%%|*}" dst="${pair#*|}"
         case "$path" in "$dst/"*) rel="${path#"$dst/"}"; [[ -f "$src/$rel" ]] && return 0;; esac
     done
     case "$path" in
-        "$HOME/.codex/AGENTS.md"|"$HOME/.codex/config.toml"|"$HOME/.codex/hooks.json"|"$HOME/.claude/CLAUDE.md"|"$HOME/.claude/settings.json") return 0 ;;
+        "$HOME/.codex/AGENTS.md"|"$HOME/.codex/config.toml"|"$HOME/.codex/hooks.json"|"$HOME/.claude/CLAUDE.md"|"$HOME/.claude/settings.json"|"$HOME/.gemini/config/GEMINI.md"|"$HOME/.gemini/GEMINI.md"|"$HOME/.gemini/config/hooks.json") return 0 ;;
         "$HOME/.codex/agents/"*.toml) name="${path#"$HOME/.codex/agents/"}"; [[ "$name" != */* && "$name" == *.toml && -d "$ROOT/config/agents/roles/${name%.toml}" ]] && return 0 ;;
         "$HOME/.claude/agents/"*.md) name="${path#"$HOME/.claude/agents/"}"; [[ "$name" != */* && "$name" == *.md && -d "$ROOT/config/agents/roles/${name%.md}" ]] && return 0 ;;
     esac

@@ -21,6 +21,7 @@ CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
 GEMINI_DIR="$HOME/.gemini"
 GEMINI_CONFIG_DIR="$GEMINI_DIR/config"
+SKILLS_LOCAL_SRC="$ROOT/config/claude/skills"
 LOCAL_BIN="$HOME/.local/bin"
 NVIM_CONFIG_DIR="$HOME/.config/nvim"
 YAZI_CONFIG_DIR="$HOME/.config/yazi"
@@ -538,7 +539,7 @@ receipt_owns_prefix() {
 }
 
 install_managed_tree() {
-    local src="$1" dst="$2" collision="${3:-takeover}" skip_root="${4:-false}" file relative status=0
+    local src="${1%/}" dst="${2%/}" collision="${3:-takeover}" skip_root="${4:-false}" file relative status=0
     $RECEIPT_READY && [[ -d "$src" ]] || return 1
     if [[ -e "$dst" || -L "$dst" ]] && { [[ ! -d "$dst" ]] || [[ -L "$dst" ]]; }; then
         echo "    [!] Unsupported destination tree root; preserving: $dst" >&2
@@ -551,7 +552,7 @@ install_managed_tree() {
     while IFS= read -r -d '' file; do
         relative="${file#"$src"/}"
         install_managed_file "$file" "$dst/$relative" "$collision" || status=1
-    done < <(find "$src" -type f -print0)
+    done < <(find "$src" -type d \( -name "__pycache__" -o -name ".git" \) -prune -o -type f -print0)
     return "$status"
 }
 
