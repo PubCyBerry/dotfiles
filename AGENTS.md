@@ -63,10 +63,13 @@ dotfiles/
 │   ├── Brewfile         # macOS Homebrew 패키지
 │   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex)
 │   ├── direct-artifacts.tsv # Linux direct artifact 버전·URL·SHA-256
+│   ├── rhwp.tsv         # rhwp pinned release 플랫폼·버전·URL·SHA-256 (전 OS 공통)
 │   ├── skills.txt       # Claude Code skills (owner/repo@skill-name)
 │   └── plugins.txt      # Claude Code 플러그인 (marketplace + plugin@marketplace + scope)
 ├── scripts/
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
+├── tests/
+│   └── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
 └── docs/
     ├── tools.md                   # CLI 도구 사용법 cheatsheet
     ├── ai-agents.md               # Claude Code, 플러그인, skills 상세
@@ -92,6 +95,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code WinGet 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
 6. `manifests/skills.txt` → npx skills 설치
@@ -111,6 +115,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code Homebrew cask 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치
 6. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -129,6 +134,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code npm package 설치 (Node.js 22+, `SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
 7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -172,7 +178,48 @@ CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 �
 | 로컬 skill | `config/claude/skills/` | `~/.claude/skills/` | 디렉터리 복사 |
 | agent | `config/agents/roles/` | `~/.claude/agents/`, `~/.codex/agents/` | 메타+body 조립 |
 | hook | `config/claude/hooks/`, `config/codex/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/` | 파일 복사 + settings.json 병합 |
-| MCP | (관리 안 함) | — | — |
+| MCP | `manifests/rhwp.tsv` | `~/.codex/config.toml`, `~/.claude.json` | install 스크립트 (receipt `values`) |
+
+### rhwp와 MCP 관리
+
+rhwp(HWP/HWPX 읽기·쓰기 CLI + stdio MCP 서버)는 `manifests/rhwp.tsv`에 pinned release로 관리한다. runtime `latest` 조회는 하지 않는다 — 검토하지 않은 바이너리가 조용히 들어오면 공급망 계약이 깨지기 때문이다.
+
+```text
+<platform>	<version>	<format>	<URL>	<SHA-256>
+```
+
+`platform`은 `windows-x86_64` / `linux-x86_64` / `macos-x86_64` / `macos-aarch64` 네 개이며, 네 행이 모두 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다. 버전을 올릴 때는 upstream `SHA256SUMS.txt`의 값을 그대로 옮긴다.
+
+install 스크립트는 순서대로 다음을 확인한 뒤에만 파일을 만진다.
+
+1. manifest 형식(플랫폼 4종, 세 자리 버전, `latest`/`HEAD`가 없는 release URL, 64자 SHA-256)
+2. 내려받은 archive의 SHA-256
+3. archive 구조 — 최상위가 `rhwp/` 하나이고 그 아래가 파일·디렉터리뿐인지
+4. 바이너리가 `rhwp v<version>`을 보고하는지
+
+여기까지 통과하면 **archive 전체**를 `~/rhwp`(Windows `%USERPROFILE%\rhwp`)에 receipt-managed direct tree로 배치한다. 바이너리만 뽑아 `~/.local/bin`에 넣지 않는다 — LICENSE와 README가 함께 있어야 배포 조건이 성립하고, tree 하나를 identity로 잡아야 uninstall이 "정확히 이 상태일 때만 제거"를 판정할 수 있다.
+
+MCP 등록은 두 호스트의 **공식 저장소**에만 한다.
+
+| 호스트 | 파일 | 키 |
+|---|---|---|
+| Codex | `~/.codex/config.toml` | `[mcp_servers.rhwp]` |
+| Claude Code | `~/.claude.json` | `.mcpServers.rhwp` |
+
+`~/.claude/settings.json`은 Claude Code 계약상 MCP 정의 파일이 **아니다**. 지원되지 않는 키를 만들지 않는다.
+
+`command`는 PATH가 아니라 위 tree 안의 절대 경로(`~/rhwp/rhwp`, Windows는 `rhwp.exe`)를 쓴다. PATH에 넣지 않기로 한 이상 host가 `rhwp`를 이름으로 찾을 수 없기 때문이다.
+
+entry는 receipt `values`의 `mcp:<host>:<name>` 키로 소유권을 잡는다. 사용자가 만든 동명 entry는 receipt에 없으므로 손대지 않고, 우리가 심은 뒤 사용자가 고쳤으면 그 다음 실행부터 보존한다. Codex 쪽은 TOML 편집이라 `yq`가 필요하며, 없으면 `config.toml` 병합과 같은 정책으로 건너뛴다(설치 전체를 실패시키지 않는다).
+
+`SKIP_RHWP=1`로 이 단계 전체를 건너뛸 수 있다.
+
+소유권 계약은 네트워크 없이 검증한다. CI(`pr-gate.yml`, `uninstall-validation.yml`)가 같은 스크립트를 돌린다.
+
+```bash
+bash tests/rhwp/mcp-ownership.sh
+pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
+```
 
 ### agent role 관리
 

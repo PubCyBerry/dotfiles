@@ -189,6 +189,22 @@ cat config.yaml | yq '.database.host' # YAML 필드 추출
 yq -o=json config.yaml                # YAML → JSON 변환
 ```
 
+### rhwp — HWP/HWPX 읽기·쓰기
+
+install 스크립트가 `manifests/rhwp.tsv`의 pinned release를 `~/rhwp`(Windows `%USERPROFILE%\rhwp`)에 통째로 배치한다. PATH에는 넣지 않으므로 절대 경로로 부른다.
+
+```bash
+~/rhwp/rhwp --version                       # 설치된 버전 확인
+~/rhwp/rhwp capabilities --mcp | jq '.tools[].name'   # 제공 도구 목록
+```
+
+MCP 서버(`rhwp mcp-serve`)는 install이 Codex(`~/.codex/config.toml`)와 Claude Code(`~/.claude.json`)에 같은 절대 경로로 등록한다. 등록 후에는 두 호스트를 재시작해야 도구가 보인다.
+
+```bash
+yq -p=toml -o=json '.mcp_servers.rhwp' ~/.codex/config.toml   # Codex 등록 확인
+jq '.mcpServers.rhwp' ~/.claude.json                          # Claude Code 등록 확인
+```
+
 ## 코드 품질
 
 ### ruff — Python 린터/포매터 (선택적 설치)

@@ -1,0 +1,14 @@
+# rhwp pinned release: platform<TAB>version<TAB>format<TAB>URL<TAB>SHA-256
+#
+# platform : windows-x86_64 | linux-x86_64 | macos-x86_64 | macos-aarch64
+# version  : upstream tag에서 앞의 v를 뗀 값 (rhwp --version 출력과 대조)
+# format   : tgz | zip
+# URL      : 공식 release asset (latest/HEAD 경로 금지 — #16 공급망 계약)
+# SHA-256  : https://github.com/edwardkim/rhwp/releases/download/v0.8.4/SHA256SUMS.txt
+#
+# archive 전체를 ~/rhwp tree로 배치하고, MCP command는 PATH가 아니라
+# 그 tree 안의 절대 경로(~/rhwp/rhwp 또는 ~/rhwp/rhwp.exe)를 쓴다.
+windows-x86_64	0.8.4	zip	https://github.com/edwardkim/rhwp/releases/download/v0.8.4/rhwp-v0.8.4-windows-x86_64.zip	e65b3e220573b18e1588768c5a16684eb89b2daf2488768575444cb83cd1b8c6
+linux-x86_64	0.8.4	tgz	https://github.com/edwardkim/rhwp/releases/download/v0.8.4/rhwp-v0.8.4-linux-x86_64.tar.gz	d2f015447147a840b3a587e8e9bedd75973fb2e0a60eac37b08cad9e34cdac54
+macos-x86_64	0.8.4	tgz	https://github.com/edwardkim/rhwp/releases/download/v0.8.4/rhwp-v0.8.4-macos-x86_64.tar.gz	775180d8f414dc675da50ea1342ef1b5c094430e0f3b5d7f6da2e9939ad6b61c
+macos-aarch64	0.8.4	tgz	https://github.com/edwardkim/rhwp/releases/download/v0.8.4/rhwp-v0.8.4-macos-aarch64.tar.gz	6a5e6a7104a2ce40fd4235d1c95cc86b0291652f30f6d1bf1efd3708419ac176
