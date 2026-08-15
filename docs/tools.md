@@ -189,17 +189,6 @@ cat config.yaml | yq '.database.host' # YAML 필드 추출
 yq -o=json config.yaml                # YAML → JSON 변환
 ```
 
-### httpie — HTTP 클라이언트 (선택적 설치)
-
-> winget.txt에 주석 처리되어 있다. 필요 시 주석 해제 후 `install.ps1` 재실행.
-
-```bash
-http GET https://api.example.com/users        # GET 요청
-http POST https://api.example.com/users name=foo email=bar@example.com  # POST (JSON 자동)
-http -a user:pass GET https://api.example.com # Basic Auth
-https example.com                             # HTTPS 단축 명령
-```
-
 ## 코드 품질
 
 ### ruff — Python 린터/포매터 (선택적 설치)
