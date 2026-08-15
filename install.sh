@@ -647,9 +647,13 @@ install_managed_direct_tree() {
     mkdir -p "$(dirname "$dst")" || return 1
     tmp="$(mktemp -d "$(dirname "$dst")/.dotfiles-tree.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
     cp -a "$src/." "$tmp/" || return 1
-    chmod --reference="$src" "$tmp" || return 1
+    # chmod --reference와 mv -T는 GNU 전용이라 BSD(macOS)에 없다.
+    chmod "$(file_mode "$src")" "$tmp" || return 1
     [[ "$(tree_hash "$tmp")" == "$source_hash" ]] || return 1
-    mv -T "$tmp" "$dst" || return 1
+    # mv -T 없이 옮기므로, dst가 디렉터리로 존재하면 그 안으로 들어가 버린다.
+    # 여기까지는 dst가 없다는 것이 확인된 경로지만 이동 직전에 한 번 더 막는다.
+    [[ ! -e "$dst" && ! -L "$dst" ]] || return 1
+    mv "$tmp" "$dst" || return 1
     receipt_commit --arg path "$dst" --arg hash "$source_hash" --arg version "$version" '.artifacts[$path].installedTreeHash=$hash | .artifacts[$path].directVersion=$version | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
 }
 
@@ -975,7 +979,7 @@ install_rhwp() {
         if [[ ! -d "$tree" || -L "$tree" ]] || (( $(find "$extract" -mindepth 1 -maxdepth 1 | wc -l) != 1 )); then
             record_install_failure "Unexpected rhwp archive layout: $url"; return 1
         fi
-        if [[ -n "$(find "$tree" -mindepth 1 ! -type f ! -type d -print -quit)" ]]; then
+        if [[ -n "$(find "$tree" -mindepth 1 ! -type f ! -type d | head -1)" ]]; then
             record_install_failure "Unsupported member type in rhwp archive: $url"; return 1
         fi
         binary="$tree/rhwp"

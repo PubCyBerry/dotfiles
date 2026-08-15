@@ -78,6 +78,23 @@ install_managed_mcp_server claude rhwp "$CLAUDE_JSON" "$DESIRED" || fail claude-
 jq -e '.hasCompletedOnboarding == true' "$CLAUDE_JSON" >/dev/null || fail claude-user-key-lost
 
 # ---------------------------------------------
+# direct tree: 신규 배치 → 멱등 → 사용자 수정 보존
+# ---------------------------------------------
+SRC_TREE="$TMP/src/rhwp"; mkdir -p "$SRC_TREE"
+printf binary > "$SRC_TREE/rhwp"; chmod 755 "$SRC_TREE/rhwp"
+printf license > "$SRC_TREE/LICENSE"
+install_managed_direct_tree "$SRC_TREE" "$HOME/rhwp" 0.8.4 || fail tree-install
+# exec bit을 그대로 옮겼는지까지 본다. 파일시스템이 exec bit을 무시할 수 있으므로
+# `-x`가 아니라 원본과의 mode 일치로 확인한다.
+[[ -f "$HOME/rhwp/rhwp" && -f "$HOME/rhwp/LICENSE" ]] || fail tree-content
+[[ "$(file_mode "$HOME/rhwp/rhwp")" == "$(file_mode "$SRC_TREE/rhwp")" ]] || fail tree-mode
+install_managed_direct_tree "$SRC_TREE" "$HOME/rhwp" 0.8.4 || fail tree-idempotent
+[[ "$(jq -r --arg p "$HOME/rhwp" '.artifacts[$p].directVersion' "$DOTFILES_RECEIPT_PATH")" == 0.8.4 ]] || fail tree-version
+printf user > "$HOME/rhwp/user-note"
+! install_managed_direct_tree "$SRC_TREE" "$HOME/rhwp" 0.8.4 || fail tree-modified-overwritten
+[[ -f "$HOME/rhwp/user-note" ]] || fail tree-modified-lost
+
+# ---------------------------------------------
 # uninstall: 정확히 우리 identity일 때만 되돌린다.
 # ---------------------------------------------
 unset -f main
@@ -134,16 +151,14 @@ mkdir -p "$TMP/th/sub"; printf a > "$TMP/th/f"; printf b > "$TMP/th/sub/g"
   [[ "$base" == "$(tree_hash "$TMP/th")" ]] || fail tree-hash-bsd-not-restored
 ) || exit 1
 
-mkdir -p "$HOME/rhwp"; printf binary > "$HOME/rhwp/rhwp"; printf license > "$HOME/rhwp/LICENSE"
-rhwp_tree_hash="$(tree_hash "$HOME/rhwp")"
-jq -n --arg p "$HOME/rhwp" --arg h "$rhwp_tree_hash" \
-  '{schemaVersion:1,artifacts:{($p):{before:{exists:false,type:"missing"},installedTreeHash:$h,directVersion:"0.8.4",pending:false}},packages:{},values:{}}' > "$RECEIPT_PATH"
+# install이 실제로 남긴 receipt를 그대로 쓴다 — 합성 fixture로는 두 스크립트가
+# 같은 tree_hash 규칙을 쓰는지 검증되지 않는다.
 receipt_schema_valid || fail tree-schema
-printf user > "$HOME/rhwp/user-note"
 ! uninstall_artifact "$HOME/rhwp" || fail tree-modified-removed
 [[ -f "$HOME/rhwp/user-note" ]] || fail tree-modified-lost
 rm -f "$HOME/rhwp/user-note"
 uninstall_artifact "$HOME/rhwp" || fail tree-remove
 [[ ! -e "$HOME/rhwp" ]] || fail tree-left
+jq -e --arg p "$HOME/rhwp" '.artifacts | has($p) | not' "$RECEIPT_PATH" >/dev/null || fail tree-receipt-kept
 
 echo 'rhwp mcp ownership bash: PASS'
