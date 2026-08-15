@@ -221,8 +221,6 @@ dotfiles/
 |--------|------|-------|
 | [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | Claude HUD statusline | <img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud?style=flat&label=%E2%AD%90" alt="stars"> |
 | [sirmalloc/ccstatusline](https://github.com/sirmalloc/ccstatusline) | Claude Code 상태줄 표시 도구 | <img src="https://img.shields.io/github/stars/sirmalloc/ccstatusline?style=flat&label=%E2%AD%90" alt="stars"> |
-| [steipete/CodexBar](https://github.com/steipete/CodexBar) | AI 코딩 도구 사용량/쿼터 메뉴바 앱 (macOS GUI + Linux/macOS CLI) | <img src="https://img.shields.io/github/stars/steipete/CodexBar?style=flat&label=%E2%AD%90" alt="stars"> |
-| [Finesssee/Win-CodexBar](https://github.com/Finesssee/Win-CodexBar) | CodexBar Windows 포트 (Tauri 트레이 앱, 28개 AI 프로바이더) | <img src="https://img.shields.io/github/stars/Finesssee/Win-CodexBar?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Vim
 
@@ -257,7 +255,6 @@ dotfiles/
 | [dandavison/delta](https://github.com/dandavison/delta) | syntax-highlighting pager for git | <img src="https://img.shields.io/github/stars/dandavison/delta?style=flat&label=%E2%AD%90" alt="stars"> |
 | [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) | recursively search with regex | <img src="https://img.shields.io/github/stars/BurntSushi/ripgrep?style=flat&label=%E2%AD%90" alt="stars"> |
 | [atuinsh/atuin](https://github.com/atuinsh/atuin) | 셸 히스토리 검색 | <img src="https://img.shields.io/github/stars/atuinsh/atuin?style=flat&label=%E2%AD%90" alt="stars"> |
-| [httpie/cli](https://github.com/httpie/cli) | HTTP CLI 클라이언트 | <img src="https://img.shields.io/github/stars/httpie/cli?style=flat&label=%E2%AD%90" alt="stars"> |
 | [jqlang/jq](https://github.com/jqlang/jq) | command-line JSON processor | <img src="https://img.shields.io/github/stars/jqlang/jq?style=flat&label=%E2%AD%90" alt="stars"> |
 | [mikefarah/yq](https://github.com/mikefarah/yq) | command-line YAML/JSON/XML processor | <img src="https://img.shields.io/github/stars/mikefarah/yq?style=flat&label=%E2%AD%90" alt="stars"> |
 | [ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) | smarter `cd` command | <img src="https://img.shields.io/github/stars/ajeetdsouza/zoxide?style=flat&label=%E2%AD%90" alt="stars"> |

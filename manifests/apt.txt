@@ -54,5 +54,4 @@ file                            # MIME type(파일 타입 탐지)
 
 # 미설치 패키지:
 # ruff # X, uv로 설치
-# httpie                        # O, http/https CLI
 # atuin # X, ?

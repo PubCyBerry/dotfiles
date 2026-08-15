@@ -23,3 +23,7 @@ ref_repos/
 
 # skills 다운로드 캐시 (lockfile만 커밋)
 .agents/
+
+# Python
+__pycache__/
+*.pyc

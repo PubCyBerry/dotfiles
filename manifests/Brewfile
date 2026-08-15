@@ -35,16 +35,8 @@ brew "lazygit"      # TUI git 클라이언트
 brew "yazi"         # TUI 파일 매니저
 brew "starship"     # 크로스쉘 프롬프트
 brew "ruff"         # Python 린터/포매터 (flake8+black+isort 대체)
-brew "httpie"       # HTTP 클라이언트 (http/https 명령어)
 brew "difftastic"   # AST 기반 diff
 brew "ast-grep"     # AST 기반 코드 검색/리팩터 (sg 명령어)
 brew "atuin"        # 히스토리 강화
 
 brew "tmux"
-
-
-# CodexBar (AI 코딩 도구 사용량 메뉴바 앱, macOS 14+ Sonoma 필요)
-# Homebrew 6.0부터 서드파티 tap은 명시적 신뢰가 필요하다(`trusted:`).
-# 표기가 없으면 "Refusing to load formula ... from untrusted tap"으로 설치가 중단된다.
-tap "steipete/tap", trusted: true
-cask "codexbar"

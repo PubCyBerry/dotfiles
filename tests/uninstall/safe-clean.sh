@@ -24,7 +24,8 @@ artifact_allowed "$HOME/.codex/agents/planner.toml" || fail codex-agent-allowlis
 ! artifact_allowed "$HOME/.codex/agents/nested/planner.toml" || fail nested-agent-rejected
 ! artifact_allowed "$HOME/.codex/agents/planner.md" || fail agent-extension-rejected
 package_key_allowed 'brew:oven-sh/bun/bun' || fail brew-tap-allowlist
-package_key_allowed 'cask:codexbar' || fail cask-allowlist
+package_key_allowed 'cask:claude-code' || fail cask-allowlist
+! package_key_allowed 'cask:codexbar' || fail unmanaged-cask-rejected
 npm_prefix_allowed "$HOME/.local/share/fnm/node-versions/v22/installation" || fail npm-prefix-allowlist
 ! npm_prefix_allowed "$HOME/project/node-versions/v22/installation" || fail npm-project-prefix-rejected
 ( FNM_DIR="" OS="Darwin" npm_prefix_allowed "$HOME/Library/Application Support/fnm/node-versions/v22/installation" ) || fail npm-macos-prefix-allowlist
