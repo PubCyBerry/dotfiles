@@ -29,6 +29,18 @@ agent role은 Codex 0.145.0부터 subagent(`~/.codex/agents/<name>.toml`)로 배
 codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agent 이름만 나열해."
 ```
 
+## Antigravity (AGY) 설정 파일
+
+| 파일 | 설치 위치 | 내용 |
+|------|-----------|------|
+| `config/agents/global.md` | `~/.gemini/config/GEMINI.md`, `~/.gemini/GEMINI.md` | 공통 전역 행동 설정 |
+| `config/agy/hooks.json` | `~/.gemini/config/hooks.json` | Antigravity hook 등록 |
+| `config/agy/hooks/temporal-context.sh` | `~/.gemini/hooks/temporal-context.sh` | PreInvocation 시간 컨텍스트 주입 |
+| `config/claude/skills/<name>/` | `~/.gemini/config/skills/<name>/` | 로컬 스킬 공유 배포 |
+| `manifests/rhwp.tsv` | `~/.gemini/config/mcp_config.json` | rhwp stdio MCP 서버 등록 |
+
+Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 룰로 참조한다. `hooks.json`은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합되며, `hooks/` 디렉터리에 실행 스크립트가 배치된다. MCP 설정은 `~/.gemini/config/mcp_config.json`의 `.mcpServers` 맵에 등록된다.
+
 ## 플러그인
 
 `manifests/plugins.txt`에 `<marketplace-source> <plugin>@<marketplace> [scope]` 형식으로 목록을 유지하고, install 스크립트가 `claude plugin marketplace add` → `claude plugin install`을 순서대로 실행한다. 두 명령 모두 멱등이라 반복 실행해도 안전하다.

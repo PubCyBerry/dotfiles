@@ -87,6 +87,19 @@ try {
     Assert ($LASTEXITCODE -eq 0) 'claude-user-key-lost'
 
     # -----------------------------------------
+    # Gemini MCP entry: ~/.gemini/config/mcp_config.json 등록 및 멱등성
+    # -----------------------------------------
+    $geminiJson = Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+    Assert (Install-ManagedMcpServer gemini 'rhwp' $geminiJson $desired) 'gemini-register'
+    Assert (Get-McpEntry gemini 'rhwp' $geminiJson) 'gemini-read'
+    Assert ($script:McpValue -ceq $canonical) 'gemini-entry'
+    $withGeminiUserKey = @(& jq '. + {"customSetting":123}' $geminiJson)
+    ($withGeminiUserKey -join "`n") | Out-File $geminiJson -Encoding utf8 -NoNewline
+    Assert (Install-ManagedMcpServer gemini 'rhwp' $geminiJson $desired) 'gemini-idempotent'
+    & jq -e '.customSetting == 123' $geminiJson | Out-Null
+    Assert ($LASTEXITCODE -eq 0) 'gemini-user-key-lost'
+
+    # -----------------------------------------
     # tree artifact: 정확한 tree 해시일 때만 배치/제거한다.
     # -----------------------------------------
     $source = Join-Path $temp 'src\rhwp'
@@ -113,6 +126,7 @@ try {
 
     Assert (Test-ValueKeyAllowed 'mcp:codex:rhwp') 'value-allowlist-codex'
     Assert (Test-ValueKeyAllowed 'mcp:claude:rhwp') 'value-allowlist-claude'
+    Assert (Test-ValueKeyAllowed 'mcp:gemini:rhwp') 'value-allowlist-gemini'
     Assert (-not (Test-ValueKeyAllowed 'mcp:codex:other')) 'value-allowlist-open'
     Assert (-not (Test-ValueKeyAllowed 'mcp:other:rhwp')) 'value-allowlist-host'
     Assert (Test-ArtifactAllowed $RhwpDir) 'artifact-allowlist'
@@ -147,8 +161,18 @@ try {
 
     # 우리가 만든 형태 그대로면 파일까지 걷어낸다.
     [IO.File]::WriteAllText($claudeJson, '{"mcpServers":{}}', [Text.UTF8Encoding]::new($false))
-    Remove-EmptyClaudeJson
+    Remove-EmptyJsonMcpFile $claudeJson
     Assert (-not (Test-Path -LiteralPath $claudeJson)) 'claude-json-not-pruned'
+
+    # Gemini entry 제거 후 다른 키가 남아 있으면 파일을 남긴다.
+    Assert (Remove-ManagedValue 'mcp:gemini:rhwp') 'gemini-uninstall'
+    Assert (Test-Path -LiteralPath $geminiJson) 'gemini-json-removed-with-user-keys'
+    & jq -e '(.mcpServers | has("rhwp") | not) and .customSetting == 123' $geminiJson | Out-Null
+    Assert ($LASTEXITCODE -eq 0) 'gemini-entry-kept'
+
+    [IO.File]::WriteAllText($geminiJson, '{"mcpServers":{}}', [Text.UTF8Encoding]::new($false))
+    Remove-EmptyJsonMcpFile $geminiJson
+    Assert (-not (Test-Path -LiteralPath $geminiJson)) 'gemini-json-not-pruned'
 
     Write-Host 'rhwp mcp ownership pwsh: PASS'
 } finally {

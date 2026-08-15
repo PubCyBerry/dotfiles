@@ -78,6 +78,17 @@ install_managed_mcp_server claude rhwp "$CLAUDE_JSON" "$DESIRED" || fail claude-
 jq -e '.hasCompletedOnboarding == true' "$CLAUDE_JSON" >/dev/null || fail claude-user-key-lost
 
 # ---------------------------------------------
+# Gemini MCP entry: ~/.gemini/config/mcp_config.json 등록 및 멱등성
+# ---------------------------------------------
+GEMINI_JSON="$HOME/.gemini/config/mcp_config.json"
+install_managed_mcp_server gemini rhwp "$GEMINI_JSON" "$DESIRED" || fail gemini-register
+[[ "$(jq -cS '.mcpServers.rhwp' "$GEMINI_JSON")" == "$CANONICAL" ]] || fail gemini-entry
+jq -n '{"customSetting":123}' > "$TMP/gemini_seed.json"
+jq -s '.[0] * .[1]' "$TMP/gemini_seed.json" "$GEMINI_JSON" > "$TMP/gemini_merged.json" && mv "$TMP/gemini_merged.json" "$GEMINI_JSON"
+install_managed_mcp_server gemini rhwp "$GEMINI_JSON" "$DESIRED" || fail gemini-idempotent
+jq -e '.customSetting == 123' "$GEMINI_JSON" >/dev/null || fail gemini-user-key-lost
+
+# ---------------------------------------------
 # direct tree: 신규 배치 → 멱등 → 사용자 수정 보존
 # ---------------------------------------------
 SRC_TREE="$TMP/src/rhwp"; mkdir -p "$SRC_TREE"
@@ -121,14 +132,25 @@ jq -e '.hasCompletedOnboarding == true' "$CLAUDE_JSON" >/dev/null || fail claude
 
 # 우리가 만든 형태 그대로면 파일까지 걷어낸다.
 printf '%s' '{"mcpServers":{}}' > "$CLAUDE_JSON"
-prune_empty_claude_json
+prune_empty_json_mcp_file "$CLAUDE_JSON"
 [[ ! -e "$CLAUDE_JSON" ]] || fail claude-json-not-pruned
+
+# Gemini entry 제거 후 다른 키가 있으면 파일을 남긴다.
+uninstall_value mcp:gemini:rhwp || fail gemini-uninstall
+[[ -f "$GEMINI_JSON" ]] || fail gemini-json-removed-with-user-keys
+jq -e '.mcpServers | has("rhwp") | not' "$GEMINI_JSON" >/dev/null || fail gemini-entry-kept
+jq -e '.customSetting == 123' "$GEMINI_JSON" >/dev/null || fail gemini-user-key-lost-on-uninstall
+
+printf '%s' '{"mcpServers":{}}' > "$GEMINI_JSON"
+prune_empty_json_mcp_file "$GEMINI_JSON"
+[[ ! -e "$GEMINI_JSON" ]] || fail gemini-json-not-pruned
 
 # ---------------------------------------------
 # rhwp tree: 정확한 tree 해시일 때만 제거한다.
 # ---------------------------------------------
 value_key_allowed mcp:codex:rhwp || fail value-allowlist-codex
 value_key_allowed mcp:claude:rhwp || fail value-allowlist-claude
+value_key_allowed mcp:gemini:rhwp || fail value-allowlist-gemini
 ! value_key_allowed mcp:codex:other || fail value-allowlist-open
 ! value_key_allowed mcp:other:rhwp || fail value-allowlist-host
 artifact_allowed "$HOME/rhwp" || fail artifact-allowlist

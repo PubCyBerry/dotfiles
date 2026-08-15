@@ -61,6 +61,7 @@ function Test-ArtifactAllowed([string]$Path) {
         (Join-Path $homeRoot '.tmux.conf'),
         (Join-Path $homeRoot '.codex\AGENTS.md'), (Join-Path $homeRoot '.codex\config.toml'), (Join-Path $homeRoot '.codex\hooks.json'),
         (Join-Path $homeRoot '.claude\CLAUDE.md'), (Join-Path $homeRoot '.claude\settings.json'),
+        (Join-Path $homeRoot '.gemini\config\GEMINI.md'), (Join-Path $homeRoot '.gemini\GEMINI.md'), (Join-Path $homeRoot '.gemini\config\hooks.json'),
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests\rhwp.tsv).
         (Join-Path $homeRoot 'rhwp')
     )
@@ -70,7 +71,9 @@ function Test-ArtifactAllowed([string]$Path) {
         @((Join-Path $script:Root 'config\nvim'), (Join-Path $env:LOCALAPPDATA 'nvim')),
         @((Join-Path $script:Root 'config\codex\hooks'), (Join-Path $homeRoot '.codex\hooks')),
         @((Join-Path $script:Root 'config\claude\hooks'), (Join-Path $homeRoot '.claude\hooks')),
-        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.claude\skills'))
+        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.claude\skills')),
+        @((Join-Path $script:Root 'config\agy\hooks'), (Join-Path $homeRoot '.gemini\hooks')),
+        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.gemini\config\skills'))
     )
     foreach ($pair in $pairs) {
         $prefix = [IO.Path]::GetFullPath($pair[1]).TrimEnd('\') + '\'
@@ -150,7 +153,7 @@ function Test-PackageKeyAllowed([string]$Key) {
 }
 function Test-ValueKeyAllowed([string]$Key) {
     # MCP entry는 install이 심은 host/name 조합만 되돌린다.
-    if ($Key -cin @('mcp:codex:rhwp','mcp:claude:rhwp')) { return $true }
+    if ($Key -cin @('mcp:codex:rhwp','mcp:claude:rhwp','mcp:gemini:rhwp')) { return $true }
     if ($Key -in @('git:core.pager','git:core.editor','git:core.fileMode','git:core.autocrlf','git:core.eol','git:core.quotepath','git:init.defaultBranch','git:interactive.diffFilter','git:delta.navigate','git:delta.dark','git:delta.side-by-side','git:delta.line-numbers','git:merge.conflictStyle','git:credential.credentialStore','env:YAZI_FILE_ONE','env:PATH:C:\Program Files\Neovim\bin')) { return $true }
     $fnmRoot=[IO.Path]::GetFullPath($(if($env:FNM_DIR){$env:FNM_DIR}else{Join-Path $env:APPDATA 'fnm'})).TrimEnd('\')
     $Key -ieq ('env:PATH:' + (Join-Path $fnmRoot 'aliases\default'))
@@ -317,6 +320,7 @@ function Get-McpHostPath([string]$McpHost) {
     switch ($McpHost) {
         'codex'  { Join-Path $env:USERPROFILE '.codex\config.toml' }
         'claude' { Join-Path $env:USERPROFILE '.claude.json' }
+        'gemini' { Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json' }
         default  { $null }
     }
 }
@@ -400,12 +404,11 @@ function Update-ManagedArtifactHash([string]$Path, [string]$BeforeHash) {
     return $true
 }
 
-# install이 ~\.claude.json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
-function Remove-EmptyClaudeJson {
-    $path = Join-Path $env:USERPROFILE '.claude.json'
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
-    & jq -e '. == {"mcpServers":{}}' $path 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Remove-Item -LiteralPath $path -Force }
+# install이 빈 MCP json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
+function Remove-EmptyJsonMcpFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    & jq -e '. == {"mcpServers":{}}' $Path 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Remove-Item -LiteralPath $Path -Force }
 }
 
 function Remove-ManagedMcpValue([string]$Key) {
@@ -434,7 +437,7 @@ function Remove-ManagedMcpValue([string]$Key) {
         Write-Preserve "MCP restore verification failed: $Key"; return $false
     }
     if ($beforeHash -and -not (Update-ManagedArtifactHash $path $beforeHash)) { Write-Preserve "MCP host ownership restamp failed: $path"; return $false }
-    if ($mcpHost -eq 'claude' -and -not $beforePresent) { Remove-EmptyClaudeJson }
+    if (($mcpHost -in @('claude', 'gemini')) -and -not $beforePresent) { Remove-EmptyJsonMcpFile $path }
     Remove-ReceiptEntry values $Key
     return $true
 }
