@@ -45,8 +45,9 @@ dotfiles/
 ├── config/
 │   ├── bash/            # bash dotfiles (bashrc, inputrc) — Git Bash + Linux 공통, 마커 방식 삽입
 │   ├── agents/          # AI 에이전트 공통 자산
-│   │   ├── global.md    # Claude/Codex 공통 전역 지침
+│   │   ├── global.md    # Claude/Codex/Antigravity 공통 전역 지침
 │   │   └── roles/       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
+│   ├── agy/             # Antigravity (AGY) 설정 (hooks.json, hooks/)
 │   ├── claude/          # Claude Code 설정 (settings.json, hooks, skills, claude-hud)
 │   ├── codex/           # Codex 설정 (config.toml, hooks.json, hooks/)
 │   ├── git/
@@ -95,7 +96,8 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code WinGet 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-3. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
 6. `manifests/skills.txt` → npx skills 설치
@@ -115,7 +117,8 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code Homebrew cask 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치
 6. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -134,7 +137,8 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code npm package 설치 (Node.js 22+, `SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치
 7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
@@ -175,10 +179,10 @@ CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 �
 |---|---|---|---|
 | plugin | `manifests/plugins.txt` | `~/.claude/plugins/` | `claude plugin` CLI |
 | 원격 skill | `manifests/skills.txt` | `~/.claude/skills/` | `npx skills add` |
-| 로컬 skill | `config/claude/skills/` | `~/.claude/skills/` | 디렉터리 복사 |
+| 로컬 skill | `config/claude/skills/` | `~/.claude/skills/`, `~/.gemini/config/skills/` | 디렉터리 복사 |
 | agent | `config/agents/roles/` | `~/.claude/agents/`, `~/.codex/agents/` | 메타+body 조립 |
-| hook | `config/claude/hooks/`, `config/codex/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/` | 파일 복사 + settings.json 병합 |
-| MCP | `manifests/rhwp.tsv` | `~/.codex/config.toml`, `~/.claude.json` | install 스크립트 (receipt `values`) |
+| hook | `config/claude/hooks/`, `config/codex/hooks/`, `config/agy/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/`, `~/.gemini/hooks/` | 파일 복사 + settings.json / hooks.json 병합 |
+| MCP | `manifests/rhwp.tsv` | `~/.codex/config.toml`, `~/.claude.json`, `~/.gemini/config/mcp_config.json` | install 스크립트 (receipt `values`) |
 
 ### rhwp와 MCP 관리
 
@@ -199,12 +203,13 @@ install 스크립트는 순서대로 다음을 확인한 뒤에만 파일을 만
 
 여기까지 통과하면 **archive 전체**를 `~/rhwp`(Windows `%USERPROFILE%\rhwp`)에 receipt-managed direct tree로 배치한다. 바이너리만 뽑아 `~/.local/bin`에 넣지 않는다 — LICENSE와 README가 함께 있어야 배포 조건이 성립하고, tree 하나를 identity로 잡아야 uninstall이 "정확히 이 상태일 때만 제거"를 판정할 수 있다.
 
-MCP 등록은 두 호스트의 **공식 저장소**에만 한다.
+MCP 등록은 호스트의 **공식 저장소**에만 한다.
 
 | 호스트 | 파일 | 키 |
 |---|---|---|
 | Codex | `~/.codex/config.toml` | `[mcp_servers.rhwp]` |
 | Claude Code | `~/.claude.json` | `.mcpServers.rhwp` |
+| Antigravity (Gemini) | `~/.gemini/config/mcp_config.json` | `.mcpServers.rhwp` |
 
 `~/.claude/settings.json`은 Claude Code 계약상 MCP 정의 파일이 **아니다**. 지원되지 않는 키를 만들지 않는다.
 

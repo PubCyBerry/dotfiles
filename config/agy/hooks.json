@@ -1,0 +1,10 @@
+{
+  "temporal-context": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "bash ~/.gemini/hooks/temporal-context.sh"
+      }
+    ]
+  }
+}

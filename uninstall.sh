@@ -45,7 +45,7 @@ package_key_allowed() {
 value_key_allowed() {
     case "$1" in git:core.pager|git:core.editor|git:core.fileMode|git:core.autocrlf|git:core.eol|git:core.quotepath|git:init.defaultBranch|git:interactive.diffFilter|git:delta.navigate|git:delta.dark|git:delta.side-by-side|git:delta.line-numbers|git:merge.conflictStyle|git:credential.credentialStore) return 0;; esac
     # MCP entry는 install이 심은 host/name 조합만 되돌린다.
-    case "$1" in mcp:codex:rhwp|mcp:claude:rhwp) return 0;; esac
+    case "$1" in mcp:codex:rhwp|mcp:claude:rhwp|mcp:gemini:rhwp) return 0;; esac
     return 1
 }
 get_fnm_dir() {
@@ -90,7 +90,7 @@ receipt_schema_valid() {
         (if ((.key|startswith("npm:")) and (.value|has("prefix"))) then (.value.prefix|type)=="string" and (.value.prefix|length)>0 else true end) and
         (if .value|has("pending") then (.value.pending.previousPresent|type)=="boolean" and (.value.pending.newEntry|type)=="boolean" and (if .value.pending.previousPresent then (.value.pending.previousValue|type)=="string" else true end) else true end)) and
       all(.values|to_entries[];
-        (.key|(test("^git:[A-Za-z0-9.-]+$") or test("^mcp:(codex|claude):[A-Za-z0-9._-]+$"))) and (.value.before.present|type)=="boolean" and
+        (.key|(test("^git:[A-Za-z0-9.-]+$") or test("^mcp:(codex|claude|gemini):[A-Za-z0-9._-]+$"))) and (.value.before.present|type)=="boolean" and
         ((.value.installed|type)=="string" or ((.value|has("pending")) and .value.installed==null)) and
         (if .value.before.present then (.value.before.value|type)=="string" else true end) and
         (if .value|has("pending") then (.value.pending.previousPresent|type)=="boolean" and (.value.pending.target|type)=="string" and (if .value.pending.previousPresent then (.value.pending.previousValue|type)=="string" else true end) else true end))
@@ -370,6 +370,7 @@ mcp_host_path() {
     case "$1" in
         codex) printf '%s\n' "$HOME/.codex/config.toml" ;;
         claude) printf '%s\n' "$HOME/.claude.json" ;;
+        gemini) printf '%s\n' "$HOME/.gemini/config/mcp_config.json" ;;
         *) return 1 ;;
     esac
 }
@@ -427,12 +428,10 @@ restamp_managed_artifact() {
         '.artifacts[$p].installedHash=$h | .artifacts[$p].installedMode=$m'
 }
 
-# install이 ~/.claude.json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
-prune_empty_claude_json() {
-    local path="$HOME/.claude.json"
+# install이 빈 MCP json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
+prune_empty_json_mcp_file() {
+    local path="$1"
     [[ -f "$path" && ! -L "$path" ]] || return 0
-    # install이 파일을 새로 만든 경우에만 남는 정확한 형태다. Claude Code가 한 번이라도
-    # 돌았다면 다른 키가 잔뜩 붙으므로 여기에 걸리지 않는다.
     jq -e '. == {"mcpServers":{}}' "$path" >/dev/null 2>&1 || return 0
     rm -f "$path"
 }
@@ -471,7 +470,7 @@ uninstall_mcp_value() {
         warn "MCP restore verification failed: $key"; return 1
     }
     [[ -z "$before_hash" ]] || restamp_managed_artifact "$dst" "$before_hash" || { warn "MCP host ownership restamp failed: $dst"; return 1; }
-    [[ "$host" != claude || "$before_present" == true ]] || prune_empty_claude_json
+    [[ ( "$host" != claude && "$host" != gemini ) || "$before_present" == true ]] || prune_empty_json_mcp_file "$dst"
     drop_entry values "$key"
 }
 

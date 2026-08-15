@@ -19,6 +19,8 @@ done
 # =============================================
 CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
+GEMINI_DIR="$HOME/.gemini"
+GEMINI_CONFIG_DIR="$GEMINI_DIR/config"
 LOCAL_BIN="$HOME/.local/bin"
 NVIM_CONFIG_DIR="$HOME/.config/nvim"
 YAZI_CONFIG_DIR="$HOME/.config/yazi"
@@ -867,7 +869,10 @@ write_claude_mcp_entry() {
     cat "$tmp" > "$dst"
 }
 
-# host = codex | claude. 파일이 receipt 소유 파일이면 기록한 해시가 낡지 않도록 다시 도장을 찍는다.
+read_gemini_mcp_entry() { read_claude_mcp_entry "$@"; }
+write_gemini_mcp_entry() { write_claude_mcp_entry "$@"; }
+
+# host = codex | claude | gemini. 파일이 receipt 소유 파일이면 기록한 해시가 낡지 않도록 다시 도장을 찍는다.
 install_managed_mcp_server() {
     local host="$1" name="$2" dst="$3" desired="$4" key installed=""
     key="mcp:$host:$name"
@@ -1007,6 +1012,11 @@ install_rhwp() {
         install_managed_mcp_server claude rhwp "$HOME/.claude.json" "$desired" || failed=1
     else
         echo "    Claude Code not present; skipping ~/.claude.json MCP registration."
+    fi
+    if [[ -d "$GEMINI_DIR" ]] || command -v agy >/dev/null 2>&1; then
+        install_managed_mcp_server gemini rhwp "$GEMINI_CONFIG_DIR/mcp_config.json" "$desired" || failed=1
+    else
+        echo "    Antigravity not present; skipping ~/.gemini/config/mcp_config.json MCP registration."
     fi
     (( failed == 0 )) || { record_install_failure "rhwp MCP registration incomplete."; return 1; }
 }
@@ -1961,10 +1971,69 @@ install_claude_code_stage() {
 run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
 
 # =============================================
-# 3-2. rhwp 설치 + MCP 등록 (manifests/rhwp.tsv → ~/rhwp, Codex/Claude MCP)
+# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# =============================================
+deploy_agy_stage() {
+    echo
+    echo "==> Deploying Antigravity (AGY) config..."
+    mkdir -p "$GEMINI_DIR" "$GEMINI_CONFIG_DIR"
+
+    if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$GEMINI_CONFIG_DIR/GEMINI.md" takeover; then
+            echo "    Copied global agent instructions to ~/.gemini/config/GEMINI.md"
+        fi
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$GEMINI_DIR/GEMINI.md" takeover; then
+            echo "    Copied global agent instructions to ~/.gemini/GEMINI.md"
+        fi
+    else
+        echo "    [!] config/agents/global.md not found"
+    fi
+
+    AGY_HOOKS_JSON_SRC="$ROOT/config/agy/hooks.json"
+    AGY_HOOKS_JSON_DST="$GEMINI_CONFIG_DIR/hooks.json"
+    if [[ -f "$AGY_HOOKS_JSON_SRC" ]]; then
+        merge_json_registry "$AGY_HOOKS_JSON_SRC" "$AGY_HOOKS_JSON_DST"
+    else
+        echo "    [!] config/agy/hooks.json not found"
+    fi
+
+    AGY_HOOKS_SRC="$ROOT/config/agy/hooks"
+    AGY_HOOKS_DST="$GEMINI_DIR/hooks"
+    if [[ -d "$AGY_HOOKS_SRC" ]]; then
+        hook_status=0
+        while IFS= read -r -d '' hook_src; do
+            hook_rel="${hook_src#"$AGY_HOOKS_SRC"/}"
+            managed_hook="$hook_src"
+            if [[ "$hook_src" == *.sh ]]; then
+                managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
+                if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
+            fi
+            if ! install_managed_file "$managed_hook" "$AGY_HOOKS_DST/$hook_rel" skip; then
+                hook_status=1
+            fi
+        done < <(find "$AGY_HOOKS_SRC" -type f -print0)
+        if (( hook_status == 0 )); then echo "    Copied hooks/ to ~/.gemini/hooks/ and set +x"; fi
+    else
+        echo "    [!] config/agy/hooks not found, skipping."
+    fi
+
+    if [[ -d "$SKILLS_LOCAL_SRC" ]]; then
+        mkdir -p "$GEMINI_CONFIG_DIR/skills"
+        for d in "$SKILLS_LOCAL_SRC"/*/; do
+            [[ -d "$d" ]] || continue
+            name="$(basename "$d")"
+            if install_managed_tree "$d" "$GEMINI_CONFIG_DIR/skills/$name" skip true; then
+                echo "    Deployed local skill to Antigravity: $name"
+            fi
+        done
+    fi
+}
+run_optional_stage SKIP_AGY "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" deploy_agy_stage
+
+# =============================================
+# 3-3. rhwp 설치 + MCP 등록 (manifests/rhwp.tsv → ~/rhwp, Codex/Claude/Gemini MCP)
 #
-# Claude Code 설치 뒤에 둔다. ~/.claude.json은 Claude Code가 소유하는 파일이라
-# 그 단계가 끝난 뒤라야 신규 머신에서도 첫 실행에 등록이 성립한다.
+# Claude Code / Antigravity 설치 뒤에 둔다.
 # =============================================
 install_rhwp_stage() {
     echo

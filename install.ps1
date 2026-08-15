@@ -10,9 +10,11 @@ $script:InstallFailures = [Collections.Generic.List[string]]::new()
 # =============================================
 # 경로 상수
 # =============================================
-$ClaudeDir     = Join-Path $env:USERPROFILE ".claude"
-$CodexDir      = Join-Path $env:USERPROFILE ".codex"
-$LocalBin      = Join-Path $env:USERPROFILE ".local\bin"
+$ClaudeDir       = Join-Path $env:USERPROFILE ".claude"
+$CodexDir        = Join-Path $env:USERPROFILE ".codex"
+$GeminiDir       = Join-Path $env:USERPROFILE ".gemini"
+$GeminiConfigDir = Join-Path $GeminiDir "config"
+$LocalBin        = Join-Path $env:USERPROFILE ".local\bin"
 $RhwpDir       = Join-Path $env:USERPROFILE "rhwp"
 $NvimConfigDir = Join-Path $env:LOCALAPPDATA "nvim"
 $NvimBin       = "C:\Program Files\Neovim\bin"
@@ -24,6 +26,9 @@ $GitFileExePaths = @(
     "C:\Program Files\Git\usr\bin\file.exe",
     "C:\Program Files (x86)\Git\usr\bin\file.exe"
 )
+$agentsGlobalSrc = Join-Path $ROOT "config\agents\global.md"
+$rolesSrc        = Join-Path $ROOT "config\agents\roles"
+$skillsLocalSrc  = Join-Path $ROOT "config\claude\skills"
 
 # =============================================
 # 헬퍼 함수
@@ -1031,6 +1036,12 @@ function Install-Rhwp {
     } else {
         Write-Host "    Claude Code not present; skipping ~/.claude.json MCP registration."
     }
+    $geminiMcpJson = Join-Path $GeminiConfigDir 'mcp_config.json'
+    if ((Test-Path -LiteralPath $GeminiDir) -or (Get-Command agy -ErrorAction SilentlyContinue)) {
+        if (-not (Install-ManagedMcpServer gemini 'rhwp' $geminiMcpJson $desired)) { $ok = $false }
+    } else {
+        Write-Host "    Antigravity not present; skipping ~/.gemini/config/mcp_config.json MCP registration."
+    }
     if (-not $ok) { Add-InstallFailure 'rhwp MCP registration incomplete.'; return $false }
     return $true
 }
@@ -1656,10 +1667,56 @@ if (Test-Path $rolesSrc) {
 }
 
 # =============================================
-# 3-2. rhwp 설치 + MCP 등록 (manifests\rhwp.tsv → ~\rhwp, Codex/Claude MCP)
+# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# =============================================
+Write-Host ""
+Invoke-OptionalInstallStage 'SKIP_AGY' "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" {
+    Write-Host "==> Deploying Antigravity (AGY) config..."
+    New-Item -ItemType Directory -Force -Path $GeminiDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $GeminiConfigDir | Out-Null
+
+    if (Test-Path $agentsGlobalSrc) {
+        if (Install-ManagedFile $agentsGlobalSrc (Join-Path $GeminiConfigDir "GEMINI.md") Takeover) {
+            Write-Host "    Copied global agent instructions to ~/.gemini/config/GEMINI.md"
+        }
+        if (Install-ManagedFile $agentsGlobalSrc (Join-Path $GeminiDir "GEMINI.md") Takeover) {
+            Write-Host "    Copied global agent instructions to ~/.gemini/GEMINI.md"
+        }
+    } else {
+        Write-Host "    [!] config\agents\global.md not found"
+    }
+
+    $agyHooksJsonSrc = Join-Path $ROOT "config\agy\hooks.json"
+    $agyHooksJsonDst = Join-Path $GeminiConfigDir "hooks.json"
+    if (Test-Path $agyHooksJsonSrc) {
+        Merge-JsonRegistry $agyHooksJsonSrc $agyHooksJsonDst
+    } else {
+        Write-Host "    [!] config\agy\hooks.json not found"
+    }
+
+    $agyHooksSrc = Join-Path $ROOT "config\agy\hooks"
+    $agyHooksDst = Join-Path $GeminiDir "hooks"
+    if (Test-Path $agyHooksSrc) {
+        if (Install-ManagedTree $agyHooksSrc $agyHooksDst Skip) { Write-Host "    Copied hooks/ to ~/.gemini/hooks/" }
+    } else {
+        Write-Host "    [!] config\agy\hooks not found, skipping."
+    }
+
+    if (Test-Path $skillsLocalSrc) {
+        $geminiSkillsDst = Join-Path $GeminiConfigDir "skills"
+        New-Item -ItemType Directory -Force -Path $geminiSkillsDst | Out-Null
+        Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
+            if (Install-ManagedTree $_.FullName (Join-Path $geminiSkillsDst $_.Name) Skip $true) {
+                Write-Host "    Deployed local skill to Antigravity: $($_.Name)"
+            }
+        }
+    }
+}
+
+# =============================================
+# 3-3. rhwp 설치 + MCP 등록 (manifests\rhwp.tsv → ~\rhwp, Codex/Claude/Gemini MCP)
 #
-# Claude Code 설치 뒤에 둔다. ~\.claude.json은 Claude Code가 소유하는 파일이라
-# 그 단계가 끝난 뒤라야 신규 머신에서도 첫 실행에 등록이 성립한다.
+# Claude Code / Antigravity 설치 뒤에 둔다.
 # =============================================
 Invoke-OptionalInstallStage 'SKIP_RHWP' "==> [CI] Skipping rhwp (SKIP_RHWP=1)" {
     Write-Host ""
