@@ -538,7 +538,11 @@ function Set-ManagedGitValue([string]$Name, [string]$Value) {
 }
 
 function Add-ToUserPath([string]$Dir) {
-    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    $userRegKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $false)
+    $rawPath = if ($userRegKey) { $userRegKey.GetValue("Path", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } else { [System.Environment]::GetEnvironmentVariable("PATH", "User") }
+    if ($userRegKey) { $userRegKey.Close() }
+
+    $userPath = if ($rawPath) { [string]$rawPath } else { "" }
     $present = @($userPath -split ';' | Where-Object { $_ }) -contains $Dir
     $pathKey = "env:PATH:$Dir"
     $pathEntry = if ($script:ReceiptReady) { $script:Receipt.values[$pathKey] } else { $null }
@@ -553,7 +557,13 @@ function Add-ToUserPath([string]$Dir) {
         }
         if (-not (Begin-ManagedValue $pathKey $false $null "present" $false)) { return $false }
         $newUserPath = if ($userPath) { "$userPath;$Dir" } else { $Dir }
-        [System.Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
+        $writeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
+        if ($writeKey) {
+            $writeKey.SetValue("Path", $newUserPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+            $writeKey.Close()
+        } else {
+            [System.Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
+        }
         $env:PATH = "$env:PATH;$Dir"
         Record-ManagedValue $pathKey $false $null "present" $false
         return $true
@@ -798,24 +808,9 @@ Write-Host "==> Installing packages via winget..."
 $wingetFile = Join-Path $ROOT "manifests\winget.txt"
 if (Test-Path $wingetFile) {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
-        # 사전 점검: 실행 중인 프로세스가 대상 파일을 잠그면 설치 관리자가 실패한다.
-        #   Git.Git(Inno Setup) — bash/ssh가 살아 있으면 "process(es) use Git for Windows"
-        #                         메시지 박스가 억제된 채 Cancel 처리되어 exit 1 → 0x8A150006
-        #   marlocarlo.psmux(portable) — tmux.exe 교체 시 "Access is denied" → 0x8A150052
-        # 설치 전에 알려야 사용자가 세션을 정리하고 재실행할 수 있다.
         $LockBlockers = @{
             'Git.Git'          = @('bash', 'sh', 'ssh', 'git')
             'marlocarlo.psmux' = @('tmux')
-        }
-        foreach ($entry in $LockBlockers.GetEnumerator()) {
-            $running = @($entry.Value |
-                ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
-                Group-Object ProcessName |
-                ForEach-Object { "$($_.Name) x$($_.Count)" })
-            if ($running.Count -gt 0) {
-                Write-Host "    [warn] $($entry.Key): 파일을 잠그는 프로세스 실행 중 — $($running -join ', ')"
-                Write-Host "           업그레이드 실패 시 해당 프로세스 종료 후 재실행 필요."
-            }
         }
 
         $WingetLogDir = Join-Path $env:LOCALAPPDATA "Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir"
@@ -826,6 +821,38 @@ if (Test-Path $wingetFile) {
             $version = if ($present) { Get-WingetVersion $listOut $_ } else { '' }
             if (-not (Begin-ManagedPackage "winget:$_" $present $version)) { throw "winget receipt journal failed: $_" }
             [pscustomobject]@{ Package = $_; BeforePresent = $present; BeforeVersion = $version }
+        }
+
+        # 사전 점검: 실제 설치(미설치) 또는 업그레이드 대상인 패키지만 잠금 프로세스를 검사한다.
+        #   Git.Git(Inno Setup) — bash/ssh가 살아 있으면 exit 1 → 0x8A150006
+        #   marlocarlo.psmux(portable) — tmux.exe 교체 시 "Access is denied" → 0x8A150052
+        $upgradeList = $null
+        foreach ($entry in $LockBlockers.GetEnumerator()) {
+            $pkgState = $packageStates | Where-Object { $_.Package -eq $entry.Key } | Select-Object -First 1
+            if (-not $pkgState) { continue }
+
+            $needsAction = $false
+            if (-not $pkgState.BeforePresent) {
+                $needsAction = $true
+            } else {
+                if ($null -eq $upgradeList) {
+                    $upgradeList = (winget list --upgrade-available --accept-source-agreements 2>&1 | Out-String)
+                }
+                if ($upgradeList -match "(?m)^\s*.*\s+$([regex]::Escape($entry.Key))\s+") {
+                    $needsAction = $true
+                }
+            }
+
+            if ($needsAction) {
+                $running = @($entry.Value |
+                    ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
+                    Group-Object ProcessName |
+                    ForEach-Object { "$($_.Name) x$($_.Count)" })
+                if ($running.Count -gt 0) {
+                    Write-Host "    [warn] $($entry.Key): 파일을 잠그는 프로세스 실행 중 — $($running -join ', ')"
+                    Write-Host "           업그레이드 실패 시 해당 프로세스 종료 후 재실행 필요."
+                }
+            }
         }
 
         $results = $packageStates | ForEach-Object -Parallel {
@@ -896,6 +923,18 @@ if (Test-Path $wingetFile) {
                 $status = 'current'
             } else {
                 Write-Host "    [!] $verb failed: $pad 0x$hex$why"
+                if ($hex -eq '8A150006' -or $hex -eq '8A150052') {
+                    $blockers = $using:LockBlockers
+                    if ($blockers -and $blockers.ContainsKey($package)) {
+                        $running = @($blockers[$package] |
+                            ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
+                            Group-Object ProcessName |
+                            ForEach-Object { "$($_.Name) x$($_.Count)" })
+                        if ($running.Count -gt 0) {
+                            Write-Host "           잠금 의심 프로세스: $($running -join ', ') (해당 프로세스 종료 후 재실행 필요)"
+                        }
+                    }
+                }
                 # winget이 출력한 마지막 실질 메시지 — 코드만으로는 안 보이는 실패 사유가 여기 있다.
                 $tail = @($out -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Last 2)
                 foreach ($t in $tail) { Write-Host "           winget: $t" }
@@ -923,6 +962,16 @@ if (Test-Path $wingetFile) {
             } else {
                 Cancel-ManagedPackage "winget:$($r.Package)"
             }
+        }
+
+        # WinGet 포터블 패키지 설치 후 dead path 및 중복 정리 (User PATH 2047자 초과 방지)
+        try {
+            $cleanEnvScript = Join-Path $ROOT "scripts\clean-env.ps1"
+            if (Test-Path -LiteralPath $cleanEnvScript) {
+                & $cleanEnvScript -Apply | Out-Null
+            }
+        } catch {
+            Write-Warning "User PATH 환경변수 정리 중 알림: $_"
         }
     } else {
         Add-InstallFailure "winget is required for manifests\winget.txt."

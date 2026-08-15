@@ -253,3 +253,21 @@ bun install        # npm install 대체 (빠름)
 | 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
 | 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
 | 컬러 자동완성 | 파일 타입별 색상 표시 |
+
+## 유틸리티 스크립트 (Windows)
+
+### clean-env.ps1 — 환경변수(PATH) 안전 점검 및 압축
+
+Windows의 `sysdm.cpl`(시스템 속성 대화상자) 2,047자 제한 초과를 방지하기 위해 사용자/시스템 PATH를 점검·정리한다.
+
+```powershell
+# 미리보기 (Dry-Run)
+pwsh scripts/clean-env.ps1
+
+# 실제 적용 (.reg 자동 백업 후 적용 및 환경변수 브로드캐스트)
+pwsh scripts/clean-env.ps1 -Apply
+```
+
+- 미존재(Dead) 경로 및 중복 경로 제거
+- WinGet 포터블 패키지 경로를 `%WINGET_PKGS%` / `%LOCALAPPDATA%` / `%USERPROFILE%` 로 압축
+- `REG_EXPAND_SZ` 형식 보존 및 끝 세미콜론 정리
