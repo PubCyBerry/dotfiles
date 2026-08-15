@@ -553,13 +553,46 @@ install_managed_tree() {
     return "$status"
 }
 
+# GNU find -printf와 tar --sort는 BSD(macOS)에 없다. 두 경로의 출력 형식은 서로 다르며,
+# 그래도 되는 이유는 tree 해시가 같은 머신 안에서 install↔uninstall 사이에서만 비교되기 때문이다.
+# GNU 쪽 형식은 기존 receipt와 계속 일치해야 하므로 바꾸지 않는다.
+# uninstall.sh에도 같은 구현이 있다 — 한쪽만 고치면 소유권 판정이 어긋난다.
+tree_hash_supports_gnu_find() { find "$1" -mindepth 1 -printf '' >/dev/null 2>&1; }
+
+# BSD 경로는 개행이 든 경로명을 구분하지 못한다. 그런 tree는 해시하지 않고 실패시킨다.
+tree_hash_paths_are_line_safe() {
+    local lines nulls
+    lines="$(find "$1" -mindepth 1 | wc -l)"
+    nulls="$(find "$1" -mindepth 1 -print0 | tr -cd '\0' | wc -c)"
+    [[ "${lines// /}" == "${nulls// /}" ]]
+}
+
 tree_hash() {
-    local root="$1"
+    local root="$1" entry rel
+    if ! tree_hash_supports_gnu_find "$root" && ! tree_hash_paths_are_line_safe "$root"; then
+        echo "    [!] Tree path contains a newline; refusing to hash: $root" >&2
+        return 1
+    fi
     {
         printf 'root\0%s\0' "$(file_mode "$root")"
-        find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
-        printf 'content\0'
-        tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+        if tree_hash_supports_gnu_find "$root"; then
+            find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
+            printf 'content\0'
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+        else
+            find "$root" -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+                rel="${entry#"$root"/}"
+                if [[ -L "$entry" ]]; then printf '%s\tl\t\t%s\t\0' "$rel" "$(readlink "$entry")"
+                elif [[ -d "$entry" ]]; then printf '%s\td\t%s\t\t\0' "$rel" "$(file_mode "$entry")"
+                elif [[ -f "$entry" ]]; then printf '%s\tf\t%s\t\t%s\0' "$rel" "$(file_mode "$entry")" "$(wc -c < "$entry" | tr -d ' ')"
+                else printf '%s\t?\t\t\t\0' "$rel"
+                fi
+            done
+            printf 'content\0'
+            find "$root" -type f | LC_ALL=C sort | while IFS= read -r entry; do
+                printf '%s\0%s\0' "${entry#"$root"/}" "$(file_hash "$entry")"
+            done
+        fi
     } | {
         if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
         else shasum -a 256 | awk '{print $1}'
@@ -614,9 +647,13 @@ install_managed_direct_tree() {
     mkdir -p "$(dirname "$dst")" || return 1
     tmp="$(mktemp -d "$(dirname "$dst")/.dotfiles-tree.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
     cp -a "$src/." "$tmp/" || return 1
-    chmod --reference="$src" "$tmp" || return 1
+    # chmod --reference와 mv -T는 GNU 전용이라 BSD(macOS)에 없다.
+    chmod "$(file_mode "$src")" "$tmp" || return 1
     [[ "$(tree_hash "$tmp")" == "$source_hash" ]] || return 1
-    mv -T "$tmp" "$dst" || return 1
+    # mv -T 없이 옮기므로, dst가 디렉터리로 존재하면 그 안으로 들어가 버린다.
+    # 여기까지는 dst가 없다는 것이 확인된 경로지만 이동 직전에 한 번 더 막는다.
+    [[ ! -e "$dst" && ! -L "$dst" ]] || return 1
+    mv "$tmp" "$dst" || return 1
     receipt_commit --arg path "$dst" --arg hash "$source_hash" --arg version "$version" '.artifacts[$path].installedTreeHash=$hash | .artifacts[$path].directVersion=$version | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
 }
 
@@ -761,6 +798,217 @@ begin_managed_value() {
     receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" --arg target "$target" --argjson store "$store" '
         if (.values|has($name)|not) then .values[$name]={before:({present:$present} + if $store then {value:(if $present then $before else null end)} else {} end),installed:null} else . end |
         .values[$name].pending=({previousPresent:$present,target:$target} + if $store then {previousValue:(if $present then $before else null end)} else {} end)'
+}
+
+# ---------------------------------------------
+# MCP server 등록 (receipt values로 소유권 관리)
+#
+# Codex는 ~/.codex/config.toml의 [mcp_servers.<name>], Claude Code는 공식 저장소인
+# ~/.claude.json의 .mcpServers.<name>에 둔다. ~/.claude/settings.json은 MCP 정의 파일이
+# 아니므로 건드리지 않는다. 두 경우 모두 "우리가 심은 것과 정확히 같은 값"일 때만 갱신하고,
+# 사용자가 만든 동명 entry는 보존한다.
+# ---------------------------------------------
+
+# 비교는 항상 정규화된 JSON 문자열로 한다. TOML/JSON 왕복에서 키 순서가 바뀌어도
+# 같은 entry를 "변경됨"으로 오판하지 않기 위해서다.
+canonical_json() { jq -cS '.' 2>/dev/null; }
+
+read_codex_mcp_entry() {
+    local name="$1" dst="$2"
+    MCP_PRESENT=false; MCP_VALUE=""
+    [[ -f "$dst" ]] || return 0
+    command -v yq >/dev/null 2>&1 || return 1
+    yq -p=toml -o=json '.' "$dst" >/dev/null 2>&1 || return 1
+    yq -p=toml -o=json -e ".mcp_servers.\"$name\"" "$dst" >/dev/null 2>&1 || return 0
+    MCP_VALUE="$(yq -p=toml -o=json ".mcp_servers.\"$name\"" "$dst" | canonical_json)" || return 1
+    [[ -n "$MCP_VALUE" ]] || return 1
+    MCP_PRESENT=true
+}
+
+write_codex_mcp_entry() {
+    local name="$1" dst="$2" value="$3" tmp
+    command -v yq >/dev/null 2>&1 || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    [[ -f "$dst" ]] || : > "$dst"
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if [[ -n "$value" ]]; then
+        yq -p=toml -o=toml ".mcp_servers.\"$name\" = $value" "$dst" > "$tmp" 2>/dev/null || return 1
+    else
+        # 마지막 entry였다면 빈 [mcp_servers] 테이블까지 걷어낸다.
+        yq -p=toml -o=toml "del(.mcp_servers.\"$name\") | del(.mcp_servers | select(length == 0))" "$dst" > "$tmp" 2>/dev/null || return 1
+    fi
+    yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1 || return 1
+    cat "$tmp" > "$dst"
+}
+
+read_claude_mcp_entry() {
+    local name="$1" dst="$2"
+    MCP_PRESENT=false; MCP_VALUE=""
+    [[ -f "$dst" ]] || return 0
+    jq -e '.' "$dst" >/dev/null 2>&1 || return 1
+    jq -e --arg n "$name" '.mcpServers | objects | has($n)' "$dst" >/dev/null 2>&1 || return 0
+    MCP_VALUE="$(jq -cS --arg n "$name" '.mcpServers[$n]' "$dst")" || return 1
+    [[ -n "$MCP_VALUE" ]] || return 1
+    MCP_PRESENT=true
+}
+
+write_claude_mcp_entry() {
+    local name="$1" dst="$2" value="$3" tmp
+    mkdir -p "$(dirname "$dst")" || return 1
+    [[ -f "$dst" ]] || printf '%s\n' '{}' > "$dst"
+    tmp="$(mktemp "$(dirname "$dst")/.claude.json.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    if [[ -n "$value" ]]; then
+        jq --arg n "$name" --argjson v "$value" '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' "$dst" > "$tmp" || return 1
+    else
+        jq --arg n "$name" 'if (.mcpServers|type)=="object" then .mcpServers |= del(.[$n]) else . end' "$dst" > "$tmp" || return 1
+    fi
+    jq empty "$tmp" || return 1
+    # mktemp의 0600을 그대로 옮기지 않도록 내용만 덮어써 원래 mode를 유지한다.
+    cat "$tmp" > "$dst"
+}
+
+# host = codex | claude. 파일이 receipt 소유 파일이면 기록한 해시가 낡지 않도록 다시 도장을 찍는다.
+install_managed_mcp_server() {
+    local host="$1" name="$2" dst="$3" desired="$4" key installed=""
+    key="mcp:$host:$name"
+    $RECEIPT_READY || return 1
+    desired="$(printf '%s' "$desired" | canonical_json)" || return 1
+    [[ -n "$desired" ]] || return 1
+    if ! "read_${host}_mcp_entry" "$name" "$dst"; then
+        echo "    [!] MCP registry unreadable; preserving: $dst" >&2
+        return 1
+    fi
+    if jq -e --arg k "$key" '.values | has($k)' "$RECEIPT_PATH" >/dev/null; then
+        installed="$(jq -r --arg k "$key" '.values[$k].installed // empty' "$RECEIPT_PATH")"
+        if jq -e --arg k "$key" '.values[$k].pending != null' "$RECEIPT_PATH" >/dev/null; then
+            local pending_target pending_present pending_previous
+            pending_target="$(jq -r --arg k "$key" '.values[$k].pending.target' "$RECEIPT_PATH")"
+            pending_present="$(jq -r --arg k "$key" '.values[$k].pending.previousPresent' "$RECEIPT_PATH")"
+            pending_previous="$(jq -r --arg k "$key" '.values[$k].pending.previousValue // empty' "$RECEIPT_PATH")"
+            if [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$pending_target" ]]; then
+                record_managed_value "$key" "$pending_present" "$pending_previous" "$pending_target" || return 1
+                installed="$pending_target"
+            elif [[ "$MCP_PRESENT" != "$pending_present" || ( "$MCP_PRESENT" == true && "$MCP_VALUE" != "$pending_previous" ) ]]; then
+                echo "    [!] Pending MCP entry changed; preserving: $key" >&2
+                return 1
+            fi
+        fi
+        if [[ -n "$installed" && ( "$MCP_PRESENT" != true || "$MCP_VALUE" != "$installed" ) ]]; then
+            echo "    [!] Managed MCP entry changed; preserving: $key" >&2
+            return 1
+        fi
+        [[ "$MCP_VALUE" != "$desired" ]] || { echo "    MCP already registered: $key"; return 0; }
+    elif [[ "$MCP_PRESENT" == true ]]; then
+        echo "    [!] Unowned MCP entry collision; preserving: $key" >&2
+        return 1
+    fi
+    begin_managed_value "$key" "$MCP_PRESENT" "$MCP_VALUE" "$desired" || return 1
+    "write_${host}_mcp_entry" "$name" "$dst" "$desired" || {
+        echo "    [!] Failed to write MCP entry: $key" >&2
+        return 1
+    }
+    "read_${host}_mcp_entry" "$name" "$dst" || return 1
+    [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$desired" ]] || {
+        echo "    [!] MCP entry verification failed: $key" >&2
+        return 1
+    }
+    record_managed_value "$key" "$(jq -r --arg k "$key" '.values[$k].pending.previousPresent' "$RECEIPT_PATH")" \
+        "$(jq -r --arg k "$key" '.values[$k].pending.previousValue // empty' "$RECEIPT_PATH")" "$desired" || return 1
+    sync_managed_file_hash "$dst" >/dev/null 2>&1 || true
+    echo "    Registered MCP server: $key"
+}
+
+# ---------------------------------------------
+# rhwp: 공식 archive 전체를 ~/rhwp tree에 두고 MCP를 등록한다.
+# ---------------------------------------------
+RHWP_DIR="$HOME/rhwp"
+
+rhwp_platform() {
+    local machine
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+    case "$OS:$machine" in
+        Linux:x86_64|Linux:amd64) echo linux-x86_64 ;;
+        Darwin:x86_64) echo macos-x86_64 ;;
+        Darwin:arm64|Darwin:aarch64) echo macos-aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+validate_rhwp_manifest() {
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 5 || $1 !~ /^(windows-x86_64|linux-x86_64|macos-x86_64|macos-aarch64)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(tgz|zip)$/ || $4 !~ /^https:\/\/github\.com\/edwardkim\/rhwp\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/[^[:space:]]+$/ || $4 ~ /\/(latest|HEAD|main)\// || $5 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1]++ { bad=1; exit }
+      { count++ }
+      END { exit (bad || count != 4) }
+    ' "$1"
+}
+
+install_rhwp() {
+    local manifest="$ROOT/manifests/rhwp.tsv" platform row version format url checksum
+    local work archive extract tree binary reported desired
+    [[ -f "$manifest" ]] || { record_install_failure "Required manifest missing: manifests/rhwp.tsv"; return 1; }
+    validate_rhwp_manifest "$manifest" || { record_install_failure "Invalid manifests/rhwp.tsv"; return 1; }
+    if ! platform="$(rhwp_platform)"; then
+        echo "    [!] Unsupported rhwp platform: $OS $(uname -m 2>/dev/null); skipping."
+        return 0
+    fi
+    row="$(awk -F '\t' -v p="$platform" '$1 == p { print; exit }' "$manifest")"
+    [[ -n "$row" ]] || { record_install_failure "No rhwp manifest row for platform: $platform"; return 1; }
+    IFS=$'\t' read -r _ version format url checksum <<< "$row"
+
+    desired="$(jq -cn --arg cmd "$RHWP_DIR/rhwp" '{command:$cmd,args:["mcp-serve"]}')" || return 1
+
+    if [[ -d "$RHWP_DIR" && ! -L "$RHWP_DIR" ]] &&
+       [[ "$(jq -r --arg p "$RHWP_DIR" '.artifacts[$p].directVersion // empty' "$RECEIPT_PATH")" == "$version" ]] &&
+       [[ "$(tree_hash "$RHWP_DIR")" == "$(jq -r --arg p "$RHWP_DIR" '.artifacts[$p].installedTreeHash // empty' "$RECEIPT_PATH")" ]]; then
+        echo "    rhwp $version already installed: $RHWP_DIR"
+    else
+        work="$(mktemp -d)"; _TMPFILES+=("$work")
+        archive="$work/archive"; extract="$work/extract"; mkdir -p "$extract"
+        download_verified "$url" "$checksum" "$archive" || { record_install_failure "rhwp archive verification failed: $url"; return 1; }
+        case "$format" in
+            tgz) tar -xzf "$archive" -C "$extract" ;;
+            zip) unzip -q "$archive" -d "$extract" ;;
+            *)   record_install_failure "Unsupported rhwp archive format: $format"; return 1 ;;
+        esac || { record_install_failure "rhwp archive extraction failed: $url"; return 1; }
+
+        # 공식 archive는 rhwp/ 한 겹 아래에 binary와 문서를 담는다. 그 구조를 확인하고
+        # archive 전체를 그대로 배치한다 — binary만 뽑아 쓰지 않는다.
+        tree="$extract/rhwp"
+        if [[ ! -d "$tree" || -L "$tree" ]] || (( $(find "$extract" -mindepth 1 -maxdepth 1 | wc -l) != 1 )); then
+            record_install_failure "Unexpected rhwp archive layout: $url"; return 1
+        fi
+        if [[ -n "$(find "$tree" -mindepth 1 ! -type f ! -type d | head -1)" ]]; then
+            record_install_failure "Unsupported member type in rhwp archive: $url"; return 1
+        fi
+        binary="$tree/rhwp"
+        [[ -f "$binary" && ! -L "$binary" ]] || { record_install_failure "rhwp binary missing in archive: $url"; return 1; }
+        chmod 755 "$binary" || return 1
+        reported="$("$binary" --version 2>/dev/null | head -1 || true)"
+        [[ "$reported" == "rhwp v$version" ]] || {
+            record_install_failure "rhwp binary reports '${reported:-unknown}', expected 'rhwp v$version'"; return 1
+        }
+        install_managed_direct_tree "$tree" "$RHWP_DIR" "$version" || {
+            record_install_failure "rhwp tree not installed: $RHWP_DIR"; return 1
+        }
+        echo "    rhwp $version -> $RHWP_DIR"
+    fi
+
+    local failed=0
+    # Codex 쪽은 TOML 편집이라 yq가 필요하다. 없으면 config.toml 병합과 같은 정책으로
+    # 파일을 건드리지 않고 넘어간다 — 도구 부재로 설치 전체를 실패시키지 않는다.
+    if command -v yq >/dev/null 2>&1; then
+        install_managed_mcp_server codex rhwp "$CODEX_DIR/config.toml" "$desired" || failed=1
+    else
+        echo "    [!] yq not found; skipping Codex MCP registration."
+    fi
+    if [[ -f "$HOME/.claude.json" ]] || command -v claude >/dev/null 2>&1; then
+        install_managed_mcp_server claude rhwp "$HOME/.claude.json" "$desired" || failed=1
+    else
+        echo "    Claude Code not present; skipping ~/.claude.json MCP registration."
+    fi
+    (( failed == 0 )) || { record_install_failure "rhwp MCP registration incomplete."; return 1; }
 }
 
 set_managed_git_value() {
@@ -1711,6 +1959,19 @@ install_claude_code_stage() {
     fi
 }
 run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
+
+# =============================================
+# 3-2. rhwp 설치 + MCP 등록 (manifests/rhwp.tsv → ~/rhwp, Codex/Claude MCP)
+#
+# Claude Code 설치 뒤에 둔다. ~/.claude.json은 Claude Code가 소유하는 파일이라
+# 그 단계가 끝난 뒤라야 신규 머신에서도 첫 실행에 등록이 성립한다.
+# =============================================
+install_rhwp_stage() {
+    echo
+    echo "==> Installing rhwp and registering MCP..."
+    install_rhwp || true
+}
+run_optional_stage SKIP_RHWP "==> [CI] Skipping rhwp (SKIP_RHWP=1)" install_rhwp_stage
 
 # =============================================
 # 4. shell 프로파일 설정 (bash + macOS zsh, 마커 방식)

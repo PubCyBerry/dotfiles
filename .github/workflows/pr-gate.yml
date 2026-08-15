@@ -129,6 +129,21 @@ jobs:
           test "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.bashrc")" -eq 1
           jq -e '.statusLine.command | contains("/mock/claude-hud")' "$HOME/.claude/settings.json" > /dev/null
 
+      - name: Verify rhwp tree and MCP registration
+        run: |
+          set -euo pipefail
+          version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/rhwp.tsv)"
+          test "$("$HOME/rhwp/rhwp" --version)" = "rhwp v$version"
+          test -f "$HOME/rhwp/LICENSE"
+          test "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" = "$HOME/rhwp/rhwp"
+          test "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.args[0]' "$HOME/.codex/config.toml")" = mcp-serve
+          jq -e --arg k mcp:codex:rhwp --arg p "$HOME/rhwp" \
+            '(.values[$k].installed | type) == "string" and (.artifacts[$p].directVersion | type) == "string"' \
+            "$DOTFILES_RECEIPT_PATH" > /dev/null
+
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
+
       - name: Failure contract
         run: bash tests/install/failure-contract.sh
 
@@ -186,9 +201,20 @@ jobs:
           command -v "${yazi_run%% *}"
 
           [[ "$(yq -p=toml -r '.sentinel' "$HOME/.codex/config.toml")" == "keep" ]]
+
+          # rhwp: pinned archive 전체가 ~/rhwp에 있고 MCP가 absolute path로 등록되어야 한다.
+          # 네 플랫폼 행이 같은 버전을 pin하므로 아무 행에서나 읽어도 된다.
+          version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/rhwp.tsv)"
+          [[ "$("$HOME/rhwp/rhwp" --version)" == "rhwp v$version" ]]
+          [[ -f "$HOME/rhwp/LICENSE" ]]
+          [[ "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" == "$HOME/rhwp/rhwp" ]]
+
           [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
+
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
 
   test-windows-install:
     name: Windows install + verify
@@ -206,6 +232,12 @@ jobs:
       - name: Failure contract
         shell: pwsh
         run: pwsh -NoProfile -File tests/install/failure-contract.ps1
+
+      # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
+      # TOML 편집을 하므로 여기서만 따로 확보한다.
+      - name: Ensure yq
+        shell: pwsh
+        run: if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { choco install yq -y --no-progress }
 
       - name: Run isolated config install twice
         shell: pwsh
@@ -235,6 +267,16 @@ jobs:
           $pathAfter = [Environment]::GetEnvironmentVariable('PATH', 'User')
           if ($pathAfter -cne $pathBefore) { throw 'config install changed User PATH' }
           if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
+          # rhwp: pinned archive 전체가 ~\rhwp에 있고 MCP가 absolute path로 등록되어야 한다.
+          $version = (Get-Content manifests\rhwp.tsv | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } | Select-Object -First 1).Split("`t")[1]
+          $rhwpExe = Join-Path $env:USERPROFILE 'rhwp\rhwp.exe'
+          if ((& $rhwpExe --version) -cne "rhwp v$version") { throw 'rhwp version mismatch' }
+          if (-not (Test-Path (Join-Path $env:USERPROFILE 'rhwp\LICENSE'))) { throw 'rhwp archive not fully deployed' }
+          if ((& yq -p=toml -o=json -r '.mcp_servers.rhwp.command' (Join-Path $env:USERPROFILE '.codex\config.toml')) -cne $rhwpExe) { throw 'codex MCP command is not the absolute tree path' }
+
+      - name: rhwp ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
 
   test-configs:
     name: Config syntax
@@ -280,6 +322,16 @@ jobs:
           _check_lines manifests/skills.txt \
             '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
           bash tests/install/failure-contract.sh
+
+      # rhwp manifest는 install.sh의 실제 validator로 검증한다 — 규칙을 두 벌 두지 않는다.
+      - name: Validate rhwp manifest
+        run: |
+          set -euo pipefail
+          export DOTFILES_FUNCTIONS_ONLY=1
+          # shellcheck disable=SC1091
+          source ./install.sh
+          validate_rhwp_manifest manifests/rhwp.tsv
+          echo "OK: manifests/rhwp.tsv"
 
   test-agent-roles:
     name: Agent role sources + composition

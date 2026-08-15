@@ -8,6 +8,7 @@ on:
       - uninstall.sh
       - uninstall.ps1
       - tests/uninstall/**
+      - tests/rhwp/**
       - manifests/**
       - config/**
       - docs/uninstall.md
@@ -24,6 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unit contract
         run: bash tests/uninstall/safe-clean.sh
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
       - name: Real scripts twice in isolated HOME
         env:
           SKIP_PACKAGES: '1'
@@ -43,8 +46,11 @@ jobs:
           git_before="$(git --version)"
           bash install.sh
           bash install.sh
+          # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
+          test -x "$HOME/rhwp/rhwp"
           bash uninstall.sh --keep-packages
           bash uninstall.sh --keep-packages
+          test ! -e "$HOME/rhwp"
           grep -Fxq user-sentinel "$HOME/user.txt"
           grep -Fq '# user profile sentinel' "$HOME/.bashrc"
           grep -Fq 'keep = true' "$HOME/.codex/config.toml"
@@ -58,6 +64,14 @@ jobs:
       - name: Unit contract
         shell: pwsh
         run: pwsh -NoProfile -File tests/uninstall/safe-clean.ps1
+      # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
+      # TOML 편집을 하므로 여기서만 따로 확보한다.
+      - name: Ensure yq
+        shell: pwsh
+        run: if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { choco install yq -y --no-progress }
+      - name: rhwp ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
       - name: Real scripts twice in isolated profile
         shell: pwsh
         env:
@@ -88,10 +102,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
           if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
           if ([Environment]::GetEnvironmentVariable('PATH','User') -cne $pathBefore) { throw 'config install changed User PATH' }
+          # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
+          $rhwpDir = Join-Path $env:USERPROFILE 'rhwp'
+          if (-not (Test-Path (Join-Path $rhwpDir 'rhwp.exe'))) { throw 'rhwp tree missing after install' }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "first uninstall failed: $LASTEXITCODE" }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "second uninstall failed: $LASTEXITCODE" }
+          if (Test-Path $rhwpDir) { throw 'rhwp tree not removed by uninstall' }
           if ((Get-Content (Join-Path $env:USERPROFILE 'user.txt')) -ne 'user-sentinel') { throw 'user sentinel changed' }
           if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
           if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }

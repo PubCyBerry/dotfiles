@@ -13,6 +13,7 @@ $script:InstallFailures = [Collections.Generic.List[string]]::new()
 $ClaudeDir     = Join-Path $env:USERPROFILE ".claude"
 $CodexDir      = Join-Path $env:USERPROFILE ".codex"
 $LocalBin      = Join-Path $env:USERPROFILE ".local\bin"
+$RhwpDir       = Join-Path $env:USERPROFILE "rhwp"
 $NvimConfigDir = Join-Path $env:LOCALAPPDATA "nvim"
 $NvimBin       = "C:\Program Files\Neovim\bin"
 $GitBashPaths  = @(
@@ -407,6 +408,95 @@ function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet(
     return $success
 }
 
+function Get-ManagedTreeHash([string]$Root) {
+    # 트리 전체를 하나의 identity로 접는다. 상대경로/종류/크기/파일해시만 보므로
+    # 타임스탬프처럼 재현되지 않는 값에 흔들리지 않는다.
+    $rootFull = (Get-ManagedPath $Root).TrimEnd('\')
+    $rootItem = Get-Item -LiteralPath $rootFull -Force -ErrorAction SilentlyContinue
+    if ($rootItem -isnot [IO.DirectoryInfo] -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $null }
+    $entries = [Collections.Generic.List[string]]::new()
+    foreach ($child in @(Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $null }
+        $relative = [IO.Path]::GetRelativePath($rootFull, $child.FullName).Replace('\', '/')
+        if ($child -is [IO.DirectoryInfo]) { $entries.Add("d`t$relative") }
+        elseif ($child -is [IO.FileInfo]) {
+            $fileHash = (Get-FileHash -LiteralPath $child.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $entries.Add("f`t$relative`t$($child.Length)`t$fileHash")
+        } else { return $null }
+    }
+    $sorted = [string[]]$entries.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $bytes = [Text.Encoding]::UTF8.GetBytes((($sorted -join "`n") + "`n"))
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+
+function Install-ManagedDirectTree([string]$SourceDir, [string]$DestDir, [string]$Version) {
+    # 버전이 박힌 artifact tree를 통째로 소유한다. 파일 단위 소유권과 달리 tree 해시가
+    # 하나라도 어긋나면 손대지 않는다 — 사용자가 그 안을 고쳤다는 뜻이기 때문이다.
+    if (-not $script:ReceiptReady -or -not (Test-Path -LiteralPath $SourceDir -PathType Container)) { return $false }
+    if (-not (Test-ManagedParentPath $DestDir)) { Write-Warning "Unsafe direct tree parent; preserving: $DestDir"; return $false }
+    $key = Get-ManagedPath $DestDir
+    $sourceHash = Get-ManagedTreeHash $SourceDir
+    if (-not $sourceHash) { Write-Warning "Unsupported source tree; preserving: $DestDir"; return $false }
+    $destItem = Get-Item -LiteralPath $DestDir -Force -ErrorAction SilentlyContinue
+    if ($destItem -and ($destItem -isnot [IO.DirectoryInfo] -or ($destItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+        Write-Warning "Unsupported destination tree root; preserving: $DestDir"; return $false
+    }
+    $currentHash = if ($destItem) { Get-ManagedTreeHash $DestDir } else { $null }
+    $entry = $script:Receipt.artifacts[$key]
+    if ($entry) {
+        if (-not $entry.Contains('installedTreeHash')) { Write-Warning "Receipt kind collision; preserving: $DestDir"; return $false }
+        if ($entry.pending) {
+            if (-not $entry.targetTreeHash -or $entry.targetTreeHash -cne $sourceHash) {
+                Write-Warning "Pending direct tree target changed; preserving: $DestDir"; return $false
+            }
+            if ($currentHash -ceq $entry.targetTreeHash) {
+                $entry.installedTreeHash = $entry.targetTreeHash
+                $entry.directVersion = $Version
+                $entry.pending = $false
+                foreach ($field in @('targetTreeHash','previousExists')) { $null = $entry.Remove($field) }
+                Save-InstallReceipt
+                return $true
+            }
+            if ($destItem) { Write-Warning "Pending direct tree is not a recoverable fresh target; preserving: $DestDir"; return $false }
+        } else {
+            if ($currentHash -cne $entry.installedTreeHash) { Write-Warning "Managed direct tree changed; preserving: $DestDir"; return $false }
+            if ($currentHash -ceq $sourceHash) { $entry.directVersion = $Version; Save-InstallReceipt; return $true }
+            Write-Warning "Versioned direct tree content differs; preserving: $DestDir"; return $false
+        }
+    } elseif ($destItem) {
+        Write-Warning "Unowned direct tree collision; preserving: $DestDir"; return $false
+    } else {
+        $script:Receipt.artifacts[$key] = [ordered]@{
+            before = [ordered]@{ exists = $false; type = 'missing' }
+            installedTreeHash = $null
+            pending = $true
+            targetTreeHash = $sourceHash
+            previousExists = $false
+        }
+        Save-InstallReceipt
+        $entry = $script:Receipt.artifacts[$key]
+    }
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $DestDir -Parent) | Out-Null
+    $tmp = Join-Path (Split-Path $DestDir -Parent) ".dotfiles-tree.$([guid]::NewGuid()).tmp"
+    try {
+        Copy-Item -LiteralPath $SourceDir -Destination $tmp -Recurse -Force
+        if ((Get-ManagedTreeHash $tmp) -cne $sourceHash) { Write-Warning "Direct tree copy verification failed: $DestDir"; return $false }
+        Move-Item -LiteralPath $tmp -Destination $DestDir -Force
+    } finally {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    $entry.installedTreeHash = $sourceHash
+    $entry.directVersion = $Version
+    $entry.pending = $false
+    foreach ($field in @('targetTreeHash','previousExists')) { $null = $entry.Remove($field) }
+    Save-InstallReceipt
+    return $true
+}
+
 function Sync-ManagedFileHash([string]$Path) {
     # `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
     # receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
@@ -731,6 +821,218 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
+}
+
+# ---------------------------------------------
+# MCP server 등록 (receipt values로 소유권 관리)
+#
+# Codex는 ~/.codex/config.toml의 [mcp_servers.<name>], Claude Code는 공식 저장소인
+# ~/.claude.json의 .mcpServers.<name>에 둔다. ~/.claude/settings.json은 MCP 정의 파일이
+# 아니므로 건드리지 않는다. 사용자가 만든 동명 entry는 언제나 보존한다.
+# ---------------------------------------------
+
+# 비교는 항상 정규화된 JSON으로 한다. TOML/JSON 왕복에서 키 순서가 바뀌어도
+# 같은 entry를 "변경됨"으로 오판하지 않기 위해서다.
+function ConvertTo-CanonicalJson([string]$Text) {
+    if (-not $Text) { return $null }
+    $out = @($Text | & jq -cS '.' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { return $null }
+    return [string]$out[0]
+}
+
+function Get-McpEntry([string]$McpHost, [string]$Name, [string]$Path) {
+    $script:McpPresent = $false
+    $script:McpValue = $null
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return $true }
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $raw = $null
+    if ($McpHost -eq 'codex') {
+        if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { return $false }
+        & yq -p=toml -o=json '.' $Path 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $lines = @(& yq -p=toml -o=json ".mcp_servers.`"$Name`"" $Path 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $raw = ($lines -join "`n").Trim()
+        if (-not $raw -or $raw -ceq 'null') { return $true }
+    } else {
+        if (-not (Get-Command jq -ErrorAction SilentlyContinue)) { return $false }
+        $lines = @(& jq -c --arg n $Name '.mcpServers | if type=="object" then (.[$n] // empty) else empty end' $Path 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $raw = ($lines -join "`n").Trim()
+        if (-not $raw) { return $true }
+    }
+    $canonical = ConvertTo-CanonicalJson $raw
+    if (-not $canonical) { return $false }
+    $script:McpValue = $canonical
+    $script:McpPresent = $true
+    return $true
+}
+
+function Set-McpEntry([string]$McpHost, [string]$Name, [string]$Path, [AllowNull()][string]$Value) {
+    $dir = Split-Path $Path -Parent
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $seed = if ($McpHost -eq 'codex') { '' } else { '{}' }
+        [IO.File]::WriteAllText($Path, $seed, [Text.UTF8Encoding]::new($false))
+    }
+    $tmp = Join-Path $dir ".mcp.$([guid]::NewGuid()).tmp"
+    try {
+        if ($McpHost -eq 'codex') {
+            $expr = if ($Value) { ".mcp_servers.`"$Name`" = $Value" }
+                    else { "del(.mcp_servers.`"$Name`") | del(.mcp_servers | select(length == 0))" }
+            $out = @(& yq -p=toml -o=toml $expr $Path 2>$null)
+            if ($LASTEXITCODE -ne 0) { return $false }
+            ($out -join "`n") | Out-File $tmp -Encoding utf8 -NoNewline
+            & yq -p=toml -o=json '.' $tmp 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } else {
+            $out = if ($Value) {
+                @(& jq --arg n $Name --argjson v $Value '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' $Path 2>$null)
+            } else {
+                @(& jq --arg n $Name 'if (.mcpServers|type)=="object" then .mcpServers |= del(.[$n]) else . end' $Path 2>$null)
+            }
+            if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { return $false }
+            ($out -join "`n") | Out-File $tmp -Encoding utf8 -NoNewline
+            & jq empty $tmp 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        }
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-ManagedMcpServer([string]$McpHost, [string]$Name, [string]$Path, [string]$Desired) {
+    if (-not $script:ReceiptReady) { return $false }
+    $desiredCanonical = ConvertTo-CanonicalJson $Desired
+    if (-not $desiredCanonical) { return $false }
+    $key = "mcp:${McpHost}:${Name}"
+    if (-not (Get-McpEntry $McpHost $Name $Path)) { Write-Warning "MCP registry unreadable; preserving: $Path"; return $false }
+    $entry = $script:Receipt.values[$key]
+    if ($entry) {
+        if ($entry.pending) {
+            if ($script:McpPresent -and $script:McpValue -ceq $entry.pending.target) {
+                Record-ManagedValue $key $entry.before.present $entry.before.value $entry.pending.target
+            } elseif ($script:McpPresent -ne [bool]$entry.pending.previousPresent -or
+                      ($script:McpPresent -and $script:McpValue -cne $entry.pending.previousValue)) {
+                Write-Warning "Pending MCP entry changed; preserving: $key"; return $false
+            }
+        }
+        $installed = $script:Receipt.values[$key].installed
+        if ($installed -and (-not $script:McpPresent -or $script:McpValue -cne $installed)) {
+            Write-Warning "Managed MCP entry changed; preserving: $key"; return $false
+        }
+        if ($script:McpValue -ceq $desiredCanonical) { Write-Host "    MCP already registered: $key"; return $true }
+    } elseif ($script:McpPresent) {
+        Write-Warning "Unowned MCP entry collision; preserving: $key"; return $false
+    }
+    $beforePresent = $script:McpPresent
+    $beforeValue = $script:McpValue
+    if (-not (Begin-ManagedValue $key $beforePresent $beforeValue $desiredCanonical)) { return $false }
+    if (-not (Set-McpEntry $McpHost $Name $Path $desiredCanonical)) { Write-Warning "Failed to write MCP entry: $key"; return $false }
+    if (-not (Get-McpEntry $McpHost $Name $Path) -or -not $script:McpPresent -or $script:McpValue -cne $desiredCanonical) {
+        Write-Warning "MCP entry verification failed: $key"; return $false
+    }
+    Record-ManagedValue $key $beforePresent $beforeValue $desiredCanonical
+    $null = Sync-ManagedFileHash $Path
+    Write-Host "    Registered MCP server: $key"
+    return $true
+}
+
+# ---------------------------------------------
+# rhwp: 공식 archive 전체를 ~/rhwp tree에 두고 MCP를 등록한다.
+# ---------------------------------------------
+function Test-RhwpManifestRows([object[]]$Rows) {
+    if ($Rows.Count -ne 4) { return $false }
+    $platforms = @('windows-x86_64','linux-x86_64','macos-x86_64','macos-aarch64')
+    $seen = @{}
+    foreach ($row in $Rows) {
+        if ($row.Count -ne 5) { return $false }
+        $platform, $version, $format, $url, $checksum = $row
+        if ($platform -notin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        $seen[$platform] = $true
+        if ($version -notmatch '^\d+\.\d+\.\d+$' -or $format -notin @('tgz','zip')) { return $false }
+        if ($url -notmatch '^https://github\.com/edwardkim/rhwp/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -match '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -notmatch '^[0-9a-f]{64}$') { return $false }
+    }
+    return $true
+}
+
+function Install-Rhwp {
+    $manifest = Join-Path $ROOT 'manifests\rhwp.tsv'
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { Add-InstallFailure 'Required manifest missing: manifests\rhwp.tsv'; return $false }
+    $rows = @(Get-Content -LiteralPath $manifest |
+        Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } |
+        ForEach-Object { , @($_ -split "`t") })
+    if (-not (Test-RhwpManifestRows $rows)) { Add-InstallFailure 'Invalid manifests\rhwp.tsv'; return $false }
+    if ([Environment]::Is64BitOperatingSystem -eq $false -or
+        $env:PROCESSOR_ARCHITECTURE -notin @('AMD64','x86')) {
+        Write-Host "    [!] Unsupported rhwp platform: $env:PROCESSOR_ARCHITECTURE; skipping."
+        return $true
+    }
+    $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    $version = $row[1]; $url = $row[3]; $checksum = $row[4]
+    $desired = "{`"command`":$(ConvertTo-Json ((Join-Path $RhwpDir 'rhwp.exe')) -Compress),`"args`":[`"mcp-serve`"]}"
+
+    $key = Get-ManagedPath $RhwpDir
+    $entry = $script:Receipt.artifacts[$key]
+    $installedTree = if ($entry) { $entry.installedTreeHash } else { $null }
+    if ($installedTree -and $entry.directVersion -ceq $version -and (Get-ManagedTreeHash $RhwpDir) -ceq $installedTree) {
+        Write-Host "    rhwp $version already installed: $RhwpDir"
+    } else {
+        $work = Join-Path ([IO.Path]::GetTempPath()) "dotfiles-rhwp.$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force -Path $work | Out-Null
+        try {
+            $archive = Join-Path $work 'rhwp.zip'
+            try { Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing -MaximumRetryCount 3 -RetryIntervalSec 2 }
+            catch { Add-InstallFailure "rhwp download failed: $url"; return $false }
+            $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -cne $checksum) { Add-InstallFailure "rhwp SHA-256 mismatch: $url"; return $false }
+            $extract = Join-Path $work 'extract'
+            try { Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force }
+            catch { Add-InstallFailure "rhwp archive extraction failed: $url"; return $false }
+
+            # 공식 archive는 rhwp\ 한 겹 아래에 binary와 문서를 담는다. 그 구조를 확인하고
+            # archive 전체를 그대로 배치한다 — binary만 뽑아 쓰지 않는다.
+            $top = @(Get-ChildItem -LiteralPath $extract -Force)
+            if ($top.Count -ne 1 -or $top[0] -isnot [IO.DirectoryInfo] -or $top[0].Name -cne 'rhwp') {
+                Add-InstallFailure "Unexpected rhwp archive layout: $url"; return $false
+            }
+            $tree = $top[0].FullName
+            if (@(Get-ChildItem -LiteralPath $tree -Recurse -Force | Where-Object { $_ -isnot [IO.FileInfo] -and $_ -isnot [IO.DirectoryInfo] }).Count -gt 0) {
+                Add-InstallFailure "Unsupported member type in rhwp archive: $url"; return $false
+            }
+            $binary = Join-Path $tree 'rhwp.exe'
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { Add-InstallFailure "rhwp binary missing in archive: $url"; return $false }
+            $reported = (@(& $binary --version 2>$null) -join "`n").Trim()
+            if ($reported -cne "rhwp v$version") {
+                Add-InstallFailure "rhwp binary reports '$reported', expected 'rhwp v$version'"; return $false
+            }
+            if (-not (Install-ManagedDirectTree $tree $RhwpDir $version)) { Add-InstallFailure "rhwp tree not installed: $RhwpDir"; return $false }
+            Write-Host "    rhwp $version -> $RhwpDir"
+        } finally {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $ok = $true
+    # Codex 쪽은 TOML 편집이라 yq가 필요하다. 없으면 config.toml 병합과 같은 정책으로
+    # 파일을 건드리지 않고 넘어간다 — 도구 부재로 설치 전체를 실패시키지 않는다.
+    if (Get-Command yq -ErrorAction SilentlyContinue) {
+        if (-not (Install-ManagedMcpServer codex 'rhwp' (Join-Path $CodexDir 'config.toml') $desired)) { $ok = $false }
+    } else {
+        Write-Host '    [!] yq not found; skipping Codex MCP registration.'
+    }
+    $claudeJson = Join-Path $env:USERPROFILE '.claude.json'
+    if ((Test-Path -LiteralPath $claudeJson) -or (Get-Command claude -ErrorAction SilentlyContinue)) {
+        if (-not (Install-ManagedMcpServer claude 'rhwp' $claudeJson $desired)) { $ok = $false }
+    } else {
+        Write-Host "    Claude Code not present; skipping ~/.claude.json MCP registration."
+    }
+    if (-not $ok) { Add-InstallFailure 'rhwp MCP registration incomplete.'; return $false }
+    return $true
 }
 
 function Invoke-FnmPruneIfRequested {
@@ -1351,6 +1653,18 @@ if (Test-Path $rolesSrc) {
     }
 }
 
+}
+
+# =============================================
+# 3-2. rhwp 설치 + MCP 등록 (manifests\rhwp.tsv → ~\rhwp, Codex/Claude MCP)
+#
+# Claude Code 설치 뒤에 둔다. ~\.claude.json은 Claude Code가 소유하는 파일이라
+# 그 단계가 끝난 뒤라야 신규 머신에서도 첫 실행에 등록이 성립한다.
+# =============================================
+Invoke-OptionalInstallStage 'SKIP_RHWP' "==> [CI] Skipping rhwp (SKIP_RHWP=1)" {
+    Write-Host ""
+    Write-Host "==> Installing rhwp and registering MCP..."
+    $null = Install-Rhwp
 }
 
 # =============================================

@@ -44,6 +44,8 @@ package_key_allowed() {
 }
 value_key_allowed() {
     case "$1" in git:core.pager|git:core.editor|git:core.fileMode|git:core.autocrlf|git:core.eol|git:core.quotepath|git:init.defaultBranch|git:interactive.diffFilter|git:delta.navigate|git:delta.dark|git:delta.side-by-side|git:delta.line-numbers|git:merge.conflictStyle|git:credential.credentialStore) return 0;; esac
+    # MCP entry는 install이 심은 host/name 조합만 되돌린다.
+    case "$1" in mcp:codex:rhwp|mcp:claude:rhwp) return 0;; esac
     return 1
 }
 get_fnm_dir() {
@@ -88,23 +90,51 @@ receipt_schema_valid() {
         (if ((.key|startswith("npm:")) and (.value|has("prefix"))) then (.value.prefix|type)=="string" and (.value.prefix|length)>0 else true end) and
         (if .value|has("pending") then (.value.pending.previousPresent|type)=="boolean" and (.value.pending.newEntry|type)=="boolean" and (if .value.pending.previousPresent then (.value.pending.previousValue|type)=="string" else true end) else true end)) and
       all(.values|to_entries[];
-        (.key|test("^git:[A-Za-z0-9.-]+$")) and (.value.before.present|type)=="boolean" and
+        (.key|(test("^git:[A-Za-z0-9.-]+$") or test("^mcp:(codex|claude):[A-Za-z0-9._-]+$"))) and (.value.before.present|type)=="boolean" and
         ((.value.installed|type)=="string" or ((.value|has("pending")) and .value.installed==null)) and
         (if .value.before.present then (.value.before.value|type)=="string" else true end) and
         (if .value|has("pending") then (.value.pending.previousPresent|type)=="boolean" and (.value.pending.target|type)=="string" and (if .value.pending.previousPresent then (.value.pending.previousValue|type)=="string" else true end) else true end))
     ' "$RECEIPT_PATH" >/dev/null
 }
+# install.sh와 반드시 같은 구현이어야 한다 — 한쪽만 고치면 소유권 판정이 어긋난다.
+# GNU find -printf와 tar --sort는 BSD(macOS)에 없어 경로를 나눈다. GNU 쪽 형식은
+# 기존 receipt와 계속 일치해야 하므로 바꾸지 않는다.
+tree_hash_supports_gnu_find() { find "$1" -mindepth 1 -printf '' >/dev/null 2>&1; }
+
+# BSD 경로는 개행이 든 경로명을 구분하지 못한다. 그런 tree는 해시하지 않고 실패시킨다.
+tree_hash_paths_are_line_safe() {
+    local lines nulls
+    lines="$(find "$1" -mindepth 1 | wc -l)"
+    nulls="$(find "$1" -mindepth 1 -print0 | tr -cd '\0' | wc -c)"
+    [[ "${lines// /}" == "${nulls// /}" ]]
+}
+
 tree_hash() {
-    local root="$1"
+    local root="$1" entry rel
+    if ! tree_hash_supports_gnu_find "$root" && ! tree_hash_paths_are_line_safe "$root"; then
+        warn "tree path contains a newline; refusing to hash: $root"
+        return 1
+    fi
     {
         printf 'root\0%s\0' "$(file_mode "$root")"
-        if find "$root" -mindepth 1 -printf '' >/dev/null 2>&1; then
+        if tree_hash_supports_gnu_find "$root"; then
             find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
+            printf 'content\0'
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
         else
-            find "$root" -mindepth 1 -exec stat -f '%N\t%HT\t%Lp\t%Y\t%z' {} \; | LC_ALL=C sort
+            find "$root" -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+                rel="${entry#"$root"/}"
+                if [[ -L "$entry" ]]; then printf '%s\tl\t\t%s\t\0' "$rel" "$(readlink "$entry")"
+                elif [[ -d "$entry" ]]; then printf '%s\td\t%s\t\t\0' "$rel" "$(file_mode "$entry")"
+                elif [[ -f "$entry" ]]; then printf '%s\tf\t%s\t\t%s\0' "$rel" "$(file_mode "$entry")" "$(wc -c < "$entry" | tr -d ' ')"
+                else printf '%s\t?\t\t\t\0' "$rel"
+                fi
+            done
+            printf 'content\0'
+            find "$root" -type f | LC_ALL=C sort | while IFS= read -r entry; do
+                printf '%s\0%s\0' "${entry#"$root"/}" "$(file_hash "$entry")"
+            done
         fi
-        printf 'content\0'
-        tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
     } | { if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'; else shasum -a 256 | awk '{print $1}'; fi; }
 }
 
@@ -175,6 +205,8 @@ artifact_allowed() {
             case "$name" in starship|atuin|fnm|bun|bunx|yazi|ya|lazygit|fzf|nvim|delta|bat|fd|eza|yq|node|npm|npx) return 0;; esac ;;
         "$HOME/.local/share/fnm/fnm"|"$HOME/.bun/bin/bun"|"$HOME/.bun/bin/bunx") return 0 ;;
         "$HOME/.local/opt/nvim-v"*) [[ "${path#"$HOME/.local/opt/nvim-v"}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0 ;;
+        # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests/rhwp.tsv).
+        "$HOME/rhwp") return 0 ;;
     esac
     for pair in \
         "$ROOT/config/yazi|$HOME/.config/yazi" "$ROOT/config/nvim|$HOME/.config/nvim" \
@@ -328,8 +360,124 @@ uninstall_package() {
     chmod 600 "$final_tmp" && mv "$final_tmp" "$RECEIPT_PATH"
 }
 
+# ---------------------------------------------
+# MCP entry 되돌리기
+#
+# Codex는 ~/.codex/config.toml의 [mcp_servers.<name>], Claude Code는 ~/.claude.json의
+# .mcpServers.<name>이다. receipt가 기록한 installed 값과 현재 값이 정확히 같을 때만 건드린다.
+# ---------------------------------------------
+mcp_host_path() {
+    case "$1" in
+        codex) printf '%s\n' "$HOME/.codex/config.toml" ;;
+        claude) printf '%s\n' "$HOME/.claude.json" ;;
+        *) return 1 ;;
+    esac
+}
+
+read_mcp_entry() {
+    local host="$1" name="$2" dst="$3"
+    MCP_PRESENT=false; MCP_VALUE=""
+    [[ -f "$dst" && ! -L "$dst" ]] || { [[ ! -e "$dst" && ! -L "$dst" ]] || return 1; return 0; }
+    if [[ "$host" == codex ]]; then
+        command -v yq >/dev/null 2>&1 || return 1
+        yq -p=toml -o=json '.' "$dst" >/dev/null 2>&1 || return 1
+        yq -p=toml -o=json -e ".mcp_servers.\"$name\"" "$dst" >/dev/null 2>&1 || return 0
+        MCP_VALUE="$(yq -p=toml -o=json ".mcp_servers.\"$name\"" "$dst" | jq -cS '.')" || return 1
+    else
+        jq -e '.' "$dst" >/dev/null 2>&1 || return 1
+        jq -e --arg n "$name" '.mcpServers | objects | has($n)' "$dst" >/dev/null 2>&1 || return 0
+        MCP_VALUE="$(jq -cS --arg n "$name" '.mcpServers[$n]' "$dst")" || return 1
+    fi
+    [[ -n "$MCP_VALUE" ]] || return 1
+    MCP_PRESENT=true
+}
+
+write_mcp_entry() {
+    local host="$1" name="$2" dst="$3" value="$4" tmp
+    [[ -f "$dst" && ! -L "$dst" ]] || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.mcp.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    if [[ "$host" == codex ]]; then
+        command -v yq >/dev/null 2>&1 || return 1
+        if [[ -n "$value" ]]; then
+            yq -p=toml -o=toml ".mcp_servers.\"$name\" = $value" "$dst" > "$tmp" 2>/dev/null || return 1
+        else
+            yq -p=toml -o=toml "del(.mcp_servers.\"$name\") | del(.mcp_servers | select(length == 0))" "$dst" > "$tmp" 2>/dev/null || return 1
+        fi
+        yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1 || return 1
+    else
+        if [[ -n "$value" ]]; then
+            jq --arg n "$name" --argjson v "$value" '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' "$dst" > "$tmp" || return 1
+        else
+            jq --arg n "$name" 'if (.mcpServers|type)=="object" then .mcpServers |= del(.[$n]) else . end' "$dst" > "$tmp" || return 1
+        fi
+        jq empty "$tmp" || return 1
+    fi
+    cat "$tmp" > "$dst"
+}
+
+# 우리가 소유한 파일을 우리 손으로 고쳤으면 소유권 도장을 다시 찍는다.
+# 그러지 않으면 뒤이어 도는 artifact 복원이 "modified artifact"로 보고 보존해 버린다.
+restamp_managed_artifact() {
+    local path="$1" before="$2" current
+    jq -e --arg p "$path" '.artifacts[$p] | objects | has("installedHash") and (.pending|not)' "$RECEIPT_PATH" >/dev/null || return 0
+    [[ "$(jq -r --arg p "$path" '.artifacts[$p].installedHash' "$RECEIPT_PATH")" == "$before" ]] || return 0
+    [[ -f "$path" && ! -L "$path" ]] || return 1
+    current="$(file_hash "$path")"
+    receipt_commit --arg p "$path" --arg h "$current" --arg m "$(file_mode "$path")" \
+        '.artifacts[$p].installedHash=$h | .artifacts[$p].installedMode=$m'
+}
+
+# install이 ~/.claude.json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
+prune_empty_claude_json() {
+    local path="$HOME/.claude.json"
+    [[ -f "$path" && ! -L "$path" ]] || return 0
+    # install이 파일을 새로 만든 경우에만 남는 정확한 형태다. Claude Code가 한 번이라도
+    # 돌았다면 다른 키가 잔뜩 붙으므로 여기에 걸리지 않는다.
+    jq -e '. == {"mcpServers":{}}' "$path" >/dev/null 2>&1 || return 0
+    rm -f "$path"
+}
+
+uninstall_mcp_value() {
+    local key="$1" host name dst installed before_present before_value before_hash=""
+    host="$(cut -d: -f2 <<< "$key")"; name="$(cut -d: -f3 <<< "$key")"
+    dst="$(mcp_host_path "$host")" || { warn "unsupported MCP host preserved: $key"; return 1; }
+    read_mcp_entry "$host" "$name" "$dst" || { warn "MCP registry unreadable; preserved: $key"; return 1; }
+    if jq -e --arg k "$key" '.values[$k].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        local target pp pv
+        target="$(jq -r --arg k "$key" '.values[$k].pending.target' "$RECEIPT_PATH")"
+        pp="$(jq -r --arg k "$key" '.values[$k].pending.previousPresent' "$RECEIPT_PATH")"
+        pv="$(jq -r --arg k "$key" '.values[$k].pending.previousValue // empty' "$RECEIPT_PATH")"
+        if [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$target" ]]; then :
+        elif [[ "$MCP_PRESENT" == "$pp" && ( "$MCP_PRESENT" == false || "$MCP_VALUE" == "$pv" ) ]]; then
+            if jq -e --arg k "$key" '.values[$k].installed == null' "$RECEIPT_PATH" >/dev/null; then drop_entry values "$key"; return; fi
+            receipt_commit --arg k "$key" 'del(.values[$k].pending)' || return 1
+        else warn "pending MCP entry changed; preserved: $key"; return 1; fi
+    fi
+    installed="$(jq -r --arg k "$key" '.values[$k].installed // empty' "$RECEIPT_PATH")"
+    before_present="$(jq -r --arg k "$key" '.values[$k].before.present' "$RECEIPT_PATH")"
+    before_value="$(jq -r --arg k "$key" '.values[$k].before.value // empty' "$RECEIPT_PATH")"
+    if [[ "$MCP_PRESENT" == "$before_present" && ( "$MCP_PRESENT" == false || "$MCP_VALUE" == "$before_value" ) ]]; then
+        drop_entry values "$key"; return
+    fi
+    [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$installed" ]] || { warn "modified MCP entry preserved: $key"; return 1; }
+    [[ ! -f "$dst" || -L "$dst" ]] || before_hash="$(file_hash "$dst")"
+    if [[ "$before_present" == true ]]; then
+        write_mcp_entry "$host" "$name" "$dst" "$before_value" || { warn "MCP restore failed: $key"; return 1; }
+    else
+        write_mcp_entry "$host" "$name" "$dst" "" || { warn "MCP removal failed: $key"; return 1; }
+    fi
+    read_mcp_entry "$host" "$name" "$dst" || { warn "MCP post-read failed: $key"; return 1; }
+    [[ "$MCP_PRESENT" == "$before_present" && ( "$MCP_PRESENT" == false || "$MCP_VALUE" == "$before_value" ) ]] || {
+        warn "MCP restore verification failed: $key"; return 1
+    }
+    [[ -z "$before_hash" ]] || restamp_managed_artifact "$dst" "$before_hash" || { warn "MCP host ownership restamp failed: $dst"; return 1; }
+    [[ "$host" != claude || "$before_present" == true ]] || prune_empty_claude_json
+    drop_entry values "$key"
+}
+
 uninstall_value() {
     local key="$1" name current present=false installed before_present before_value
+    [[ "$key" != mcp:* ]] || { uninstall_mcp_value "$key"; return; }
     [[ "$key" == git:* ]] || { warn "unsupported managed value preserved: $key"; return 1; }
     name="${key#git:}"; current="$(git config --global --get "$name" 2>/dev/null)" && present=true
     if jq -e --arg k "$key" '.values[$k].pending != null' "$RECEIPT_PATH" >/dev/null; then

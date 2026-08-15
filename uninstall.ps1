@@ -60,7 +60,9 @@ function Test-ArtifactAllowed([string]$Path) {
     $exact = @(
         (Join-Path $homeRoot '.tmux.conf'),
         (Join-Path $homeRoot '.codex\AGENTS.md'), (Join-Path $homeRoot '.codex\config.toml'), (Join-Path $homeRoot '.codex\hooks.json'),
-        (Join-Path $homeRoot '.claude\CLAUDE.md'), (Join-Path $homeRoot '.claude\settings.json')
+        (Join-Path $homeRoot '.claude\CLAUDE.md'), (Join-Path $homeRoot '.claude\settings.json'),
+        # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests\rhwp.tsv).
+        (Join-Path $homeRoot 'rhwp')
     )
     if ($exact -contains $full) { return $true }
     $pairs = @(
@@ -112,7 +114,17 @@ function Test-ReceiptSchema {
         $entry=$script:Receipt.artifacts[$key]
         if ($key -match '\\(?:\.{1,2})(?:\\|$)' -or $key -match '\\\\' -or -not (Test-ArtifactAllowed $key) -or -not (Test-SafeParentChain $key) -or $entry.before -isnot [Collections.IDictionary] -or $entry.before.exists -isnot [bool] -or -not (Test-CanonicalBackup $key $entry.before.backup)) { return $false }
         if ($entry.Contains('pending') -and $entry.pending -isnot [bool]) { return $false }
-        if (-not $entry.Contains('installedHash') -or (($null -eq $entry.installedHash) -and -not $entry.pending) -or (($null -ne $entry.installedHash) -and ($entry.installedHash -isnot [string]))) { return $false }
+        if ($entry.Contains('installedHash') -eq $entry.Contains('installedTreeHash')) { return $false }
+        if ($entry.Contains('installedTreeHash')) {
+            # tree artifact는 "설치 전에 없던 자리"에만 만든다. 되돌리기는 통째 삭제 하나뿐이라
+            # 이전 상태를 복원할 방법이 없기 때문이다.
+            if ($entry.before.exists -ne $false -or ($entry.Contains('directVersion') -and $entry.directVersion -isnot [string])) { return $false }
+            if (($null -eq $entry.installedTreeHash) -and -not $entry.pending) { return $false }
+            if (($null -ne $entry.installedTreeHash) -and $entry.installedTreeHash -isnot [string]) { return $false }
+            if ($entry.pending -and ($entry.targetTreeHash -isnot [string] -or $entry.previousExists -ne $false)) { return $false }
+            continue
+        }
+        if ((($null -eq $entry.installedHash) -and -not $entry.pending) -or (($null -ne $entry.installedHash) -and ($entry.installedHash -isnot [string]))) { return $false }
         if ($entry.before.exists -and ($entry.before.hash -isnot [string] -or $entry.before.backup -isnot [string] -or -not $entry.before.backup)) { return $false }
         if ($entry.pending -and ($entry.targetHash -isnot [string] -or $entry.previousExists -isnot [bool] -or ($entry.previousExists -and $entry.previousHash -isnot [string]))) { return $false }
     }
@@ -137,6 +149,8 @@ function Test-PackageKeyAllowed([string]$Key) {
     return @(Get-Content $manifest | ForEach-Object{($_ -split '#')[0].Trim()} | Where-Object{$_ -ceq $name}).Count -eq 1
 }
 function Test-ValueKeyAllowed([string]$Key) {
+    # MCP entry는 install이 심은 host/name 조합만 되돌린다.
+    if ($Key -cin @('mcp:codex:rhwp','mcp:claude:rhwp')) { return $true }
     if ($Key -in @('git:core.pager','git:core.editor','git:core.fileMode','git:core.autocrlf','git:core.eol','git:core.quotepath','git:init.defaultBranch','git:interactive.diffFilter','git:delta.navigate','git:delta.dark','git:delta.side-by-side','git:delta.line-numbers','git:merge.conflictStyle','git:credential.credentialStore','env:YAZI_FILE_ONE','env:PATH:C:\Program Files\Neovim\bin')) { return $true }
     $fnmRoot=[IO.Path]::GetFullPath($(if($env:FNM_DIR){$env:FNM_DIR}else{Join-Path $env:APPDATA 'fnm'})).TrimEnd('\')
     $Key -ieq ('env:PATH:' + (Join-Path $fnmRoot 'aliases\default'))
@@ -148,9 +162,44 @@ function Test-NpmPrefixAllowed([string]$Prefix) {
     $full.StartsWith("$homeRoot\",[StringComparison]::OrdinalIgnoreCase) -and $full -match ('^'+[regex]::Escape($fnmRoot)+'\\node-versions\\[^\\]+\\installation$') -and (Test-SafeParentChain (Join-Path $full package.json))
 }
 
+function Get-ManagedTreeHash([string]$Root) {
+    # install.ps1의 같은 이름 함수와 반드시 같은 규칙이어야 한다 — 상대경로/종류/크기/파일해시.
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $rootItem = Get-Item -LiteralPath $rootFull -Force -ErrorAction SilentlyContinue
+    if ($rootItem -isnot [IO.DirectoryInfo] -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $null }
+    $entries = [Collections.Generic.List[string]]::new()
+    foreach ($child in @(Get-ChildItem -LiteralPath $rootFull -Recurse -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $null }
+        $relative = [IO.Path]::GetRelativePath($rootFull, $child.FullName).Replace('\', '/')
+        if ($child -is [IO.DirectoryInfo]) { $entries.Add("d`t$relative") }
+        elseif ($child -is [IO.FileInfo]) {
+            $fileHash = (Get-FileHash -LiteralPath $child.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $entries.Add("f`t$relative`t$($child.Length)`t$fileHash")
+        } else { return $null }
+    }
+    $sorted = [string[]]$entries.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $bytes = [Text.Encoding]::UTF8.GetBytes((($sorted -join "`n") + "`n"))
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+
+function Remove-ManagedTree([string]$Path) {
+    $entry = $script:Receipt.artifacts[$Path]
+    if ($entry.before.exists -ne $false) { Write-Preserve "Unsupported tree restore preserved: $Path"; return $false }
+    $installed = if ($entry.installedTreeHash) { $entry.installedTreeHash } else { $entry.targetTreeHash }
+    if (-not (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) { Remove-ReceiptEntry artifacts $Path; return $true }
+    if ((Get-ManagedTreeHash $Path) -cne $installed) { Write-Preserve "Modified tree preserved: $Path"; return $false }
+    Remove-Item -LiteralPath $Path -Recurse -Force
+    Remove-ReceiptEntry artifacts $Path
+    return $true
+}
+
 function Remove-ManagedArtifact([string]$Path) {
     if (-not (Test-ArtifactAllowed $Path) -or -not (Test-SafeParentChain $Path)) { Write-Preserve "Unsafe receipt artifact preserved: $Path"; return $false }
     $entry = $script:Receipt.artifacts[$Path]
+    if ($entry.Contains('installedTreeHash')) { return Remove-ManagedTree $Path }
     if (-not $entry.Contains('installedHash')) { Write-Preserve "Unsupported receipt artifact preserved: $Path"; return $false }
     $installed = $entry.installedHash
     if ($entry.before.exists -and $entry.before.backup -and -not (Get-Item -LiteralPath $entry.before.backup -Force -ErrorAction SilentlyContinue) -and (Test-PlainFileHash $Path $entry.before.hash)) { Remove-ReceiptEntry artifacts $Path; return $true }
@@ -258,7 +307,140 @@ function Remove-ManagedPackage([string]$Key) {
     return $true
 }
 
+# ---------------------------------------------
+# MCP entry 되돌리기
+#
+# Codex는 ~\.codex\config.toml의 [mcp_servers.<name>], Claude Code는 ~\.claude.json의
+# .mcpServers.<name>이다. receipt가 기록한 installed 값과 현재 값이 정확히 같을 때만 건드린다.
+# ---------------------------------------------
+function Get-McpHostPath([string]$McpHost) {
+    switch ($McpHost) {
+        'codex'  { Join-Path $env:USERPROFILE '.codex\config.toml' }
+        'claude' { Join-Path $env:USERPROFILE '.claude.json' }
+        default  { $null }
+    }
+}
+
+function ConvertTo-CanonicalJson([string]$Text) {
+    if (-not $Text) { return $null }
+    $out = @($Text | & jq -cS '.' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { return $null }
+    return [string]$out[0]
+}
+
+function Get-McpEntry([string]$McpHost, [string]$Name, [string]$Path) {
+    $script:McpPresent = $false
+    $script:McpValue = $null
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return $true }
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $raw = $null
+    if ($McpHost -eq 'codex') {
+        if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { return $false }
+        & yq -p=toml -o=json '.' $Path 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $lines = @(& yq -p=toml -o=json ".mcp_servers.`"$Name`"" $Path 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $raw = ($lines -join "`n").Trim()
+        if (-not $raw -or $raw -ceq 'null') { return $true }
+    } else {
+        $lines = @(& jq -c --arg n $Name '.mcpServers | if type=="object" then (.[$n] // empty) else empty end' $Path 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $raw = ($lines -join "`n").Trim()
+        if (-not $raw) { return $true }
+    }
+    $canonical = ConvertTo-CanonicalJson $raw
+    if (-not $canonical) { return $false }
+    $script:McpValue = $canonical
+    $script:McpPresent = $true
+    return $true
+}
+
+function Set-McpEntry([string]$McpHost, [string]$Name, [string]$Path, [AllowNull()][string]$Value) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $tmp = Join-Path (Split-Path $Path -Parent) ".mcp.$([guid]::NewGuid()).tmp"
+    try {
+        if ($McpHost -eq 'codex') {
+            $expr = if ($Value) { ".mcp_servers.`"$Name`" = $Value" }
+                    else { "del(.mcp_servers.`"$Name`") | del(.mcp_servers | select(length == 0))" }
+            $out = @(& yq -p=toml -o=toml $expr $Path 2>$null)
+            if ($LASTEXITCODE -ne 0) { return $false }
+            ($out -join "`n") | Out-File $tmp -Encoding utf8 -NoNewline
+            & yq -p=toml -o=json '.' $tmp 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        } else {
+            $out = if ($Value) {
+                @(& jq --arg n $Name --argjson v $Value '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' $Path 2>$null)
+            } else {
+                @(& jq --arg n $Name 'if (.mcpServers|type)=="object" then .mcpServers |= del(.[$n]) else . end' $Path 2>$null)
+            }
+            if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { return $false }
+            ($out -join "`n") | Out-File $tmp -Encoding utf8 -NoNewline
+            & jq empty $tmp 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { return $false }
+        }
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+        return $true
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# 우리가 소유한 파일을 우리 손으로 고쳤으면 소유권 도장을 다시 찍는다.
+# 그러지 않으면 뒤이어 도는 artifact 복원이 "modified artifact"로 보고 보존해 버린다.
+function Update-ManagedArtifactHash([string]$Path, [string]$BeforeHash) {
+    $key = [IO.Path]::GetFullPath($Path)
+    $entry = $script:Receipt.artifacts[$key]
+    if (-not $entry -or -not $entry.Contains('installedHash') -or $entry.pending) { return $true }
+    if ($entry.installedHash -cne $BeforeHash) { return $true }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $entry.installedHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    Save-UninstallReceipt
+    return $true
+}
+
+# install이 ~\.claude.json을 만들었고 그 뒤로 아무도 쓰지 않았을 때만 파일을 걷어낸다.
+function Remove-EmptyClaudeJson {
+    $path = Join-Path $env:USERPROFILE '.claude.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    & jq -e '. == {"mcpServers":{}}' $path 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Remove-Item -LiteralPath $path -Force }
+}
+
+function Remove-ManagedMcpValue([string]$Key) {
+    $entry = $script:Receipt.values[$Key]
+    $null, $mcpHost, $name = $Key -split ':', 3
+    $path = Get-McpHostPath $mcpHost
+    if (-not $path) { Write-Preserve "Unsupported MCP host preserved: $Key"; return $false }
+    if (-not (Get-McpEntry $mcpHost $name $path)) { Write-Preserve "MCP registry unreadable; preserved: $Key"; return $false }
+    if ($entry.pending) {
+        if ($script:McpPresent -and $script:McpValue -ceq $entry.pending.target) { }
+        elseif ($script:McpPresent -eq [bool]$entry.pending.previousPresent -and (-not $script:McpPresent -or $script:McpValue -ceq $entry.pending.previousValue)) {
+            if ($null -eq $entry.installed) { Remove-ReceiptEntry values $Key; return $true }
+            $entry.Remove('pending'); Save-UninstallReceipt
+        } else { Write-Preserve "Pending MCP entry changed; preserved: $Key"; return $false }
+    }
+    $beforePresent = [bool]$entry.before.present
+    $beforeValue = $entry.before.value
+    if ($script:McpPresent -eq $beforePresent -and (-not $script:McpPresent -or $script:McpValue -ceq $beforeValue)) {
+        Remove-ReceiptEntry values $Key; return $true
+    }
+    if (-not $script:McpPresent -or $script:McpValue -cne $entry.installed) { Write-Preserve "Modified MCP entry preserved: $Key"; return $false }
+    $beforeHash = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+    $restore = if ($beforePresent) { $beforeValue } else { $null }
+    if (-not (Set-McpEntry $mcpHost $name $path $restore)) { Write-Preserve "MCP restore failed: $Key"; return $false }
+    if (-not (Get-McpEntry $mcpHost $name $path) -or $script:McpPresent -ne $beforePresent -or ($script:McpPresent -and $script:McpValue -cne $beforeValue)) {
+        Write-Preserve "MCP restore verification failed: $Key"; return $false
+    }
+    if ($beforeHash -and -not (Update-ManagedArtifactHash $path $beforeHash)) { Write-Preserve "MCP host ownership restamp failed: $path"; return $false }
+    if ($mcpHost -eq 'claude' -and -not $beforePresent) { Remove-EmptyClaudeJson }
+    Remove-ReceiptEntry values $Key
+    return $true
+}
+
 function Remove-ManagedValue([string]$Key) {
+    if ($Key.StartsWith('mcp:')) { return Remove-ManagedMcpValue $Key }
     $entry = $script:Receipt.values[$Key]
     if ($Key.StartsWith('git:')) {
         $name = $Key.Substring(4); $current = git config --global --get $name 2>$null; $present = $LASTEXITCODE -eq 0
