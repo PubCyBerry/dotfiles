@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"
+# TMPDIR도 격리한다. fnm multishell fixture가 실제 임시 디렉터리에 잔재를 남기면 안 된다.
+export TMPDIR="$TMP"
 mkdir -p "$HOME/.config" "$HOME/.local/bin"
 export DOTFILES_FUNCTIONS_ONLY=1
 export DOTFILES_RECEIPT_PATH="$TMP/state/install-receipt.json"
@@ -104,6 +106,51 @@ begin_managed_package test:crash-package false ''
 receipt_init
 begin_managed_package test:crash-package true 1
 cancel_managed_package test:crash-package
+
+# fnm은 셸마다 새 multishell 링크를 만든다. prefix를 링크째로 기록하면 매 실행 소유권 판정이 깨진다.
+stable_prefix="$HOME/.local/share/fnm/node-versions/v1.0.0/installation"
+ephemeral_prefix="${TMPDIR:-/tmp}/fnm_multishells/1234_5678"
+is_ephemeral_npm_prefix "$ephemeral_prefix" || fail 'multishell prefix not detected as ephemeral'
+! is_ephemeral_npm_prefix "$stable_prefix" || fail 'stable prefix flagged as ephemeral'
+mkdir -p "$stable_prefix" "$(dirname "$ephemeral_prefix")"
+# Git Bash는 기본적으로 symlink 대신 디렉터리를 복사하므로 링크가 실제로 생겼을 때만 검증한다.
+ln -sfn "$stable_prefix" "$ephemeral_prefix" 2>/dev/null || true
+if [[ -L "$ephemeral_prefix" ]]; then
+    [[ "$(resolve_link_path "$ephemeral_prefix")" == "$(cd -P "$stable_prefix" && pwd -P)" ]] || fail 'ephemeral prefix link not resolved'
+fi
+
+begin_managed_package npm:test-prefix false '' "$stable_prefix" || fail 'npm prefix journal'
+record_managed_package npm:test-prefix false '' 1 "$stable_prefix"
+begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'matching npm prefix rejected'
+cancel_managed_package npm:test-prefix
+! begin_managed_package npm:test-prefix true 1 "$HOME/other/prefix" || fail 'changed npm prefix adopted'
+! begin_managed_package npm:test-prefix true 1 "$ephemeral_prefix" || fail 'ephemeral npm prefix recorded'
+[[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'rejected npm prefix overwrote receipt'
+
+# 이전 버그가 남긴 multishell prefix는 안정 경로로 교정되어야 한다.
+receipt_commit --arg prefix "$ephemeral_prefix" '.packages["npm:test-prefix"].prefix=$prefix'
+begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'ephemeral npm prefix not repaired'
+[[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'repaired npm prefix not persisted'
+# 낡은 prefix에서 잰 before는 새 위치에 대해 무의미하므로 지금 측정값으로 다시 잡혀야 한다.
+[[ "$(jq -r '.packages["npm:test-prefix"].before.present' "$RECEIPT_PATH")" == true ]] || fail 'repaired before.present not rebased'
+[[ "$(jq -r '.packages["npm:test-prefix"].before.value' "$RECEIPT_PATH")" == 1 ]] || fail 'repaired before.value not rebased'
+cancel_managed_package npm:test-prefix
+
+# 빈 입력은 실패가 아니라 빈 값이어야 한다. `set -e` 아래에서 설치가 통째로 중단되기 때문이다.
+[[ -z "$(resolve_link_path "")" ]] || fail 'empty resolve_link_path returned a value'
+resolve_link_path "" >/dev/null || fail 'empty resolve_link_path returned failure'
+
+# 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
+sync_dst="$TMP/sync-target.txt"
+install_managed_file "$src" "$sync_dst" takeover || fail 'sync fixture install'
+! sync_managed_file_hash "$sync_dst" || fail 'unchanged managed file restamped'
+printf rewritten-by-external-tool > "$sync_dst"
+sync_managed_file_hash "$sync_dst" || fail 'externally rewritten managed file not restamped'
+[[ "$(jq -r --arg p "$sync_dst" '.artifacts[$p].installedHash' "$RECEIPT_PATH")" == "$(file_hash "$sync_dst")" ]] || fail 'restamped hash mismatch'
+install_managed_file "$src" "$sync_dst" takeover || fail 'restamped file preserved on next install'
+[[ "$(cat "$sync_dst")" == "$(cat "$src")" ]] || fail 'restamped file not updated'
+! sync_managed_file_hash "$TMP/never-managed.txt" || fail 'unmanaged path restamped'
+
 record_managed_value 'env:PATH:/tools' false '' present false
 record_managed_value env:SECRET_TOKEN true do-not-store new-secret
 git config --global test.receipt before

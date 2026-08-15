@@ -249,6 +249,29 @@ function Get-ManagedPath([string]$Path) {
     [IO.Path]::GetFullPath($Path)
 }
 
+function Resolve-ManagedLinkPath([string]$Path) {
+    # reparse point 체인을 끝까지 따라가 실제 경로를 얻는다.
+    # fnm은 셸마다 `fnm_multishells\<PID>_<timestamp>` 링크를 새로 만들기 때문에
+    # `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다.
+    if (-not $Path) { return '' }
+    $current = Get-ManagedPath $Path
+    for ($hop = 0; $hop -lt 8; $hop++) {
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.LinkTarget) { break }
+        $target = $item.LinkTarget
+        if (-not [IO.Path]::IsPathRooted($target)) { $target = Join-Path (Split-Path $current -Parent) $target }
+        $current = Get-ManagedPath $target
+    }
+    return $current.TrimEnd('\')
+}
+
+function Test-EphemeralNpmPrefix([string]$Path) {
+    # fnm multishell 경로는 셸 수명 동안만 유효하다. receipt에 남아 있으면 링크를 풀지 않고 기록한 잔재다.
+    if (-not $Path -or -not $env:LOCALAPPDATA) { return $false }
+    $root = (Get-ManagedPath (Join-Path $env:LOCALAPPDATA 'fnm_multishells')).TrimEnd('\') + '\'
+    (Get-ManagedPath $Path).StartsWith($root, [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-ManagedParentPath([string]$Path) {
     $parent = [IO.Path]::GetDirectoryName((Get-ManagedPath $Path))
     $boundary = if ($env:USERPROFILE) { (Get-ManagedPath $env:USERPROFILE).TrimEnd('\') } else { $null }
@@ -384,6 +407,23 @@ function Install-ManagedTree([string]$SourceDir, [string]$DestDir, [ValidateSet(
     return $success
 }
 
+function Sync-ManagedFileHash([string]$Path) {
+    # `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
+    # receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
+    # 설치가 끝난 시점의 내용으로 도장을 다시 찍어 소유권을 유지한다.
+    if (-not $script:ReceiptReady) { return $false }
+    $key = Get-ManagedPath $Path
+    $entry = $script:Receipt.artifacts[$key]
+    if (-not $entry -or $entry.pending) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($hash -eq $entry.installedHash) { return $false }
+    $entry.installedHash = $hash
+    Save-InstallReceipt
+    return $true
+}
+
 function Record-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$BeforeValue, [string]$InstalledValue, [string]$Prefix = '') {
     if (-not $script:ReceiptReady -or ($BeforePresent -and $BeforeValue -eq $InstalledValue)) { return }
     if (-not $BeforePresent -and -not $InstalledValue) { return }
@@ -401,8 +441,16 @@ function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$Befo
     if (-not $script:ReceiptReady) { return $false }
     $existing = $script:Receipt.packages[$Name]
     if ($Prefix -and $existing -and ((-not $existing.prefix) -or $existing.prefix -cne $Prefix)) {
-        Write-Warning "npm prefix changed or missing in receipt; preserving package ownership: $Name"
-        return $false
+        # 이전 버전은 링크를 풀지 않은 fnm multishell 경로를 기록했다. 그 값은 셸마다 달라져
+        # 소유권 판단에 쓸 수 없으므로, 새 prefix가 안정 경로일 때만 잔재를 교정하고 진행한다.
+        if (-not (Test-EphemeralNpmPrefix $existing.prefix) -or (Test-EphemeralNpmPrefix $Prefix)) {
+            Write-Warning "npm prefix changed or missing in receipt; preserving package ownership: $Name"
+            return $false
+        }
+        Write-Warning "Repairing ephemeral npm prefix recorded in receipt: $Name"
+        # 낡은 prefix가 어느 위치를 가리켰는지 알 수 없으므로 before 스냅샷도 지금 측정값으로 다시 잡는다.
+        # 그대로 두면 다른 위치에서 잰 "설치 전 없음"이 남아 uninstall이 사용자 설치를 지운다.
+        $existing.before = [ordered]@{ present = $BeforePresent; value = $(if ($BeforePresent) { $BeforeValue } else { $null }) }
     }
     if ($existing.pending -and ($BeforePresent -ne $existing.pending.previousPresent -or ($BeforePresent -and $BeforeValue -ne $existing.pending.previousValue))) {
         Record-ManagedPackage $Name $existing.before.present $existing.before.value $BeforeValue
@@ -633,13 +681,16 @@ function Merge-CodexConfig([string]$SourcePath, [string]$DestPath) {
 }
 
 function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
+    # 이번 실행에서 실제로 파일을 썼는지 남긴다. 나중 단계가 그 파일을 다시 쓸 때만
+    # 소유권 해시를 갱신하기 위한 것이라, 보존으로 끝난 경우와 반드시 구분해야 한다.
+    $script:LastJsonRegistryDeployed = $false
     if (-not (Test-Path $SourcePath)) {
         Write-Host "    [!] $SourcePath not found, skipping."
         return
     }
     if (-not (Test-Path $DestPath)) {
-        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
-        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied $(Split-Path $DestPath -Leaf)" }
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) { Copy-Item $SourcePath $DestPath -Force; Write-Host "    Copied $(Split-Path $DestPath -Leaf)"; $script:LastJsonRegistryDeployed = $true }
+        elseif (Install-ManagedFile $SourcePath $DestPath Takeover) { Write-Host "    Copied $(Split-Path $DestPath -Leaf)"; $script:LastJsonRegistryDeployed = $true }
         return
     }
     if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
@@ -662,8 +713,10 @@ function Merge-JsonRegistry([string]$SourcePath, [string]$DestPath) {
         if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
             Move-Item $tmp $DestPath -Force
             Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+            $script:LastJsonRegistryDeployed = $true
         } elseif (Install-ManagedFile $tmp $DestPath Takeover) {
             Write-Host "    Merged $(Split-Path $DestPath -Leaf)"
+            $script:LastJsonRegistryDeployed = $true
         }
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -1028,8 +1081,11 @@ $npmFile = Join-Path $ROOT "manifests\npm-global.txt"
 if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
     $npmRoot = npm root -g 2>$null
     $npmRootStatus = $LASTEXITCODE
-    $npmPrefix = npm prefix -g 2>$null
+    $npmPrefixRaw = npm prefix -g 2>$null
     $npmPrefixStatus = $LASTEXITCODE
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다.
+    # uninstall의 npm prefix allowlist는 `<fnm_root>\node-versions\<version>\installation`만 받는다.
+    $npmPrefix = Resolve-ManagedLinkPath $npmPrefixRaw
     $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
     if ($npmRootStatus -ne 0 -or $npmPrefixStatus -ne 0 -or -not $npmRoot -or -not $npmPrefix) {
         Add-InstallFailure "npm global root/prefix query failed."
@@ -1041,10 +1097,14 @@ if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
         $npmStates = Get-ManifestLines $npmFile | ForEach-Object {
             $packageJson = Join-Path $npmRoot "$_\package.json"
             $beforeVersion = if (Test-Path $packageJson) { (& $jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
-            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion $npmPrefix)) { throw "npm receipt journal failed: $_" }
+            if (-not (Begin-ManagedPackage "npm:$_" ([bool]$beforeVersion) $beforeVersion $npmPrefix)) {
+                # 소유권을 판정할 수 없는 패키지 하나 때문에 이후 설치 단계 전체를 중단하지 않는다.
+                Add-InstallFailure "npm receipt journal failed; skipping package: $_"
+                return
+            }
             [pscustomobject]@{ Package = $_; BeforeVersion = $beforeVersion }
         }
-        $npmResults = $npmStates | ForEach-Object -Parallel {
+        $npmResults = @($npmStates) | Where-Object { $_ } | ForEach-Object -Parallel {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         $package = $_.Package
         $packageJson = Join-Path $using:npmRoot "$package\package.json"
@@ -1189,6 +1249,7 @@ $settingsSrc = Join-Path $ROOT "config\claude\settings.json"
 $settingsDst = Join-Path $ClaudeDir "settings.json"
 if (Test-Path $settingsSrc) {
     Merge-JsonRegistry $settingsSrc $settingsDst
+    $script:ClaudeSettingsDeployed = $script:LastJsonRegistryDeployed
 } else {
     Write-Host "    [!] config\claude\settings.json not found"
 }
@@ -1311,6 +1372,12 @@ Write-Host ""
 Write-Host "==> Restoring Claude Code plugins..."
 $pluginsFile = Join-Path $ROOT "manifests\plugins.txt"
 Invoke-ClaudePluginsStage $pluginsFile
+
+# 플러그인 CLI가 settings.json을 자기 형식으로 다시 쓰므로 3-1이 기록한 해시가 낡는다.
+# 3-1이 실제로 배포한 경우에만 갱신한다 — 보존으로 끝난 파일까지 소유권에 넣지 않는다.
+if ($script:ClaudeSettingsDeployed -and (Sync-ManagedFileHash (Join-Path $ClaudeDir 'settings.json'))) {
+    Write-Host "    Refreshed settings.json ownership hash."
+}
 
 if (-not (Complete-Install)) { exit 1 }
 exit 0

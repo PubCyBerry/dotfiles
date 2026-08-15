@@ -138,6 +138,53 @@ try {
     Assert (Initialize-InstallReceipt) 'package pending reload failed'
     Assert (Begin-ManagedPackage 'test:crash-package' $true '1') 'package pending reconcile failed'
     Cancel-ManagedPackage 'test:crash-package'
+
+    # fnm은 셸마다 새 multishell 링크를 만든다. prefix를 링크째로 기록하면 매 실행 소유권 판정이 깨진다.
+    $stablePrefix = Join-Path $env:APPDATA 'fnm\node-versions\v1.0.0\installation'
+    $ephemeralPrefix = Join-Path $env:LOCALAPPDATA 'fnm_multishells\1234_5678'
+    Assert (Test-EphemeralNpmPrefix $ephemeralPrefix) 'multishell prefix not detected as ephemeral'
+    Assert (-not (Test-EphemeralNpmPrefix $stablePrefix)) 'stable prefix flagged as ephemeral'
+    New-Item -ItemType Directory -Force -Path $stablePrefix | Out-Null
+    $prefixLinkCreated = $false
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $ephemeralPrefix) | Out-Null
+        New-Item -ItemType SymbolicLink -Path $ephemeralPrefix -Target $stablePrefix -ErrorAction Stop | Out-Null
+        $prefixLinkCreated = $true
+    } catch { }
+    if ($prefixLinkCreated) {
+        Assert ((Resolve-ManagedLinkPath $ephemeralPrefix) -eq (Get-ManagedPath $stablePrefix).TrimEnd('\')) 'ephemeral prefix link not resolved'
+    }
+
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $false '' $stablePrefix) 'npm prefix journal failed'
+    Record-ManagedPackage 'npm:test-prefix' $false '' '1' $stablePrefix
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $true '1' $stablePrefix) 'matching npm prefix was rejected'
+    Cancel-ManagedPackage 'npm:test-prefix'
+    Assert (-not (Begin-ManagedPackage 'npm:test-prefix' $true '1' (Join-Path $env:APPDATA 'other\prefix'))) 'changed npm prefix was adopted'
+    Assert (-not (Begin-ManagedPackage 'npm:test-prefix' $true '1' $ephemeralPrefix)) 'ephemeral npm prefix was recorded'
+    Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'rejected npm prefix overwrote receipt'
+
+    # 이전 버그가 남긴 multishell prefix는 안정 경로로 교정되어야 한다.
+    $script:Receipt.packages['npm:test-prefix'].prefix = $ephemeralPrefix
+    Assert (Begin-ManagedPackage 'npm:test-prefix' $true '1' $stablePrefix) 'ephemeral npm prefix was not repaired'
+    Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'repaired npm prefix not persisted'
+    # 낡은 prefix에서 잰 before는 새 위치에 대해 무의미하므로 지금 측정값으로 다시 잡혀야 한다.
+    Assert ($script:Receipt.packages['npm:test-prefix'].before.present -eq $true) 'repaired before.present not rebased'
+    Assert ($script:Receipt.packages['npm:test-prefix'].before.value -eq '1') 'repaired before.value not rebased'
+    Cancel-ManagedPackage 'npm:test-prefix'
+    Assert ((Resolve-ManagedLinkPath '') -eq '') 'empty link path did not resolve to empty'
+
+    # 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
+    $syncDst = Join-Path $temp 'sync-target.txt'
+    Assert (Install-ManagedFile $src $syncDst Takeover) 'sync fixture install failed'
+    Assert (-not (Sync-ManagedFileHash $syncDst)) 'unchanged managed file was restamped'
+    Set-Content $syncDst 'rewritten-by-external-tool' -NoNewline
+    Assert (Sync-ManagedFileHash $syncDst) 'externally rewritten managed file was not restamped'
+    $syncEntry = $script:Receipt.artifacts[[IO.Path]::GetFullPath($syncDst)]
+    Assert ($syncEntry.installedHash -eq (Get-FileHash $syncDst -Algorithm SHA256).Hash.ToLowerInvariant()) 'restamped hash mismatch'
+    Assert (Install-ManagedFile $src $syncDst Takeover) 'restamped file was preserved on next install'
+    Assert ((Get-Content $syncDst -Raw) -eq (Get-Content $src -Raw)) 'restamped file was not updated'
+    Assert (-not (Sync-ManagedFileHash (Join-Path $temp 'never-managed.txt'))) 'unmanaged path was restamped'
+
     Record-ManagedValue 'env:PATH:C:\Tools' $false $null 'present' $false
     Record-ManagedValue 'env:SECRET_TOKEN' $true 'do-not-store' 'new-secret'
     git config --global test.receipt before

@@ -260,6 +260,25 @@ file_hash() {
 }
 file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
+# symlink 체인을 끝까지 풀어 실경로를 얻는다.
+# fnm은 셸마다 `<tmp>/fnm_multishells/<pid>_<timestamp>` 링크를 새로 만들기 때문에
+# `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다. `cd -P`는 POSIX라 macOS에서도 동작한다.
+resolve_link_path() {
+    local path="$1"
+    # 빈 입력은 빈 값으로 통과시킨다. `set -e` 아래에서 실패로 끝나면 호출부 대입이 설치를 중단시킨다.
+    [[ -n "$path" ]] || return 0
+    if [[ -d "$path" ]]; then (cd -P -- "$path" 2>/dev/null && pwd -P) && return 0; fi
+    printf '%s\n' "${path%/}"
+}
+
+# fnm multishell 경로는 셸 수명 동안만 유효하다. receipt에 남아 있으면 링크를 풀지 않고 기록한 잔재다.
+is_ephemeral_npm_prefix() {
+    local path="${1:-}" tmp="${TMPDIR:-/tmp}"
+    [[ -n "$path" ]] || return 1
+    case "${path%/}/" in "${tmp%/}/fnm_multishells/"*|/tmp/fnm_multishells/*) return 0 ;; esac
+    return 1
+}
+
 managed_parent_is_safe() {
     local path="$1" parent next boundary=""
     case "$path" in "$HOME"/*) boundary="${HOME%/}"; [[ -n "$boundary" ]] || boundary=/ ;; esac
@@ -366,6 +385,21 @@ install_managed_file() {
     cp -p "$src" "$tmp" || return 1
     mv "$tmp" "$dst" || return 1
     receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash = $installed | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
+}
+
+# `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
+# receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
+# 설치가 끝난 시점의 내용으로 도장을 다시 찍어 소유권을 유지한다.
+sync_managed_file_hash() {
+    local dst="$1" current installed
+    $RECEIPT_READY || return 1
+    jq -e --arg path "$dst" '.artifacts[$path] != null and (.artifacts[$path].pending | not)' "$RECEIPT_PATH" >/dev/null || return 1
+    [[ -f "$dst" && ! -L "$dst" ]] || return 1
+    current="$(file_hash "$dst")"
+    installed="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    [[ "$current" != "$installed" ]] || return 1
+    receipt_commit --arg path "$dst" --arg hash "$current" --arg mode "$(file_mode "$dst")" \
+        '.artifacts[$path].installedHash=$hash | .artifacts[$path].installedMode=$mode'
 }
 
 install_managed_symlink() {
@@ -603,8 +637,17 @@ begin_managed_package() {
     if [[ -n "$prefix" ]] && jq -e --arg name "$name" '.packages|has($name)' "$RECEIPT_PATH" >/dev/null; then
         current_prefix="$(jq -r --arg name "$name" '.packages[$name].prefix // empty' "$RECEIPT_PATH")"
         if [[ -z "$current_prefix" || "$current_prefix" != "$prefix" ]]; then
-            echo "    [!] npm prefix changed or missing in receipt; preserving package ownership: $name" >&2
-            return 1
+            # 이전 버전은 링크를 풀지 않은 fnm multishell 경로를 기록했다. 그 값은 셸마다 달라져
+            # 소유권 판단에 쓸 수 없으므로, 새 prefix가 안정 경로일 때만 잔재를 교정하고 진행한다.
+            if ! is_ephemeral_npm_prefix "$current_prefix" || is_ephemeral_npm_prefix "$prefix"; then
+                echo "    [!] npm prefix changed or missing in receipt; preserving package ownership: $name" >&2
+                return 1
+            fi
+            echo "    [!] Repairing ephemeral npm prefix recorded in receipt: $name" >&2
+            # 낡은 prefix가 어느 위치를 가리켰는지 알 수 없으므로 before 스냅샷도 지금 측정값으로 다시 잡는다.
+            # 그대로 두면 다른 위치에서 잰 "설치 전 없음"이 남아 uninstall이 사용자 설치를 지운다.
+            receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" \
+                '.packages[$name].before={present:$present,value:(if $present then $before else null end)}' || return 1
         fi
     fi
     if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
@@ -910,6 +953,9 @@ merge_codex_config() {
 
 merge_json_registry() {
     local src="$1" dst="$2" tmp
+    # 이번 실행에서 실제로 파일을 썼는지 남긴다. 나중 단계가 그 파일을 다시 쓸 때만
+    # 소유권 해시를 갱신하기 위한 것이라, 보존으로 끝난 경우와 반드시 구분해야 한다.
+    LAST_JSON_REGISTRY_DEPLOYED=false
     if [[ ! -f "$src" ]]; then
         echo "    [!] $src not found, skipping."
         return 0
@@ -918,6 +964,7 @@ merge_json_registry() {
         if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
         else install_managed_file "$src" "$dst" takeover || return 0
         fi
+        LAST_JSON_REGISTRY_DEPLOYED=true
         echo "    Copied $(basename "$dst")"
         return 0
     fi
@@ -935,8 +982,10 @@ merge_json_registry() {
     if jq -s -f "$filter" "$dst" "$src" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
         if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
             mv "$tmp" "$dst"
+            LAST_JSON_REGISTRY_DEPLOYED=true
             echo "    Merged $(basename "$dst")"
         elif install_managed_file "$tmp" "$dst" takeover; then
+            LAST_JSON_REGISTRY_DEPLOYED=true
             echo "    Merged $(basename "$dst")"
         fi
     else
@@ -1440,13 +1489,20 @@ echo "==> Installing global npm packages..."
 NPM_FILE="$ROOT/manifests/npm-global.txt"
 if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
     npm_root="$(npm root -g)"; npm_prefix="$(npm prefix -g)"
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다.
+    # uninstall의 npm prefix allowlist는 `<fnm_root>/node-versions/<version>/installation`만 받는다.
+    npm_prefix="$(resolve_link_path "$npm_prefix")"
     npm_failed=0
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         package_json="$npm_root/$pkg/package.json"
         before="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
         before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
-        begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix" || exit 1
+        # 소유권을 판정할 수 없는 패키지 하나 때문에 이후 설치 단계 전체를 중단하지 않는다.
+        if ! begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix"; then
+            record_install_failure "npm receipt journal failed; skipping package: $pkg"
+            continue
+        fi
         if npm install -g "$pkg" >/dev/null 2>&1; then
             echo "    Installed $pkg"
         else
@@ -1537,6 +1593,16 @@ install_claude_code_stage() {
     elif [[ "$OS" == Linux ]] && jq -e '.packages["npm:@anthropic-ai/claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
         CLAUDE_NPM_PREFIX="$(jq -r '.packages["npm:@anthropic-ai/claude-code"].prefix // empty' "$RECEIPT_PATH")"
         [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix missing; receipt preserved." >&2; exit 1; }
+        # 이전 버전이 기록한 multishell 경로는 셸이 끝나면 죽는다. 그대로 조회하면 identity가 영영
+        # absent로 나와 pending을 못 풀고 매 실행 같은 자리에서 멈춘다. 살아 있으면 링크를 풀고,
+        # 죽었으면 현재 전역 prefix로 대체한다.
+        if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX"; then
+            CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
+            if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX" && command -v npm >/dev/null 2>&1; then
+                CLAUDE_NPM_PREFIX="$(resolve_link_path "$(npm prefix -g 2>/dev/null || true)")"
+            fi
+            [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix unresolvable; receipt preserved." >&2; exit 1; }
+        fi
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
         reconcile_pending_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$command_present" || {
             echo "    [!] Pending Claude npm identity unavailable; receipt left pending." >&2; exit 1;
@@ -1553,6 +1619,8 @@ install_claude_code_stage() {
         complete_managed_claude_package cask:claude-code query_claude_cask "$before_present" "$before" "$manager_status" "$command_present" || exit $?
     elif command -v npm >/dev/null 2>&1 && [[ "$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge 22 ]]; then
         CLAUDE_NPM_PREFIX="$(npm prefix -g)" || exit 1
+        # npm 전역 패키지와 같은 이유로 fnm multishell 링크를 풀어 안정 경로로 기록한다.
+        CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
         query_claude_npm_package || { echo "    [!] Claude npm identity query failed before installation." >&2; exit 1; }
         before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
         npm_prefix="$CLAUDE_NPM_PREFIX"
@@ -1576,6 +1644,7 @@ install_claude_code_stage() {
     SETTINGS_DST="$CLAUDE_DIR/settings.json"
     if [[ -f "$SETTINGS_SRC" ]]; then
         merge_json_registry "$SETTINGS_SRC" "$SETTINGS_DST"
+        CLAUDE_SETTINGS_DEPLOYED="$LAST_JSON_REGISTRY_DEPLOYED"
     else
         echo "    [!] config/claude/settings.json not found"
     fi
@@ -1650,5 +1719,11 @@ run_skills_stage "$ROOT/manifests/skills.txt"
 # =============================================
 echo
 run_plugins_stage "$ROOT/manifests/plugins.txt"
+
+# 플러그인 CLI가 settings.json을 자기 형식으로 다시 쓰므로 3-1이 기록한 해시가 낡는다.
+# 3-1이 실제로 배포한 경우에만 갱신한다 — 보존으로 끝난 파일까지 소유권에 넣지 않는다.
+if [[ "${CLAUDE_SETTINGS_DEPLOYED:-false}" == true ]] && sync_managed_file_hash "$CLAUDE_DIR/settings.json"; then
+    echo "    Refreshed settings.json ownership hash."
+fi
 
 finish_install || exit 1

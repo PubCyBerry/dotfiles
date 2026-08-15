@@ -170,6 +170,7 @@ features.hooks = false
       .hooks.PreToolUse[0].hooks[0].command == "user-event-sentinel"
     ' $claudeDst | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "Claude settings 병합 결과가 기대와 다릅니다."
+    Assert-True $script:LastJsonRegistryDeployed "병합 성공인데 배포 플래그가 서지 않았습니다."
     $claudeFirst = Get-FileHash $claudeDst
     Merge-JsonRegistry $claudeSrc $claudeDst
     Assert-True ($claudeFirst.Hash -eq (Get-FileHash $claudeDst).Hash) "Claude settings 두 번째 병합 결과가 달라졌습니다."
@@ -179,6 +180,7 @@ features.hooks = false
     $invalidJsonBefore = Get-FileHash $invalidJson
     Merge-JsonRegistry $claudeSrc $invalidJson
     Assert-True ($invalidJsonBefore.Hash -eq (Get-FileHash $invalidJson).Hash) "invalid JSON 원본이 변경되었습니다."
+    Assert-True (-not $script:LastJsonRegistryDeployed) "병합 실패인데 배포 플래그가 섰습니다."
 
     $codexSrc = Join-Path $work "codex-source.json"
     $codexDst = Join-Path $work "codex-destination.json"

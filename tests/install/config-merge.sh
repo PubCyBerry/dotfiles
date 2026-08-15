@@ -154,6 +154,7 @@ jq -e '
   all(.hooks.SessionStart[]; (.hooks | length) > 0) and
   .hooks.PreToolUse[0].hooks[0].command == "user-event-sentinel"
 ' "$claude_dst" >/dev/null
+[[ "$LAST_JSON_REGISTRY_DEPLOYED" == true ]] || { echo "FAIL: 병합 성공인데 배포 플래그가 서지 않았습니다." >&2; exit 1; }
 cp "$claude_dst" "$work/claude-first"
 merge_json_registry "$claude_src" "$claude_dst"
 cmp -s "$work/claude-first" "$claude_dst"
@@ -163,6 +164,7 @@ printf '{' > "$invalid_json"
 cp "$invalid_json" "$work/invalid-json-first"
 merge_json_registry "$claude_src" "$invalid_json"
 cmp -s "$work/invalid-json-first" "$invalid_json"
+[[ "$LAST_JSON_REGISTRY_DEPLOYED" == false ]] || { echo "FAIL: 병합 실패인데 배포 플래그가 섰습니다." >&2; exit 1; }
 
 codex_src="$work/codex-source.json"
 codex_dst="$work/codex-destination.json"
