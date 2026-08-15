@@ -265,7 +265,8 @@ file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 # `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다. `cd -P`는 POSIX라 macOS에서도 동작한다.
 resolve_link_path() {
     local path="$1"
-    [[ -n "$path" ]] || return 1
+    # 빈 입력은 빈 값으로 통과시킨다. `set -e` 아래에서 실패로 끝나면 호출부 대입이 설치를 중단시킨다.
+    [[ -n "$path" ]] || return 0
     if [[ -d "$path" ]]; then (cd -P -- "$path" 2>/dev/null && pwd -P) && return 0; fi
     printf '%s\n' "${path%/}"
 }
@@ -643,6 +644,10 @@ begin_managed_package() {
                 return 1
             fi
             echo "    [!] Repairing ephemeral npm prefix recorded in receipt: $name" >&2
+            # 낡은 prefix가 어느 위치를 가리켰는지 알 수 없으므로 before 스냅샷도 지금 측정값으로 다시 잡는다.
+            # 그대로 두면 다른 위치에서 잰 "설치 전 없음"이 남아 uninstall이 사용자 설치를 지운다.
+            receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" \
+                '.packages[$name].before={present:$present,value:(if $present then $before else null end)}' || return 1
         fi
     fi
     if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
@@ -1484,7 +1489,8 @@ echo "==> Installing global npm packages..."
 NPM_FILE="$ROOT/manifests/npm-global.txt"
 if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
     npm_root="$(npm root -g)"; npm_prefix="$(npm prefix -g)"
-    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다. uninstall도 이 실경로를 요구한다.
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다.
+    # uninstall의 npm prefix allowlist는 `<fnm_root>/node-versions/<version>/installation`만 받는다.
     npm_prefix="$(resolve_link_path "$npm_prefix")"
     npm_failed=0
     while IFS= read -r pkg; do
@@ -1587,6 +1593,16 @@ install_claude_code_stage() {
     elif [[ "$OS" == Linux ]] && jq -e '.packages["npm:@anthropic-ai/claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
         CLAUDE_NPM_PREFIX="$(jq -r '.packages["npm:@anthropic-ai/claude-code"].prefix // empty' "$RECEIPT_PATH")"
         [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix missing; receipt preserved." >&2; exit 1; }
+        # 이전 버전이 기록한 multishell 경로는 셸이 끝나면 죽는다. 그대로 조회하면 identity가 영영
+        # absent로 나와 pending을 못 풀고 매 실행 같은 자리에서 멈춘다. 살아 있으면 링크를 풀고,
+        # 죽었으면 현재 전역 prefix로 대체한다.
+        if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX"; then
+            CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
+            if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX" && command -v npm >/dev/null 2>&1; then
+                CLAUDE_NPM_PREFIX="$(resolve_link_path "$(npm prefix -g 2>/dev/null || true)")"
+            fi
+            [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix unresolvable; receipt preserved." >&2; exit 1; }
+        fi
         command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
         reconcile_pending_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$command_present" || {
             echo "    [!] Pending Claude npm identity unavailable; receipt left pending." >&2; exit 1;

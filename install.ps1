@@ -448,6 +448,9 @@ function Begin-ManagedPackage([string]$Name, [bool]$BeforePresent, [string]$Befo
             return $false
         }
         Write-Warning "Repairing ephemeral npm prefix recorded in receipt: $Name"
+        # 낡은 prefix가 어느 위치를 가리켰는지 알 수 없으므로 before 스냅샷도 지금 측정값으로 다시 잡는다.
+        # 그대로 두면 다른 위치에서 잰 "설치 전 없음"이 남아 uninstall이 사용자 설치를 지운다.
+        $existing.before = [ordered]@{ present = $BeforePresent; value = $(if ($BeforePresent) { $BeforeValue } else { $null }) }
     }
     if ($existing.pending -and ($BeforePresent -ne $existing.pending.previousPresent -or ($BeforePresent -and $BeforeValue -ne $existing.pending.previousValue))) {
         Record-ManagedPackage $Name $existing.before.present $existing.before.value $BeforeValue
@@ -1080,7 +1083,8 @@ if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
     $npmRootStatus = $LASTEXITCODE
     $npmPrefixRaw = npm prefix -g 2>$null
     $npmPrefixStatus = $LASTEXITCODE
-    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다. uninstall도 이 실경로를 요구한다.
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다.
+    # uninstall의 npm prefix allowlist는 `<fnm_root>\node-versions\<version>\installation`만 받는다.
     $npmPrefix = Resolve-ManagedLinkPath $npmPrefixRaw
     $jqPath = (Get-Command jq -ErrorAction SilentlyContinue).Source
     if ($npmRootStatus -ne 0 -or $npmPrefixStatus -ne 0 -or -not $npmRoot -or -not $npmPrefix) {

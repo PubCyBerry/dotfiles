@@ -167,7 +167,11 @@ try {
     $script:Receipt.packages['npm:test-prefix'].prefix = $ephemeralPrefix
     Assert (Begin-ManagedPackage 'npm:test-prefix' $true '1' $stablePrefix) 'ephemeral npm prefix was not repaired'
     Assert ($script:Receipt.packages['npm:test-prefix'].prefix -eq $stablePrefix) 'repaired npm prefix not persisted'
+    # 낡은 prefix에서 잰 before는 새 위치에 대해 무의미하므로 지금 측정값으로 다시 잡혀야 한다.
+    Assert ($script:Receipt.packages['npm:test-prefix'].before.present -eq $true) 'repaired before.present not rebased'
+    Assert ($script:Receipt.packages['npm:test-prefix'].before.value -eq '1') 'repaired before.value not rebased'
     Cancel-ManagedPackage 'npm:test-prefix'
+    Assert ((Resolve-ManagedLinkPath '') -eq '') 'empty link path did not resolve to empty'
 
     # 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
     $syncDst = Join-Path $temp 'sync-target.txt'

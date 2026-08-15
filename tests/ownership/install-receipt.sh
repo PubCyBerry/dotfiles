@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"
+# TMPDIR도 격리한다. fnm multishell fixture가 실제 임시 디렉터리에 잔재를 남기면 안 된다.
+export TMPDIR="$TMP"
 mkdir -p "$HOME/.config" "$HOME/.local/bin"
 export DOTFILES_FUNCTIONS_ONLY=1
 export DOTFILES_RECEIPT_PATH="$TMP/state/install-receipt.json"
@@ -129,7 +131,14 @@ cancel_managed_package npm:test-prefix
 receipt_commit --arg prefix "$ephemeral_prefix" '.packages["npm:test-prefix"].prefix=$prefix'
 begin_managed_package npm:test-prefix true 1 "$stable_prefix" || fail 'ephemeral npm prefix not repaired'
 [[ "$(jq -r '.packages["npm:test-prefix"].prefix' "$RECEIPT_PATH")" == "$stable_prefix" ]] || fail 'repaired npm prefix not persisted'
+# 낡은 prefix에서 잰 before는 새 위치에 대해 무의미하므로 지금 측정값으로 다시 잡혀야 한다.
+[[ "$(jq -r '.packages["npm:test-prefix"].before.present' "$RECEIPT_PATH")" == true ]] || fail 'repaired before.present not rebased'
+[[ "$(jq -r '.packages["npm:test-prefix"].before.value' "$RECEIPT_PATH")" == 1 ]] || fail 'repaired before.value not rebased'
 cancel_managed_package npm:test-prefix
+
+# 빈 입력은 실패가 아니라 빈 값이어야 한다. `set -e` 아래에서 설치가 통째로 중단되기 때문이다.
+[[ -z "$(resolve_link_path "")" ]] || fail 'empty resolve_link_path returned a value'
+resolve_link_path "" >/dev/null || fail 'empty resolve_link_path returned failure'
 
 # 설치 후 외부 CLI가 관리 파일을 다시 써도 소유권을 잃지 않아야 한다.
 sync_dst="$TMP/sync-target.txt"

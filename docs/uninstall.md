@@ -26,6 +26,7 @@ bash uninstall.sh
 - direct tree에 파일, socket 등 항목이 하나라도 추가되거나 mode/content가 바뀌면 전체 tree를 보존한다.
 - Git 설정, `YAZI_FILE_ONE`, User `PATH`는 현재 값이 설치 identity와 정확히 일치할 때만 복원한다. PATH는 대소문자 무시 exact segment가 한 번 있을 때만 그 한 항목을 제거한다.
 - 설치 전부터 있던 패키지는 제거하거나 downgrade하지 않는다. 새로 설치된 unchanged 패키지만 제거한다. npm은 receipt의 설치 당시 global prefix가 exact `FNM_DIR/node-versions/<version>/installation`이 아니면 보존한다.
+- `~/.claude/settings.json`은 설치 마지막 단계의 `claude plugin` CLI가 다시 쓴다. install은 그 직후 소유권 해시를 설치 종료 시점 내용으로 갱신하므로, uninstall이 이 파일을 backup에서 복원할 수 있고 그 과정에서 `enabledPlugins`/`extraKnownMarketplaces` 등록도 함께 사라진다. `~/.claude/plugins/` 자체는 범위 밖이라 디스크에 남는다. 갱신은 install이 실제로 그 파일을 배포한 실행에서만 일어난다 — 보존으로 끝난 파일은 소유권에 들어가지 않는다.
 - 각 항목 완료 직후 receipt를 atomic 저장하므로 중단 후 다시 실행할 수 있다. 두 번째 실행은 no-op이다.
 
 자동 제거하지 않는 범위: receipt에 없는 Node 버전, remote skills, plugins/marketplaces, macOS defaults, legacy Codex skills, cache와 사용자 data.
