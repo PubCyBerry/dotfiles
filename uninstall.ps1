@@ -6,12 +6,36 @@ $script:ReceiptPath = if ($env:DOTFILES_RECEIPT_PATH) { $env:DOTFILES_RECEIPT_PA
 $script:Receipt = $null
 
 function Write-Preserve([string]$Message) { Write-Warning $Message }
-function Get-DotfilesUserEnvironment([string]$Name) { [Environment]::GetEnvironmentVariable($Name, 'User') }
+function Get-DotfilesUserEnvironment([string]$Name) {
+    if ($Name -ieq 'PATH') {
+        try {
+            $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+            if ($k) {
+                $val = $k.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                $k.Close()
+                if ($null -ne $val) { return [string]$val }
+            }
+        } catch {}
+    }
+    [Environment]::GetEnvironmentVariable($Name, 'User')
+}
 function ConvertTo-DotfilesEnvironmentValue([AllowNull()][object]$Value) {
     # 일반 $null은 .NET string 인자에서 ""가 되므로 삭제용 null sentinel을 쓴다.
     if ($null -eq $Value) { [System.Management.Automation.Language.NullString]::Value } else { [string]$Value }
 }
-function Set-DotfilesUserEnvironment([string]$Name, [AllowNull()][object]$Value) { [Environment]::SetEnvironmentVariable($Name, (ConvertTo-DotfilesEnvironmentValue $Value), 'User') }
+function Set-DotfilesUserEnvironment([string]$Name, [AllowNull()][object]$Value) {
+    if ($Name -ieq 'PATH' -and $null -ne $Value) {
+        try {
+            $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+            if ($k) {
+                $k.SetValue('Path', [string]$Value, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+                $k.Close()
+                return
+            }
+        } catch {}
+    }
+    [Environment]::SetEnvironmentVariable($Name, (ConvertTo-DotfilesEnvironmentValue $Value), 'User')
+}
 
 function Save-UninstallReceipt {
     $dir = Split-Path $script:ReceiptPath

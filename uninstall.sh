@@ -46,8 +46,18 @@ value_key_allowed() {
     case "$1" in git:core.pager|git:core.editor|git:core.fileMode|git:core.autocrlf|git:core.eol|git:core.quotepath|git:init.defaultBranch|git:interactive.diffFilter|git:delta.navigate|git:delta.dark|git:delta.side-by-side|git:delta.line-numbers|git:merge.conflictStyle|git:credential.credentialStore) return 0;; esac
     return 1
 }
+get_fnm_dir() {
+    if [[ -n "${FNM_DIR:-}" ]]; then
+        echo "$FNM_DIR"
+    elif [[ "${OS:-}" == "Darwin" ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+        echo "$HOME/Library/Application Support/fnm"
+    else
+        echo "$HOME/.local/share/fnm"
+    fi
+}
 npm_prefix_allowed() {
-    local prefix="$1" fnm_root="${FNM_DIR:-$HOME/.local/share/fnm}" relative
+    local prefix="$1" fnm_root relative
+    fnm_root="$(get_fnm_dir)"
     [[ "$fnm_root" == "$HOME/"* && "$prefix" == "$fnm_root/node-versions/"*"/installation" && "$prefix" != *'/../'* && "$prefix" != *'/./'* ]] || return 1
     relative="${prefix#"$fnm_root/node-versions/"}"; [[ "${relative%/installation}" != */* ]] && managed_parent_is_safe "$prefix/package.json"
 }

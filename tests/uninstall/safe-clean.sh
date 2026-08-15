@@ -27,6 +27,7 @@ package_key_allowed 'brew:oven-sh/bun/bun' || fail brew-tap-allowlist
 package_key_allowed 'cask:codexbar' || fail cask-allowlist
 npm_prefix_allowed "$HOME/.local/share/fnm/node-versions/v22/installation" || fail npm-prefix-allowlist
 ! npm_prefix_allowed "$HOME/project/node-versions/v22/installation" || fail npm-project-prefix-rejected
+( FNM_DIR="" OS="Darwin" npm_prefix_allowed "$HOME/Library/Application Support/fnm/node-versions/v22/installation" ) || fail npm-macos-prefix-allowlist
 RECEIPT_PATH="$DOTFILES_RECEIPT_PATH"; jq -n '{packages:{"brew:oven-sh/bun/bun":{before:{present:false},installed:"1"}},artifacts:{},values:{},schemaVersion:1}' > "$RECEIPT_PATH"
 brew(){ [[ "$1" == list && "$3" == 'oven-sh/bun/bun' ]] && printf 'bun 1.2.3\n'; }
 query_package 'brew:oven-sh/bun/bun'; [[ "$PACKAGE_STATE:$PACKAGE_VERSION" == present:1.2.3 ]] || fail brew-short-name-query
