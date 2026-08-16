@@ -63,7 +63,10 @@ function Test-ArtifactAllowed([string]$Path) {
         (Join-Path $homeRoot '.claude\CLAUDE.md'), (Join-Path $homeRoot '.claude\settings.json'),
         (Join-Path $homeRoot '.gemini\config\GEMINI.md'), (Join-Path $homeRoot '.gemini\GEMINI.md'), (Join-Path $homeRoot '.gemini\config\hooks.json'),
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests\rhwp.tsv).
-        (Join-Path $homeRoot 'rhwp')
+        (Join-Path $homeRoot 'rhwp'),
+        # herdr는 설정만 소유한다. 바이너리는 공식 installer가 설치하고 herdr가 스스로
+        # 업데이트하므로 install이 애초에 소유하지 않는다 — uninstall도 손대지 않는다.
+        (Join-Path $env:APPDATA 'herdr\config.toml')
     )
     if ($exact -contains $full) { return $true }
     $pairs = @(

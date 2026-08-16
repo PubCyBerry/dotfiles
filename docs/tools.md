@@ -179,6 +179,36 @@ tmux attach -t dev      # 세션 복원
 | Ubuntu | apt 자동 (`manifests/apt.txt`) |
 | Windows (네이티브) | `winget install psmux` (tmux 대체) |
 
+### herdr — 코딩 에이전트용 터미널 멀티플렉서
+
+workspace / tab / pane 위에 pane 안에서 도는 코딩 에이전트를 인식하는 레이어를 얹는다. `herdr` CLI로 세션을 조작할 수 있어 에이전트가 다른 에이전트를 띄우고 출력을 읽는 것도 된다.
+
+```bash
+herdr                              # 세션 시작 또는 attach
+herdr status                       # 클라이언트/서버 상태
+herdr pane list                    # pane 목록 (JSON)
+herdr pane split --current --direction right --no-focus
+herdr pane run <pane-id> "just test"
+herdr pane read <pane-id> --source recent-unwrapped --lines 120
+herdr agent list                   # 인식된 에이전트 목록
+herdr update                       # 자체 업데이트
+herdr channel set stable           # stable / preview 채널 전환
+```
+
+기본 단축키는 prefix(`Ctrl+B`) 기반: `v` 수직 분할, `-` 수평 분할, `x` pane 닫기, `z` zoom, `b` 사이드바. 이 저장소 설정은 여기에 `prefix+alt+p`(pwsh 7 pane, Windows 전용)를 더한다.
+
+설정은 `%APPDATA%\herdr\config.toml`(Windows) / `~/.config/herdr/config.toml`(Linux·macOS). 이 저장소가 `config/herdr/`에서 default merge로 배포하며, 직접 고친 값은 다음 설치에서도 보존된다.
+
+| OS | 설치 방법 |
+|----|-----------|
+| Ubuntu | `install.sh`가 공식 installer 실행 (이미 있으면 건너뜀) |
+| macOS | Homebrew 자동 (`manifests/Brewfile`) |
+| Windows | `install.ps1`이 공식 installer 실행 (이미 있으면 건너뜀) |
+
+> Windows는 stable 릴리즈에 바이너리가 없어 preview 빌드가 설치된다. 버전 관리는 herdr 자체 업데이터가 맡으므로 이 저장소는 바이너리를 pin하지 않는다.
+
+Windows pane이 Git Bash 대신 `cmd.exe`로 뜨면 `config.toml`에 `shell_mode`가 들어갔는지 본다 — herdr 0.8.0-preview는 Windows에서 `shell_mode = "login"`을 만나면 `default_shell`을 버리고 `cmd.exe`로 조용히 fallback한다.
+
 ## 데이터 처리
 
 ### jq / yq

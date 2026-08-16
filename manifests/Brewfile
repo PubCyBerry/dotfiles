@@ -40,3 +40,4 @@ brew "ast-grep"     # AST 기반 코드 검색/리팩터 (sg 명령어)
 brew "atuin"        # 히스토리 강화
 
 brew "tmux"
+brew "herdr"        # 코딩 에이전트용 터미널 멀티플렉서 (workspace/tab/pane + agent 인식)

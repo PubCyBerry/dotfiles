@@ -33,6 +33,7 @@ jobs:
           SKIP_CLAUDE_CODE: '1'
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
+          SKIP_HERDR: '1'
         run: |
           export HOME="$RUNNER_TEMP/dotfiles-home"
           export DOTFILES_RECEIPT_PATH="$HOME/.local/state/dotfiles/install-receipt.json"
@@ -79,6 +80,7 @@ jobs:
           SKIP_CLAUDE_CODE: '1'
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
+          SKIP_HERDR: '1'
         run: |
           $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
           $env:HOME = $env:USERPROFILE

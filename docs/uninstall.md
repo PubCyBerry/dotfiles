@@ -27,6 +27,11 @@ bash uninstall.sh
 - Git 설정, `YAZI_FILE_ONE`, User `PATH`는 현재 값이 설치 identity와 정확히 일치할 때만 복원한다. PATH는 대소문자 무시 exact segment가 한 번 있을 때만 그 한 항목을 제거한다.
 - rhwp는 `~/rhwp`(Windows `%USERPROFILE%\rhwp`) direct tree 하나로 관리한다. tree 해시가 receipt와 정확히 일치할 때만 통째로 제거하고, 안에 파일이 하나라도 추가·변경되면 전체를 보존한다. 설치 전부터 그 자리에 tree가 있었다면 install이 애초에 소유하지 않으므로 uninstall도 손대지 않는다.
 - MCP entry(`~/.codex/config.toml`의 `[mcp_servers.rhwp]`, `~/.claude.json`의 `.mcpServers.rhwp`, `~/.gemini/config/mcp_config.json`의 `.mcpServers.rhwp`)는 현재 값이 설치한 값과 정확히 같을 때만 제거한다. 사용자가 만든 동명 entry나 우리가 심은 뒤 수정된 entry는 보존한다. 마지막 entry였으면 빈 `[mcp_servers]` 테이블까지 걷어내고, install이 직접 만든 `~/.claude.json` 또는 `~/.gemini/config/mcp_config.json`이 정확히 `{"mcpServers":{}}`로 남았을 때만 그 파일도 제거한다. `~/.claude/settings.json`은 MCP 정의 파일이 아니므로 이 경로에 관여하지 않는다.
+- herdr는 설정만 제거 대상이다. `%APPDATA%\herdr\config.toml`(Windows) / `~/.config/herdr/config.toml`(Linux·macOS)이 설치 당시 내용과 정확히 같을 때만 제거·복원한다. 바이너리는 공식 installer(macOS는 Homebrew)가 설치하고 herdr가 스스로 업데이트하므로 install이 애초에 소유하지 않는다 — uninstall도 손대지 않는다.
+- 그래서 herdr 부트스트랩이 남긴 아래 항목은 uninstall 뒤에도 그대로 있다. 지우려면 직접 정리한다. 근거는 `AGENTS.md`의 "herdr 관리 → 공식 installer가 만드는 side effect"에 있다.
+  - Windows User `PATH`(`HKCU\Environment`)의 `%LOCALAPPDATA%\Programs\Herdr\bin` segment. 이 항목만 install의 `Add-ToUserPath` + receipt 경로를 타지 않아 다른 PATH 항목과 달리 복원 대상이 아니다.
+  - `%LOCALAPPDATA%\Programs\Herdr\bin`, `%USERPROFILE%\.herdr\`(릴리즈 디렉터리 + junction), Linux는 `~/.local/bin/herdr`.
+  - macOS는 Homebrew 소유이므로 `brew uninstall herdr`.
 - 설치 전부터 있던 패키지는 제거하거나 downgrade하지 않는다. 새로 설치된 unchanged 패키지만 제거한다. npm은 receipt의 설치 당시 global prefix가 exact `FNM_DIR/node-versions/<version>/installation`이 아니면 보존한다.
 - `~/.claude/settings.json`은 설치 마지막 단계의 `claude plugin` CLI가 다시 쓴다. install은 그 직후 소유권 해시를 설치 종료 시점 내용으로 갱신하므로, uninstall이 이 파일을 backup에서 복원할 수 있고 그 과정에서 `enabledPlugins`/`extraKnownMarketplaces` 등록도 함께 사라진다. `~/.claude/plugins/` 자체는 범위 밖이라 디스크에 남는다. 갱신은 install이 실제로 그 파일을 배포한 실행에서만 일어난다 — 보존으로 끝난 파일은 소유권에 들어가지 않는다.
 - 각 항목 완료 직후 receipt를 atomic 저장하므로 중단 후 다시 실행할 수 있다. 두 번째 실행은 no-op이다.
