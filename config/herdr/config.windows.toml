@@ -31,6 +31,12 @@
 # command는 Windows에서 cmd.exe /d /c를 거치므로 PATH에서 pwsh를 찾는다. 절대 경로를
 # 박지 않는 이유는 PowerShell 7이 Store 패키지로 깔리면 경로에 버전이 들어가
 # (…\Microsoft.PowerShell_7.6.4.0_x64__…) 업데이트마다 깨지기 때문이다.
+#
+# 두 전제를 실측으로 확인했다.
+#   herdr.exe 바이너리에 cmd.exe / "/d /c" / ComSpec 문자열이 있다 (Windows spawn 경로)
+#   cmd.exe /d /c pwsh -NoProfile -Command "exit 42" -> 42 (bare pwsh가 PATH에서 해석된다)
+# Store 설치본은 %LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe, MSI 설치본은
+# %ProgramFiles%\PowerShell\7\pwsh.exe로 각각 PATH에 있어 양쪽 다 이 값으로 뜬다.
 [[keys.command]]
 key = "prefix+alt+p"
 type = "pane"

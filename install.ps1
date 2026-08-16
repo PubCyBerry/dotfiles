@@ -1129,13 +1129,63 @@ function Deploy-HerdrConfig {
                 return
             }
         } else {
+            # 키가 하나도 없는 [terminal]을 남기면 안 된다. yq의 TOML 인코더가 그 주석
+            # 블록을 어느 테이블에도 붙이지 못해 merge마다 다시 방출하고, 배포된
+            # config.toml이 실행할 때마다 20줄씩 자란다(멱등성 위반).
+            & yq -i -p=toml -o=toml 'with(select(.terminal | length == 0); del(.terminal))' $staged 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host '    [!] Could not normalize herdr config.toml, keeping existing herdr config.toml'
+                return
+            }
             Write-Host '    [!] Git Bash not found; deploying herdr config without default_shell.'
         }
         $dst = Join-Path $env:APPDATA 'herdr\config.toml'
         New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
-        # Merge-CodexConfig는 Codex 전용이 아니라 TOML default merge 그 자체다.
-        # destination에 이미 있는 키는 건드리지 않으므로 herdr UI가 기록한 값이 보존된다.
-        Merge-CodexConfig $staged $dst
+
+        # default merge(destination 우선) — herdr UI가 onboarding에서 기록한 [ui] 값을
+        # 보존한다. Merge-CodexConfig를 그대로 부르지 않는 이유는 default_shell 하나가
+        # 그 규칙의 예외여야 하기 때문이다(아래).
+        if (Test-Path -LiteralPath $dst -PathType Leaf) {
+            & yq -p=toml -o=json '.' $dst 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host '    [!] existing herdr config.toml is invalid, keeping it unchanged'
+                return
+            }
+            $merged = @(& yq eval-all -p=toml -o=toml 'select(fileIndex == 0) * select(fileIndex == 1)' $staged $dst 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $merged.Count -eq 0) {
+                Write-Host '    [!] herdr config.toml merge failed, keeping existing herdr config.toml'
+                return
+            }
+            ($merged -join "`n") | Out-File -LiteralPath $staged -Encoding utf8 -NoNewline
+
+            # default_shell만 destination 우선의 예외다. herdr가 스스로 기록하는
+            # default_shell = "" 는 사용자 선택이 아니라 placeholder인데, destination이
+            # 이기면 그 빈 값이 주입한 Git Bash 경로를 영구히 덮는다 — herdr를 한 번이라도
+            # 띄운 머신에서는 이 배포가 아무 효과 없이 pane이 PowerShell 5.1로 떨어진다.
+            # 비어 있거나("") 키가 없을 때만 다시 채운다. 사용자가 넣은 실제 경로는 보존한다.
+            if ($gitBash) {
+                $current = (& yq -p=toml -o=json '.terminal.default_shell' $staged 2>$null | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0 -and ($current -eq '""' -or $current -eq 'null' -or -not $current)) {
+                    & yq -i -p=toml -o=toml ".terminal.default_shell = `"$shellPath`"" $staged 2>$null
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Host '    [!] Could not restore herdr default_shell, keeping existing herdr config.toml'
+                        return
+                    }
+                }
+            }
+
+            & yq -p=toml -o=json '.' $staged 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host '    [!] merged herdr config.toml is invalid, keeping existing herdr config.toml'
+                return
+            }
+        }
+        if ($script:FunctionsOnlyMode -and -not $script:ReceiptReady) {
+            Copy-Item -LiteralPath $staged -Destination $dst -Force
+            Write-Host '    Deployed herdr config.toml'
+        } elseif (Install-ManagedFile $staged $dst Takeover) {
+            Write-Host '    Deployed herdr config.toml (existing values preserved)'
+        }
     } finally {
         Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
     }
