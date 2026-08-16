@@ -22,6 +22,14 @@ artifact_allowed "$HOME/.bun/bin/bunx" || fail bunx-anchor-allowlist
 artifact_allowed "$HOME/.codex/agents/planner.toml" || fail codex-agent-allowlist
 ! artifact_allowed "$HOME/.codex/agents/nested/planner.toml" || fail nested-agent-rejected
 ! artifact_allowed "$HOME/.codex/agents/planner.md" || fail agent-extension-rejected
+# 구 로컬 skill 배포분: 소스가 사라져도 기존 머신 receipt entry를 정리할 수 있어야 한다.
+# 이 판정이 막히면 preflight가 uninstall 전체를 중단시킨다.
+artifact_allowed "$HOME/.claude/skills/subagent-creator/SKILL.md" || fail legacy-claude-skill-allowlist
+artifact_allowed "$HOME/.claude/skills/repo-scaffold/assets/scaffold.sh" || fail legacy-claude-skill-nested-allowlist
+artifact_allowed "$HOME/.gemini/config/skills/subagent-creator/SKILL.md" || fail legacy-gemini-skill-allowlist
+# npx가 설치한 다른 skill은 receipt에 없다 — 이름 목록 밖은 여전히 거부한다.
+! artifact_allowed "$HOME/.claude/skills/pdf/SKILL.md" || fail npx-skill-rejected
+! artifact_allowed "$HOME/.claude/skills/subagent-creator" || fail legacy-skill-root-rejected
 package_key_allowed 'brew:oven-sh/bun/bun' || fail brew-tap-allowlist
 package_key_allowed 'cask:claude-code' || fail cask-allowlist
 ! package_key_allowed 'cask:codexbar' || fail unmanaged-cask-rejected

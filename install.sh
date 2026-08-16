@@ -134,15 +134,13 @@ restore_claude_skills() {
     (( count > 0 )) || { echo "skills manifest has no entries: $path" >&2; return 1; }
     # npx가 같은 source로 이미 추적 중인 skill만 update로 갱신한다.
     # 추적되지 않는 이름(구 로컬 skill 배포분, 다른 source의 동명 skill)은 add로 manifest source에 맞춘다.
+    # update가 실패하면 add로 내려간다 — upstream이 skill을 옮기거나 이름을 바꾸면 lock에는
+    # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
     while IFS= read -r row; do
         repo="${row%@*}"; skill="${row##*@}"
-        if npx_skill_is_tracked "$skill" "$repo"; then
-            if npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
-                echo "    Updated skill: $skill"
-            else
-                echo "    [!] Failed: $row"
-                failed=1
-            fi
+        if npx_skill_is_tracked "$skill" "$repo" \
+            && npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
+            echo "    Updated skill: $skill"
         elif npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
             echo "    Added skill: $skill from $repo"
         else

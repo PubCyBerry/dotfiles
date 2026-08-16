@@ -78,7 +78,7 @@ npx skills update <name> --global --yes
 npx skills add <owner/repo> --skill <name> --global --yes --agent claude-code
 ```
 
-lock 파일을 근거로 삼는다 — 디렉터리 존재만으로는 npx가 관리하는 skill인지 구분되지 않고, 그런 항목은 `npx skills list -g`에서 `Source: local`로 나온다.
+lock 파일을 근거로 삼는다 — 디렉터리 존재만으로는 npx가 관리하는 skill인지 구분되지 않고, 그런 항목은 `npx skills list -g`에서 `Source: local`로 나온다. update가 실패하면 add로 내려간다(upstream이 skill을 옮기거나 이름을 바꿨을 때 install이 영구히 실패하지 않도록).
 
 | 스킬 | 소스 | 설명 |
 |------|------|------|
@@ -90,7 +90,9 @@ lock 파일을 근거로 삼는다 — 디렉터리 존재만으로는 npx가 �
 
 새 skill은 manifest에 한 줄 추가 후 install 스크립트를 다시 실행하면 들어온다. 소유 skill도 각자 저장소에서 버전이 흐른다 — dotfiles 안에 사본을 두지 않는다.
 
-> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본에는 `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 남는다(Claude 쪽은 `npx skills add`가 덮어쓴다). 필요하면 수동으로 지운다.
+**skill은 pin되지 않는다.** `npx skills`에 버전 고정 옵션이 없어 실행할 때마다 upstream HEAD가 들어온다. `manifests/rhwp.tsv`가 release를 pin하는 것과 정책이 다르며, 이 비대칭은 CLI 한계지 의도한 완화가 아니다. manifest에 저장소를 추가할 때는 그 저장소를 직접 검토한다.
+
+> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본에는 `~/.claude/skills/`와 `~/.gemini/config/skills/`의 `{subagent-creator,repo-scaffold}`가 receipt entry와 함께 남는다. Claude 쪽은 다음 install에서 `npx skills add`가 덮어쓰고, uninstall은 이 두 이름을 legacy 고정 목록으로 알고 있어 unchanged 파일에 한해 정리한다. 자세한 근거는 [uninstall 문서](docs/uninstall.md)에 있다.
 
 ### repo-scaffold
 

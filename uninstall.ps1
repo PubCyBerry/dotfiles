@@ -80,6 +80,16 @@ function Test-ArtifactAllowed([string]$Path) {
             return Test-Path -LiteralPath (Join-Path $pair[0] $relative) -PathType Leaf
         }
     }
+    # 구 로컬 skill 배포분: 소스(config\claude\skills\)는 제거됐고 이제 npx skills가 설치한다.
+    # 하지만 그 시절 install이 파일 단위로 남긴 receipt entry는 기존 머신에 그대로 있다.
+    # 소스가 없으니 위 pair 판정으로는 못 잡는다 — 이름을 고정 목록으로 허용해야 정리된다.
+    # 내용 판정은 여전히 installedHash가 하므로 사용자가 바꾼 파일은 보존된다.
+    foreach ($legacyRoot in @((Join-Path $homeRoot '.claude\skills'), (Join-Path $homeRoot '.gemini\config\skills'))) {
+        foreach ($legacyName in @('subagent-creator', 'repo-scaffold')) {
+            $prefix = [IO.Path]::GetFullPath((Join-Path $legacyRoot $legacyName)).TrimEnd('\') + '\'
+            if ($full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+    }
     foreach ($spec in @(@('.codex\agents\','.toml'),@('.claude\agents\','.md'))) {
         $prefix = Join-Path $homeRoot $spec[0]
         if ($full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {

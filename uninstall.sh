@@ -196,7 +196,7 @@ recover_terminal_jq() {
 drop_entry() { receipt_commit --arg group "$1" --arg key "$2" 'del(.[$group][$key])'; }
 
 artifact_allowed() {
-    local path="$1" rel name
+    local path="$1" rel name legacy
     case "$path" in
         "$HOME/.tmux.conf"|"$HOME/.config/starship.toml") return 0 ;;
         "$HOME/.local/bin/"*)
@@ -214,6 +214,13 @@ artifact_allowed() {
         "$ROOT/config/agy/hooks|$HOME/.gemini/hooks"; do
         src="${pair%%|*}" dst="${pair#*|}"
         case "$path" in "$dst/"*) rel="${path#"$dst/"}"; [[ -f "$src/$rel" ]] && return 0;; esac
+    done
+    # 구 로컬 skill 배포분: 소스(config/claude/skills/)는 제거됐고 이제 npx skills가 설치한다.
+    # 하지만 그 시절 install이 파일 단위로 남긴 receipt entry는 기존 머신에 그대로 있다.
+    # 소스가 없으니 위 pair 판정으로는 못 잡는다 — 이름을 고정 목록으로 허용해야 정리된다.
+    # 내용 판정은 여전히 installedHash가 하므로 사용자가 바꾼 파일은 보존된다.
+    for legacy in "$HOME/.claude/skills" "$HOME/.gemini/config/skills"; do
+        case "$path" in "$legacy/subagent-creator/"*|"$legacy/repo-scaffold/"*) return 0 ;; esac
     done
     case "$path" in
         "$HOME/.codex/AGENTS.md"|"$HOME/.codex/config.toml"|"$HOME/.codex/hooks.json"|"$HOME/.claude/CLAUDE.md"|"$HOME/.claude/settings.json"|"$HOME/.gemini/config/GEMINI.md"|"$HOME/.gemini/GEMINI.md"|"$HOME/.gemini/config/hooks.json") return 0 ;;

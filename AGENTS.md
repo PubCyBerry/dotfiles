@@ -155,9 +155,13 @@ install 스크립트는 줄마다 아래를 판단한다.
 
 lock을 근거로 삼는 이유는 디렉터리 존재만으로는 npx가 관리하는 skill인지 구분되지 않기 때문이다. `npx skills list -g`가 그런 항목을 `Source: local`로 보고한다 — update 대상이 아니다. bash 쪽은 판정에 `jq`를 쓰며, 없으면 add로 처리한다(add는 언제나 안전하다).
 
+update가 실패하면 add로 내려간다. upstream이 skill을 옮기거나 이름을 바꾸면 lock에는 옛 이름이 남아 update 분기만 타게 되는데, fallback이 없으면 그 머신의 install이 영구히 실패한다.
+
 이 저장소가 소유한 skill도 같은 경로로 들어온다: `PubCyBerry/subagent-creator@subagent-creator`, `PubCyBerry/repo-scaffold@repo-scaffold`.
 
-> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본을 쓰던 머신은 `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 남는다(Claude 쪽은 `npx skills add`가 덮어쓴다). 필요하면 수동으로 지운다.
+**skill은 pin되지 않는다.** `npx skills`에 버전 고정 옵션이 없어 실행할 때마다 upstream HEAD가 들어온다. `manifests/rhwp.tsv`가 release를 pin하는 것과 정책이 다르며, 이 비대칭은 CLI 한계지 의도한 완화가 아니다. 그래서 manifest에 저장소를 추가할 때는 그 저장소를 직접 검토한다. 현재 신뢰 근거는 `anthropics/skills`(1st party), `PubCyBerry/*`(본인 소유), `herdrdev/herdr`(외부 — 검토 후 추가)다.
+
+> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본을 쓰던 머신에는 `~/.claude/skills/`와 `~/.gemini/config/skills/`의 `{subagent-creator,repo-scaffold}`가 receipt entry와 함께 남는다. Claude 쪽은 다음 install에서 `npx skills add`가 덮어쓴다. uninstall은 이 두 이름을 고정 목록으로 알고 있어 unchanged 파일에 한해 정리한다 — 소스가 사라져 소유권 판정이 성립하지 않는 문제 때문에 `uninstall.sh` / `uninstall.ps1`에 legacy 허용 목록이 들어 있다.
 
 ### plugin 관리
 
@@ -284,6 +288,8 @@ frontmatter 검증 engine은 `scripts/agent_validator.py`다. 단일 Claude agen
 ```bash
 uv run --with pyyaml --python 3.11 ~/.claude/skills/subagent-creator/scripts/validate_subagent.py <agent.md>
 ```
+
+> `scripts/agent_validator.py`는 `PubCyBerry/subagent-creator`의 `skills/subagent-creator/scripts/agent_validator.py`와 **동기화 대상**이다. 한쪽을 고치면 다른 쪽도 고친다. skill 사본을 없애지 못하는 이유는 CI(`test-agent-roles`)가 skill 설치 없이 돌아야 해서 저장소 안에 engine이 있어야 하기 때문이다.
 
 ## 설치/언인스톨 변경 지침
 

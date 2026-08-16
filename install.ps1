@@ -120,17 +120,17 @@ function Restore-ClaudeSkills([string]$Path) {
     $ok = $true
     # npx가 같은 source로 이미 추적 중인 skill만 update로 갱신한다.
     # 추적되지 않는 이름(구 로컬 skill 배포분, 다른 source의 동명 skill)은 add로 manifest source에 맞춘다.
+    # update가 실패하면 add로 내려간다 — upstream이 skill을 옮기거나 이름을 바꾸면 lock에는
+    # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
     foreach ($row in $rows) {
         $repoSlug, $skillName = $row -split '@', 2
         if (Test-NpxTrackedSkill $skillName $repoSlug) {
             npx -y skills update $skillName --global --yes 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "    Updated skill: $skillName"
-            } else {
-                Write-Host "    [!] Failed: $row"
-                $ok = $false
+                continue
             }
-            continue
+            Write-Host "    Update failed, falling back to add: $skillName"
         }
         npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
