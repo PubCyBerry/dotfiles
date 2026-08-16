@@ -1086,11 +1086,31 @@ function Install-Herdr {
         return $false
     }
     if (-not $herdrInstaller) { Add-InstallFailure "herdr installer returned an empty script: $HerdrInstallUrl"; return $false }
+    # 자식 프로세스로 격리해서 실행한다. 받은 문자열을 scriptblock으로 만들어 같은
+    # 프로세스에서 호출하면 내려받은 스크립트의 `exit`가
+    # try/catch를 무시하고 install.ps1 자체를 끝낸다. upstream installer는 지금도
+    # bare `exit 1`을 다섯 군데 갖고 있고(24, 540, 545, 550, 566행) pin되지 않아
+    # 언제든 바뀐다 — `if (upToDate) { exit 0 }` 한 줄만 늘어도 이후 단계(Node,
+    # Codex, Claude, 프로파일, skills, plugins)가 통째로 건너뛰어지고 종료 코드는
+    # 0이라 사용자는 성공으로 본다. 자식으로 돌리면 그 exit는 종료 코드로만 온다.
+    $pwshExe = Join-Path $PSHOME 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
+        Add-InstallFailure "herdr installer skipped: could not locate pwsh.exe in $PSHOME"
+        return $false
+    }
+    $installerFile = Join-Path ([IO.Path]::GetTempPath()) ("herdr-install-{0}.ps1" -f [guid]::NewGuid().ToString('N'))
     try {
-        & ([scriptblock]::Create($herdrInstaller))
+        Set-Content -LiteralPath $installerFile -Value $herdrInstaller -Encoding utf8
+        & $pwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installerFile
+        if ($LASTEXITCODE -ne 0) {
+            Add-InstallFailure "herdr installer failed (exit $LASTEXITCODE): $HerdrInstallUrl"
+            return $false
+        }
     } catch {
         Add-InstallFailure "herdr installer failed: $($_.Exception.Message)"
         return $false
+    } finally {
+        Remove-Item -LiteralPath $installerFile -Force -ErrorAction SilentlyContinue
     }
     # installer가 User PATH를 고쳐도 현재 프로세스에는 반영되지 않는다. 뒤따르는
     # 설정 배포와 검증이 herdr를 찾을 수 있도록 이번 세션 PATH에만 얹는다.

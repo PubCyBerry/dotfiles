@@ -250,7 +250,25 @@ herdr(코딩 에이전트용 터미널 멀티플렉서)는 이 저장소의 pinn
 
 그래서 install은 `herdr`가 이미 PATH에 있으면 **아무것도 하지 않는다**. 없을 때만 공식 installer를 한 번 돌려 부트스트랩하고, 이후 버전 관리는 herdr에 맡긴다. uninstall도 같은 이유로 바이너리를 건드리지 않고 `config.toml`만 소유권을 판정해 제거한다.
 
+#### 공식 installer가 만드는 side effect
+
+부트스트랩이 한 번 도는 그 실행에서 installer가 **이 저장소의 receipt 밖에** 남기는 것들이다. 소유하지 않기로 한 대가이므로 uninstall이 되돌리지 않는다. 지우려면 직접 정리한다.
+
+| 플랫폼 | side effect |
+|---|---|
+| Windows | `HKCU\Environment`의 `Path` 맨 앞에 `%LOCALAPPDATA%\Programs\Herdr\bin` prepend (`WM_SETTINGCHANGE` 브로드캐스트) |
+| Windows | `%USERPROFILE%\.herdr\packages\standalone\` 아래 릴리즈 디렉터리 + `current` / bin junction (`HERDR_HOME`으로 위치 변경 가능) |
+| Windows | `%LOCALAPPDATA%\Programs\Herdr\bin` 실행 파일 |
+| Linux | `~/.local/bin/herdr` 실행 파일 하나. 프로파일은 건드리지 않고, PATH에 없으면 경고만 낸다 (`HERDR_INSTALL_DIR`로 위치 변경 가능) |
+| macOS | Homebrew가 관리하므로 `brew uninstall herdr` |
+
+Windows PATH는 이 저장소의 `Add-ToUserPath` + receipt 경로를 타지 않는다. 다른 항목과 달리 uninstall이 그 segment를 지우지 않으므로 `%LOCALAPPDATA%\Programs\Herdr\bin`은 남는다. installer 쪽 PATH 갱신 자체는 멱등이라(같은 항목을 지우고 다시 prepend) 반복 실행으로 늘어나지는 않는다.
+
+installer는 자식 프로세스(`pwsh -NoProfile -NonInteractive -File <임시파일>`)로 격리해서 돌린다. 받은 문자열을 scriptblock으로 만들어 같은 프로세스에서 호출하면 그 안의 `exit`가 `try/catch`를 무시하고 install 전체를 끝내기 때문이다 — pin되지 않은 스크립트라 upstream이 `exit 0` 한 줄만 늘려도 이후 단계가 통째로 건너뛰어지고 종료 코드는 0이라 성공으로 보인다.
+
 설정은 default merge로 배포한다 — herdr UI가 onboarding에서 `[ui]`를 스스로 기록하므로 통째로 덮어쓰면 사용자·UI 값이 날아간다.
+
+단 `default_shell`은 그 예외다. herdr가 스스로 기록하는 `default_shell = ""`는 사용자 선택이 아니라 placeholder인데, destination 우선 merge를 그대로 적용하면 그 빈 값이 install이 주입한 Git Bash 경로를 영구히 덮어 Windows pane이 PowerShell 5.1로 떨어진다. 비어 있거나 키가 없을 때만 다시 채우고, 사용자가 직접 넣은 경로는 보존한다.
 
 `config/herdr/`에 파일이 둘인 이유는 셸 설정이 플랫폼마다 다르기 때문이다.
 
