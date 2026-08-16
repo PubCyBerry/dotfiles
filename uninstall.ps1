@@ -71,9 +71,7 @@ function Test-ArtifactAllowed([string]$Path) {
         @((Join-Path $script:Root 'config\nvim'), (Join-Path $env:LOCALAPPDATA 'nvim')),
         @((Join-Path $script:Root 'config\codex\hooks'), (Join-Path $homeRoot '.codex\hooks')),
         @((Join-Path $script:Root 'config\claude\hooks'), (Join-Path $homeRoot '.claude\hooks')),
-        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.claude\skills')),
-        @((Join-Path $script:Root 'config\agy\hooks'), (Join-Path $homeRoot '.gemini\hooks')),
-        @((Join-Path $script:Root 'config\claude\skills'), (Join-Path $homeRoot '.gemini\config\skills'))
+        @((Join-Path $script:Root 'config\agy\hooks'), (Join-Path $homeRoot '.gemini\hooks'))
     )
     foreach ($pair in $pairs) {
         $prefix = [IO.Path]::GetFullPath($pair[1]).TrimEnd('\') + '\'

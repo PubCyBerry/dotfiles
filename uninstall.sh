@@ -211,9 +211,7 @@ artifact_allowed() {
     for pair in \
         "$ROOT/config/yazi|$HOME/.config/yazi" "$ROOT/config/nvim|$HOME/.config/nvim" \
         "$ROOT/config/codex/hooks|$HOME/.codex/hooks" "$ROOT/config/claude/hooks|$HOME/.claude/hooks" \
-        "$ROOT/config/claude/skills|$HOME/.claude/skills" \
-        "$ROOT/config/agy/hooks|$HOME/.gemini/hooks" \
-        "$ROOT/config/claude/skills|$HOME/.gemini/config/skills"; do
+        "$ROOT/config/agy/hooks|$HOME/.gemini/hooks"; do
         src="${pair%%|*}" dst="${pair#*|}"
         case "$path" in "$dst/"*) rel="${path#"$dst/"}"; [[ -f "$src/$rel" ]] && return 0;; esac
     done

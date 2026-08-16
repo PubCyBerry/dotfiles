@@ -48,7 +48,7 @@ dotfiles/
 │   │   ├── global.md    # Claude/Codex/Antigravity 공통 전역 지침
 │   │   └── roles/       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
 │   ├── agy/             # Antigravity (AGY) 설정 (hooks.json, hooks/)
-│   ├── claude/          # Claude Code 설정 (settings.json, hooks, skills, claude-hud)
+│   ├── claude/          # Claude Code 설정 (settings.json, hooks, claude-hud)
 │   ├── codex/           # Codex 설정 (config.toml, hooks.json, hooks/)
 │   ├── git/
 │   │   └── gitconfig    # OS-중립. autocrlf/fileMode은 install 스크립트가 OS별 주입
@@ -68,6 +68,7 @@ dotfiles/
 │   ├── skills.txt       # Claude Code skills (owner/repo@skill-name)
 │   └── plugins.txt      # Claude Code 플러그인 (marketplace + plugin@marketplace + scope)
 ├── scripts/
+│   ├── agent_validator.py         # Claude agent frontmatter 검증 engine
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
 ├── tests/
 │   └── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
@@ -95,12 +96,12 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code WinGet 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
-   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
-6. `manifests/skills.txt` → npx skills 설치
+6. `manifests/skills.txt` → npx skills 설치·업데이트
 7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### macOS install.sh 실행 순서
@@ -116,11 +117,11 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code Homebrew cask 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
-   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
-5. `manifests/skills.txt` → npx skills 설치
+5. `manifests/skills.txt` → npx skills 설치·업데이트
 6. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### Linux install.sh 실행 순서
@@ -136,19 +137,27 @@ dotfiles/
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code npm package 설치 (Node.js 22+, `SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
-   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/claude/skills/` → `~/.claude/skills/` 로컬 skill 디렉터리 단위 배포, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 및 `skills/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
+   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
-6. `manifests/skills.txt` → npx skills 설치
+6. `manifests/skills.txt` → npx skills 설치·업데이트
 7. `manifests/plugins.txt` → `claude plugin marketplace add` + `claude plugin install`
 
 ### skills 관리
 
-skills는 두 경로로 관리한다.
+skill은 전부 `npx skills`가 관리한다. 이 저장소는 skill 파일을 배포하지 않는다 — 같은 skill을 두 벌 유지하면 어긋나고, 소유 skill도 자기 저장소에서 버전이 흐르는 편이 낫기 때문이다. `manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록만 유지한다.
 
-- **원격 skill**: `manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지한다. 새 skill 추가 시 manifest에만 추가 후 install 스크립트를 다시 실행하면 `npx skills add --global`로 설치된다.
-- **로컬 skill**: 이 저장소가 소유한 skill은 `config/claude/skills/<name>/`에 둔다. install 스크립트의 3-1 단계가 디렉터리 단위로 `~/.claude/skills/`에 배포하며, 원격 skill 경로는 건드리지 않는다. 현재 `subagent-creator`(Claude Code subagent 정의 생성), `repo-scaffold`(저장소를 에이전트 탐색용 형태로 스캐폴딩) 두 개다.
+install 스크립트는 줄마다 아래를 판단한다.
+
+- `~/.agents/.skill-lock.json`이 그 이름을 **같은 source로** 추적 중이면 `npx skills update <name> --global --yes`
+- 아니면(미설치, 구 로컬 배포 잔재, 다른 source의 동명 skill) `npx skills add <owner/repo> --skill <name> --global --yes --agent claude-code`
+
+lock을 근거로 삼는 이유는 디렉터리 존재만으로는 npx가 관리하는 skill인지 구분되지 않기 때문이다. `npx skills list -g`가 그런 항목을 `Source: local`로 보고한다 — update 대상이 아니다. bash 쪽은 판정에 `jq`를 쓰며, 없으면 add로 처리한다(add는 언제나 안전하다).
+
+이 저장소가 소유한 skill도 같은 경로로 들어온다: `PubCyBerry/subagent-creator@subagent-creator`, `PubCyBerry/repo-scaffold@repo-scaffold`.
+
+> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본을 쓰던 머신은 `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 남는다(Claude 쪽은 `npx skills add`가 덮어쓴다). 필요하면 수동으로 지운다.
 
 ### plugin 관리
 
@@ -178,8 +187,7 @@ CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 �
 | 구분 | 소스 | 배포 경로 | 설치 주체 |
 |---|---|---|---|
 | plugin | `manifests/plugins.txt` | `~/.claude/plugins/` | `claude plugin` CLI |
-| 원격 skill | `manifests/skills.txt` | `~/.claude/skills/` | `npx skills add` |
-| 로컬 skill | `config/claude/skills/` | `~/.claude/skills/`, `~/.gemini/config/skills/` | 디렉터리 복사 |
+| skill | `manifests/skills.txt` | `~/.claude/skills/` | `npx skills add` / `npx skills update` |
 | agent | `config/agents/roles/` | `~/.claude/agents/`, `~/.codex/agents/` | 메타+body 조립 |
 | hook | `config/claude/hooks/`, `config/codex/hooks/`, `config/agy/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/`, `~/.gemini/hooks/` | 파일 복사 + settings.json / hooks.json 병합 |
 | MCP | `manifests/rhwp.tsv` | `~/.codex/config.toml`, `~/.claude.json`, `~/.gemini/config/mcp_config.json` | install 스크립트 (receipt `values`) |
@@ -271,10 +279,10 @@ codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agen
 uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py
 ```
 
-단일 Claude agent 파일은 같은 공용 engine을 쓰는 `subagent-creator` validator로 검사한다.
+frontmatter 검증 engine은 `scripts/agent_validator.py`다. 단일 Claude agent 파일 하나는 같은 engine을 쓰는 `subagent-creator` skill의 wrapper로 검사한다(skill은 `npx skills`가 설치한다).
 
 ```bash
-uv run --with pyyaml --python 3.11 config/claude/skills/subagent-creator/scripts/validate_subagent.py <agent.md>
+uv run --with pyyaml --python 3.11 ~/.claude/skills/subagent-creator/scripts/validate_subagent.py <agent.md>
 ```
 
 ## 설치/언인스톨 변경 지침

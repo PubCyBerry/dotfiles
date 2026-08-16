@@ -36,7 +36,6 @@ codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agen
 | `config/agents/global.md` | `~/.gemini/config/GEMINI.md`, `~/.gemini/GEMINI.md` | 공통 전역 행동 설정 |
 | `config/agy/hooks.json` | `~/.gemini/config/hooks.json` | Antigravity hook 등록 |
 | `config/agy/hooks/temporal-context.sh` | `~/.gemini/hooks/temporal-context.sh` | PreInvocation 시간 컨텍스트 주입 |
-| `config/claude/skills/<name>/` | `~/.gemini/config/skills/<name>/` | 로컬 스킬 공유 배포 |
 | `manifests/rhwp.tsv` | `~/.gemini/config/mcp_config.json` | rhwp stdio MCP 서버 등록 |
 
 Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 룰로 참조한다. `hooks.json`은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합되며, `hooks/` 디렉터리에 실행 스크립트가 배치된다. MCP 설정은 `~/.gemini/config/mcp_config.json`의 `.mcpServers` 맵에 등록된다.
@@ -66,23 +65,32 @@ Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 
 |--------|------|
 | `@openai/codex` | OpenAI Codex CLI — 코드 생성/수정 에이전트 |
 
-## npx skills (원격)
+## skills (npx skills)
 
-`manifests/skills.txt`에 `owner/repo@skill-name` 형식으로 목록을 유지하고, install 스크립트가 `npx skills add --global`로 일괄 설치한다.
+skill은 전부 `npx skills`가 관리한다. 이 저장소는 skill 파일을 배포하지 않고 `manifests/skills.txt`에 `owner/repo@skill-name` 목록만 유지한다.
 
-| 스킬 | 설명 |
-|------|------|
-| `pdf`, `docx`, `pptx`, `xlsx` | 문서 처리 (읽기/생성/편집) |
-| `skill-creator` | 새 skill 생성 및 최적화 |
+install 스크립트가 줄마다 판단한다.
 
-## 로컬 skill
+```bash
+# ~/.agents/.skill-lock.json이 같은 source로 추적 중이면 갱신
+npx skills update <name> --global --yes
+# 아니면 설치 (미설치, 구 로컬 배포 잔재, 다른 source의 동명 skill)
+npx skills add <owner/repo> --skill <name> --global --yes --agent claude-code
+```
 
-이 저장소가 직접 소유하는 skill은 `config/claude/skills/<name>/`에 둔다. install 스크립트의 3-1 단계가 **디렉터리 단위로** `~/.claude/skills/`에 배포하며, `npx skills`로 설치된 원격 skill 경로는 건드리지 않는다. 새 로컬 skill을 추가하려면 `config/claude/skills/`에 디렉터리를 만들고 install 스크립트를 다시 실행한다.
+lock 파일을 근거로 삼는다 — 디렉터리 존재만으로는 npx가 관리하는 skill인지 구분되지 않고, 그런 항목은 `npx skills list -g`에서 `Source: local`로 나온다.
 
-| 스킬 | 설명 |
-|------|------|
-| `subagent-creator` | Claude Code subagent 정의(`.claude/agents/<name>.md`) 대화형 생성·검증 |
-| `repo-scaffold` | 저장소를 에이전트 탐색용 형태로 스캐폴딩 — AGENTS.md 문서 인덱스 자동 생성, `docs/` 계층과 front matter 규약, pre-commit 검증 훅 |
+| 스킬 | 소스 | 설명 |
+|------|------|------|
+| `pdf`, `docx`, `pptx`, `xlsx` | `anthropics/skills` | 문서 처리 (읽기/생성/편집) |
+| `skill-creator` | `anthropics/skills` | 새 skill 생성 및 최적화 |
+| `subagent-creator` | `PubCyBerry/subagent-creator` | Claude Code subagent 정의(`.claude/agents/<name>.md`) 생성·검증 |
+| `repo-scaffold` | `PubCyBerry/repo-scaffold` | 저장소를 에이전트 탐색용 형태로 스캐폴딩 — AGENTS.md 문서 인덱스, `docs/` 계층, pre-commit 검증 훅 |
+| `herdr` | `herdrdev/herdr` | Herdr(코딩 에이전트용 터미널 멀티플렉서) pane/tab/workspace 제어. `HERDR_ENV=1`인 pane 안에서만 동작 |
+
+새 skill은 manifest에 한 줄 추가 후 install 스크립트를 다시 실행하면 들어온다. 소유 skill도 각자 저장소에서 버전이 흐른다 — dotfiles 안에 사본을 두지 않는다.
+
+> 마이그레이션: 예전에는 `config/claude/skills/`를 직접 복사했다. 그 시절 설치본에는 `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 남는다(Claude 쪽은 `npx skills add`가 덮어쓴다). 필요하면 수동으로 지운다.
 
 ### repo-scaffold
 

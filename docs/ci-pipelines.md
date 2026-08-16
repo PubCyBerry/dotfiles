@@ -123,7 +123,6 @@ GitHub Actions의 disposable runner에서 실제 installer와 uninstaller를 각
 - dotfiles 마커 블록 제거 후 사용자 profile 내용 보존
 - `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, hooks 파일 제거
 - dotfiles agent role 제거: `~/.claude/agents/<name>.md`, `~/.codex/agents/<name>.toml`, 그리고 구 배포 경로 `~/.codex/skills/<name>/`
-- dotfiles 로컬 skill 제거: `~/.claude/skills/<name>/`
 - 사용자 소유 agent/skill과 Codex 번들 skill(`~/.codex/skills/.system/`) 보존
 - Claude `settings.json`에서 dotfiles 관리 키 제거 후 사용자 `statusLine` 보존
 - Codex `config.toml`에서 dotfiles 기본값 제거 후 사용자 섹션 보존
