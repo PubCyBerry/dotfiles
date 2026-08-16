@@ -1344,6 +1344,90 @@ function Deploy-HerdrConfig {
     }
 }
 
+# ---------------------------------------------
+# Antigravity CLI(agy): 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# herdr와 같은 예외이며 근거도 같은 모양이다.
+#  1. CLI가 스스로 업데이트한다. 공식 installer가 "The Antigravity CLI automatically
+#     self-updates in the background during regular runs"라고 직접 밝힌다. receipt로
+#     바이너리를 잡으면 첫 실행 직후 해시가 어긋나 "changed; preserving"으로 굳는다.
+#  2. pin할 대상이 없다. 배포가 버전 없는 auto-updater manifest 엔드포인트를 거치고,
+#     GitHub 릴리즈는 2~3일에 하나씩 나온다.
+#
+# winget에도 Google.AntigravityCLI가 있지만 쓰지 않는다. Google이 올린 것이 아니라
+# 봇(YamlCreate Dumplings Mod)이 만든 커뮤니티 manifest이고, portable 타입이라
+# 바이너리가 다른 두 OS와 또 다른 자리(WinGet Packages/Links)에 놓인다. 게다가 위
+# 1번 때문에 winget이 기록한 버전은 첫 실행 직후 낡는다.
+# ---------------------------------------------
+$AgyInstallUrl = 'https://antigravity.google/cli/install.ps1'
+$AgyBinDir     = Join-Path $env:LOCALAPPDATA 'agy\bin'
+
+function Get-AgyCommand {
+    $cmd = Get-Command agy -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $known = Join-Path $AgyBinDir 'agy.exe'
+    if (Test-Path -LiteralPath $known -PathType Leaf) { return $known }
+    return $null
+}
+
+function Install-AgyCli {
+    $existing = Get-AgyCommand
+    if ($existing) {
+        Write-Host "    Antigravity CLI already installed: $existing"
+        Write-Host "    agy manages its own updates (background self-update on regular runs)."
+        return $true
+    }
+    # 실패는 경고로만 남긴다(Add-InstallFailure 아님) — herdr와 같은 이유다. 소유하지
+    # 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로 만들지 않는다.
+    Write-Host "    Running the official Antigravity CLI installer: $AgyInstallUrl"
+    try {
+        $agyInstaller = Invoke-RestMethod -Uri $AgyInstallUrl -UseBasicParsing
+    } catch {
+        Write-Host "    [!] Antigravity CLI installer download failed: $AgyInstallUrl"
+        return $false
+    }
+    if (-not $agyInstaller) {
+        Write-Host "    [!] Antigravity CLI installer returned an empty script: $AgyInstallUrl"
+        return $false
+    }
+    # herdr와 같은 이유로 자식 프로세스에 격리한다. 이 installer도 sourcing이 아닐 때
+    # 최상위에서 `exit $exitCode`를 호출하므로, 같은 프로세스에서 돌리면 그 exit가
+    # try/catch를 무시하고 install.ps1 자체를 끝낸다 — 이후 단계(Codex, Claude,
+    # 프로파일, skills, plugins)가 통째로 건너뛰어지고 종료 코드는 0이라 성공으로 보인다.
+    $pwshExe = Join-Path $PSHOME 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
+        Write-Host "    [!] Antigravity CLI installer skipped: could not locate pwsh.exe in $PSHOME"
+        return $false
+    }
+    $installerFile = Join-Path ([IO.Path]::GetTempPath()) ("agy-install-{0}.ps1" -f [guid]::NewGuid().ToString('N'))
+    try {
+        Set-Content -LiteralPath $installerFile -Value $agyInstaller -Encoding utf8
+        & $pwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installerFile
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Antigravity CLI installer failed (exit $LASTEXITCODE): $AgyInstallUrl"
+            return $false
+        }
+    } catch {
+        Write-Host "    [!] Antigravity CLI installer failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $installerFile -Force -ErrorAction SilentlyContinue
+    }
+    # installer가 User PATH를 고쳐도 현재 프로세스에는 반영되지 않는다. 뒤따르는
+    # 3-3(rhwp)이 `Get-Command agy`로 Gemini MCP 등록 여부를 판단하므로 이번 세션
+    # PATH에만 얹는다.
+    if ((Test-Path -LiteralPath $AgyBinDir) -and (($env:PATH -split ';') -notcontains $AgyBinDir)) {
+        $env:PATH = "$AgyBinDir;$env:PATH"
+    }
+    $installed = Get-AgyCommand
+    if (-not $installed) {
+        Write-Host '    [!] Antigravity CLI installer finished but agy was not found.'
+        return $false
+    }
+    Write-Host "    Antigravity CLI installed: $installed"
+    return $true
+}
+
 function Invoke-FnmPruneIfRequested {
     if ($env:DOTFILES_PRUNE_NODE_VERSIONS -ne "1") { return }
     $activeVer = (fnm current 2>$null)
@@ -1977,8 +2061,18 @@ if (Test-Path $rolesSrc) {
 }
 
 # =============================================
-# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+#
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)이 `Get-Command agy`로 Gemini MCP 등록 여부를
+# 판단하므로, 순서가 뒤집히면 첫 설치에서 MCP 등록이 조용히 건너뛰어진다.
+# 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
 # =============================================
+Invoke-OptionalInstallStage 'SKIP_AGY_CLI' "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" {
+    Write-Host ""
+    Write-Host "==> Installing Antigravity CLI (agy)..."
+    $null = Install-AgyCli
+}
+
 Write-Host ""
 Invoke-OptionalInstallStage 'SKIP_AGY' "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" {
     Write-Host "==> Deploying Antigravity (AGY) config..."

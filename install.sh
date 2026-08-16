@@ -1193,6 +1193,47 @@ deploy_herdr_config() {
     merge_codex_config "$src" "$dst" .terminal.shell_mode
 }
 
+# ---------------------------------------------
+# Antigravity CLI(agy): 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# herdr와 같은 예외이며 근거도 같은 모양이다.
+#  1. CLI가 스스로 업데이트한다. 공식 installer가 "The Antigravity CLI automatically
+#     self-updates in the background during regular runs"라고 직접 밝힌다. receipt로
+#     바이너리를 잡으면 첫 실행 직후 해시가 어긋나 "changed; preserving"으로 굳는다.
+#  2. pin할 대상이 없다. 배포가 버전 없는 auto-updater manifest 엔드포인트를 거치고,
+#     GitHub 릴리즈는 2~3일에 하나씩 나온다. 그 속도로 SHA-256을 옮기는 것은
+#     manifests/*.tsv가 지키려는 "검토한 바이너리만 들어온다"와 실질이 다르다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다. 설정(config/agy/)만
+# 이 저장소가 소유하며 그쪽은 SKIP_AGY가 따로 관리한다.
+# ---------------------------------------------
+AGY_INSTALL_URL="https://antigravity.google/cli/install.sh"
+
+install_agy_cli() {
+    if command -v agy >/dev/null 2>&1; then
+        echo "    Antigravity CLI already installed: $(command -v agy)"
+        echo "    agy manages its own updates (background self-update on regular runs)."
+        return 0
+    fi
+    # 실패는 경고로만 남긴다(record_install_failure 아님) — herdr와 같은 이유다.
+    # 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로
+    # 만들지 않는다. 다음 실행이나 agy 자체 업데이트로 복구된다.
+    echo "    Running the official Antigravity CLI installer: $AGY_INSTALL_URL"
+    # sh가 아니라 bash로 파이프한다 — installer가 `set -euo pipefail`을 쓰는데
+    # dash(우분투의 /bin/sh)에는 pipefail이 없어 첫 줄에서 죽는다.
+    if ! curl -fsSL "$AGY_INSTALL_URL" | bash; then
+        echo "    [!] Antigravity CLI installer failed: $AGY_INSTALL_URL"
+        return 1
+    fi
+    # installer는 프로파일을 건드리지 않는다. 뒤따르는 단계(rhwp의 Gemini MCP 등록)가
+    # agy를 찾을 수 있도록 기본 설치 경로를 이번 셸 PATH에만 얹는다.
+    add_to_path_runtime "$LOCAL_BIN"
+    if ! command -v agy >/dev/null 2>&1; then
+        echo "    [!] Antigravity CLI installer finished but agy was not found."
+        return 1
+    fi
+    echo "    Antigravity CLI installed: $(command -v agy)"
+}
+
 set_managed_git_value() {
     local name="$1" value="$2" before="" present=false entry="" pending_target="" pending_previous="" pending_present=false
     $RECEIPT_READY || return 0
@@ -2183,8 +2224,19 @@ install_claude_code_stage() {
 run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
 
 # =============================================
-# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+#
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)이 `command -v agy`로 Gemini MCP 등록 여부를
+# 판단하므로, 순서가 뒤집히면 첫 설치에서 MCP 등록이 조용히 건너뛰어진다.
+# 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
 # =============================================
+install_agy_cli_stage() {
+    echo
+    echo "==> Installing Antigravity CLI (agy)..."
+    install_agy_cli || true
+}
+run_optional_stage SKIP_AGY_CLI "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" install_agy_cli_stage
+
 deploy_agy_stage() {
     echo
     echo "==> Deploying Antigravity (AGY) config..."

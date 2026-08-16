@@ -21,6 +21,9 @@ artifact_allowed "$HOME/.bun/bin/bunx" || fail bunx-anchor-allowlist
 ! artifact_allowed "$HOME/.local/bin/nested/node" || fail nested-bin-rejected
 # ShellCheck는 manifests/shellcheck.tsv가 pin한 direct artifact다.
 artifact_allowed "$HOME/.local/bin/shellcheck" || fail shellcheck-anchor-allowlist
+# Antigravity CLI 바이너리는 공식 installer가 같은 디렉터리에 두지만 install이 소유하지
+# 않는다. 소유하지 않은 것을 uninstall이 지우면 안 된다.
+! artifact_allowed "$HOME/.local/bin/agy" || fail agy-binary-rejected
 artifact_allowed "$HOME/.codex/agents/planner.toml" || fail codex-agent-allowlist
 ! artifact_allowed "$HOME/.codex/agents/nested/planner.toml" || fail nested-agent-rejected
 ! artifact_allowed "$HOME/.codex/agents/planner.md" || fail agent-extension-rejected

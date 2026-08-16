@@ -24,6 +24,9 @@ try {
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\nested\planner.toml'))) agent_nested
     # shellcheck는 manifests\shellcheck.tsv가 pin한 direct artifact다.
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe')) shellcheck_allowlist
+    # Antigravity CLI 바이너리는 공식 installer가 %LOCALAPPDATA%\agy\bin에 두고 install이
+    # 소유하지 않는다. 소유하지 않은 것을 uninstall이 지우면 안 된다.
+    Assert (-not (Test-ArtifactAllowed (Join-Path $env:LOCALAPPDATA 'agy\bin\agy.exe'))) agy_binary_rejected
     # 구 로컬 skill 배포분: 소스가 사라져도 기존 머신 receipt entry를 정리할 수 있어야 한다.
     # 이 판정이 막히면 preflight가 uninstall 전체를 중단시킨다.
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\subagent-creator\SKILL.md')) legacy_claude_skill

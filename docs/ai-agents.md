@@ -29,7 +29,11 @@ agent role은 Codex 0.145.0부터 subagent(`~/.codex/agents/<name>.toml`)로 배
 codex exec --sandbox read-only "spawn_agent 툴로 띄울 수 있는 custom agent 이름만 나열해."
 ```
 
-## Antigravity (AGY) 설정 파일
+## Antigravity (AGY)
+
+CLI 바이너리 이름은 `agy`다. install 스크립트가 공식 installer(`https://antigravity.google/cli/install.sh` / `install.ps1`)로 부트스트랩하며, 이미 있으면 건드리지 않는다 — CLI가 스스로 업데이트하므로 이 저장소는 바이너리를 소유하지 않는다. 근거와 side effect 목록은 [AGENTS.md의 "Antigravity CLI 관리"](../AGENTS.md#antigravity-cli-관리)에 있다. `SKIP_AGY_CLI=1`로 설치만, `SKIP_AGY=1`로 설정 배포만 따로 끌 수 있다.
+
+### 설정 파일
 
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|

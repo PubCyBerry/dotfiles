@@ -28,6 +28,11 @@ bash uninstall.sh
 - rhwp는 `~/rhwp`(Windows `%USERPROFILE%\rhwp`) direct tree 하나로 관리한다. tree 해시가 receipt와 정확히 일치할 때만 통째로 제거하고, 안에 파일이 하나라도 추가·변경되면 전체를 보존한다. 설치 전부터 그 자리에 tree가 있었다면 install이 애초에 소유하지 않으므로 uninstall도 손대지 않는다.
 - MCP entry(`~/.codex/config.toml`의 `[mcp_servers.rhwp]`, `~/.claude.json`의 `.mcpServers.rhwp`, `~/.gemini/config/mcp_config.json`의 `.mcpServers.rhwp`)는 현재 값이 설치한 값과 정확히 같을 때만 제거한다. 사용자가 만든 동명 entry나 우리가 심은 뒤 수정된 entry는 보존한다. 마지막 entry였으면 빈 `[mcp_servers]` 테이블까지 걷어내고, install이 직접 만든 `~/.claude.json` 또는 `~/.gemini/config/mcp_config.json`이 정확히 `{"mcpServers":{}}`로 남았을 때만 그 파일도 제거한다. `~/.claude/settings.json`은 MCP 정의 파일이 아니므로 이 경로에 관여하지 않는다.
 - shellcheck는 `manifests/shellcheck.tsv`가 pin한 direct artifact다. `~/.local/bin/shellcheck`(Windows `%USERPROFILE%\.local\bin\shellcheck.exe`)가 설치 당시 내용과 정확히 같을 때만 제거하고, 사용자가 바꿨으면 보존한다. 설치가 User `PATH`나 셸 프로파일을 건드리지 않으므로(이 저장소가 배포하는 프로파일이 이미 `~/.local/bin`을 PATH 앞에 둔다) 되돌릴 PATH 항목도 없다.
+- Antigravity CLI(`agy`) 바이너리는 제거 대상이 아니다. herdr와 같은 이유로 install이 애초에 소유하지 않는다 — 공식 installer가 설치하고 CLI가 스스로 업데이트한다. `~/.gemini/` 아래 **설정**만 소유권 판정을 거쳐 제거한다.
+- 그래서 Antigravity CLI 부트스트랩이 남긴 아래 항목은 uninstall 뒤에도 그대로 있다. 근거는 `AGENTS.md`의 "Antigravity CLI 관리 → 공식 installer가 만드는 side effect"에 있다.
+  - Windows: `%LOCALAPPDATA%\agy\bin\agy.exe`, `%LOCALAPPDATA%\antigravity\staging`
+  - Linux/macOS: `~/.local/bin/agy`, `~/.cache/antigravity/staging`
+  - installer 마지막 단계의 `agy install`이 설정한 셸 환경
 - herdr는 설정만 제거 대상이다. `%APPDATA%\herdr\config.toml`(Windows) / `~/.config/herdr/config.toml`(Linux·macOS)이 설치 당시 내용과 정확히 같을 때만 제거·복원한다. 바이너리는 공식 installer(macOS는 Homebrew)가 설치하고 herdr가 스스로 업데이트하므로 install이 애초에 소유하지 않는다 — uninstall도 손대지 않는다.
 - 그래서 herdr 부트스트랩이 남긴 아래 항목은 uninstall 뒤에도 그대로 있다. 지우려면 직접 정리한다. 근거는 `AGENTS.md`의 "herdr 관리 → 공식 installer가 만드는 side effect"에 있다.
   - Windows User `PATH`(`HKCU\Environment`)의 `%LOCALAPPDATA%\Programs\Herdr\bin` segment. 이 항목만 install의 `Add-ToUserPath` + receipt 경로를 타지 않아 다른 PATH 항목과 달리 복원 대상이 아니다.

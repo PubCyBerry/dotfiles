@@ -34,6 +34,9 @@ jobs:
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
           SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
         run: |
           export HOME="$RUNNER_TEMP/dotfiles-home"
           export DOTFILES_RECEIPT_PATH="$HOME/.local/state/dotfiles/install-receipt.json"
@@ -84,6 +87,9 @@ jobs:
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
           SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
         run: |
           $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
           $env:HOME = $env:USERPROFILE

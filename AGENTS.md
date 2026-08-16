@@ -104,7 +104,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code WinGet 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
@@ -127,7 +127,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code Homebrew cask 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치·업데이트
@@ -149,7 +149,7 @@ dotfiles/
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code npm package 설치 (Node.js 22+, `SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치·업데이트
@@ -366,6 +366,48 @@ Windows 설정에서 알아 둘 두 가지가 있다.
 
 - `ui.agent_panel_sort == "name"` — 사용자 값이 보존된다
 - `terminal.shell_mode == "auto"` — placeholder가 dotfiles 기본값으로 다시 채워진다
+
+### Antigravity CLI 관리
+
+Antigravity CLI(바이너리 이름은 `agy`)는 herdr와 같은 예외다. **바이너리는 소유하지 않고 설정만 소유한다.** 설정(`config/agy/` → `~/.gemini/`)은 예전부터 이 저장소가 배포해 왔고, 이번에 CLI 자체의 설치가 붙었다.
+
+| 대상 | 소유자 | 경로 |
+|---|---|---|
+| 바이너리 (Windows) | 공식 installer (`https://antigravity.google/cli/install.ps1`) | `%LOCALAPPDATA%\agy\bin\agy.exe` |
+| 바이너리 (Linux/macOS) | 공식 installer (`https://antigravity.google/cli/install.sh`) | `~/.local/bin/agy` |
+| 설정 | **이 저장소** (receipt-managed) | `~/.gemini/`, `~/.gemini/config/` |
+
+pin하지 않는 이유가 둘이다.
+
+1. **CLI가 스스로 업데이트한다.** 공식 installer가 그렇게 밝힌다 — "The Antigravity CLI automatically self-updates in the background during regular runs". receipt로 바이너리 해시를 잡으면 첫 실행 직후 어긋나 그 다음 실행부터 "changed; preserving"으로 굳는다. herdr와 똑같은 구조의 문제다.
+2. **pin할 대상이 없다.** 배포가 버전 없는 auto-updater manifest 엔드포인트(`/manifests/<platform>.json`)를 거쳐 항상 최신을 해석하고, `google-antigravity/antigravity-cli` 릴리즈는 2~3일에 하나씩 나온다. 그 속도로 SHA-256을 옮기는 것은 `manifests/*.tsv`가 지키려는 "검토한 바이너리만 들어온다"와 실질이 다르다.
+
+winget에 `Google.AntigravityCLI`가 있지만 쓰지 않는다. Google이 올린 것이 아니라 봇(`YamlCreate.ps1 Dumplings Mod`)이 만든 커뮤니티 manifest이고, `portable` 타입이라 바이너리가 다른 두 OS와 또 다른 자리(`%LOCALAPPDATA%\Microsoft\WinGet\Packages`·`Links`)에 놓인다. 무엇보다 위 1번 때문에 winget이 기록한 버전은 첫 실행 직후 낡는다 — 소유권을 주장하지만 실제로는 추적하지 못하는 상태가 되는데, 그것이 이 저장소가 피하려는 바로 그 상태다.
+
+그래서 install은 `agy`가 이미 있으면 **아무것도 하지 않는다**. 없을 때만 공식 installer를 한 번 돌려 부트스트랩한다. installer 자체도 같은 판단을 해서, 대상 경로에 바이너리가 있으면 안내만 출력하고 `exit 0`으로 끝난다.
+
+부트스트랩 실패는 경고로 끝난다 — `record_install_failure`/`Add-InstallFailure`를 타지 않는다. herdr와 같은 이유이며, 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로 만들지 않는다.
+
+순서는 3-2에 둔다. 뒤따르는 3-3(rhwp)이 `command -v agy` / `Get-Command agy`로 Gemini MCP 등록 여부를 판단하므로, CLI가 먼저 서야 첫 설치에서 `~/.gemini/config/mcp_config.json` 등록이 함께 이뤄진다.
+
+Unix 쪽은 `sh`가 아니라 **`bash`로 파이프한다**. installer가 `set -euo pipefail`을 쓰는데 우분투의 `/bin/sh`(dash)에는 `pipefail`이 없어 첫 줄에서 죽는다. Windows 쪽은 herdr와 같이 자식 프로세스(`pwsh -NoProfile -NonInteractive -File <임시파일>`)로 격리한다 — 이 installer도 sourcing이 아닐 때 최상위에서 `exit $exitCode`를 호출하므로, 같은 프로세스에서 돌리면 그 `exit`가 `try/catch`를 무시하고 install 전체를 끝낸다.
+
+#### 공식 installer가 만드는 side effect
+
+소유하지 않기로 한 대가이므로 uninstall이 되돌리지 않는다. 지우려면 직접 정리한다.
+
+| 플랫폼 | side effect |
+|---|---|
+| Windows | `%LOCALAPPDATA%\agy\bin\agy.exe` 실행 파일 |
+| Windows | `%LOCALAPPDATA%\antigravity\staging` (installer가 성공·실패와 무관하게 정리하지만 디렉터리는 남는다) |
+| Linux/macOS | `~/.local/bin/agy` 실행 파일 하나 |
+| Linux/macOS | `~/.cache/antigravity/staging` (installer의 `trap`이 내용물을 지운다) |
+| 공통 | installer 마지막 단계가 `agy install`을 호출해 셸 환경을 설정한다. 이 저장소는 그 동작을 소유하지 않으며 정확한 범위를 검증하지 않았다. |
+| 공통 | `agy` 첫 실행 시 Google Sign-In이 필요하다. 설치 자체는 비대화형이고, 인증은 사용자가 처음 쓸 때 일어난다. |
+
+`~/.local/bin/agy`가 이 저장소의 direct artifact들과 같은 디렉터리에 놓이지만 uninstall의 소유권 목록에는 없다. 그 이름은 `artifact_allowed`/`Test-ArtifactAllowed`가 거부하며, `tests/uninstall/`이 그 거부를 단언한다.
+
+`SKIP_AGY_CLI=1`로 이 단계를 건너뛸 수 있다. 설정 배포를 끄는 `SKIP_AGY`와 별개다 — 소유자가 다르기 때문이다. CI는 세 OS 모두 `SKIP_AGY_CLI=1`을 쓴다(pin되지 않은 원격 installer라 실행하지 않는다).
 
 ### agent role 관리
 
