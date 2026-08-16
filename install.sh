@@ -1053,10 +1053,10 @@ install_herdr() {
         record_install_failure "herdr installer failed: $HERDR_INSTALL_URL"
         return 1
     fi
-    # installer가 프로파일에 PATH를 추가해도 현재 셸에는 반영되지 않는다. 뒤따르는
-    # 설정 배포와 검증이 herdr를 찾을 수 있도록 알려진 설치 경로를 얹는다.
-    add_to_path_runtime "$HOME/.local/bin"
-    add_to_path_runtime "$HOME/.herdr/bin"
+    # upstream installer는 프로파일을 건드리지 않는다 — 설치 디렉터리가 PATH에 없으면
+    # 경고만 낸다. 뒤따르는 설정 배포와 검증이 herdr를 찾을 수 있도록 기본 설치 경로
+    # ($HERDR_INSTALL_DIR 미설정 시 ~/.local/bin)를 이번 셸 PATH에만 얹는다.
+    add_to_path_runtime "${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
     if ! command -v herdr >/dev/null 2>&1; then
         record_install_failure "herdr installer finished but herdr was not found."
         return 1
