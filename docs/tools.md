@@ -288,6 +288,81 @@ bun install        # npm install 대체 (빠름)
 | 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
 | 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
 | 컬러 자동완성 | 파일 타입별 색상 표시 |
+| UTF-8 8bit clean | 한글 입력이 Meta 키로 오인되지 않음 |
+| 시스템 기본값 복원 | Home/End/Shift-Tab 등 `/etc/inputrc` 바인딩 유지 |
+
+#### `$include /etc/inputrc`가 첫 줄인 이유
+
+readline은 `~/.inputrc`가 있으면 `/etc/inputrc`를 **읽지 않는다**(둘을 합치지 않는다). 이 저장소가 `~/.inputrc`를 배포하는 순간 Git Bash의 `/etc/inputrc`가 통째로 가려진다.
+
+```bash
+$ INPUTRC=config/bash/inputrc bash -i -c 'bind -p' | grep -E '\\e\[1~|\\e\[4~|\\e\[Z'
+"\e[1~": beginning-of-line     # Home
+"\e[4~": end-of-line           # End
+"\e[Z": complete               # Shift-Tab
+```
+
+`$include`가 없으면 위 세 줄이 사라지고, PageUp/PageDown 히스토리 바인딩과 `completion-query-items 40`, `mark-symlinked-directories on`도 함께 없어진다.
+
+include는 파일 맨 위에 둔다. readline은 같은 설정이 여러 번 나오면 마지막 값을 쓰므로, 저장소 설정이 뒤에 와야 `bell-style none`이 시스템 `bell-style visible`을 이기고 `"\e[A": history-search-backward`가 `$if term=cygwin` 블록의 `previous-history`를 이긴다. `/etc/inputrc`가 없는 환경에서는 include가 조용히 무시되고 나머지 줄은 그대로 적용된다.
+
+#### 사용자 설정은 마커 블록 **뒤**에 둔다
+
+install 스크립트는 `~/.inputrc`를 마커 블록(`# ===== dotfiles-begin/end =====`)으로 배포하고, 블록이 없으면 파일 **끝**에 덧붙인다. `$include`는 그 블록 안에 있으므로, 마커 블록 **위**에 쓴 사용자 설정은 include가 끌어온 `/etc/inputrc` 값에 덮인다.
+
+```text
+~/.inputrc
+  set completion-query-items 200      # 사용자 설정 — /etc/inputrc의 40에 덮인다
+  # ===== dotfiles-begin =====
+  $include /etc/inputrc               # completion-query-items 40
+  ...저장소 설정...
+  # ===== dotfiles-end =====
+  set completion-query-items 200      # 여기 두면 이긴다
+```
+
+같은 이유로 마커 블록 뒤에 둔 사용자 설정은 저장소 설정도 이긴다. `bell-style`이나 `"\e[A"` 바인딩을 다르게 쓰고 싶으면 블록 뒤에 적는다.
+
+#### UTF-8 8bit clean이 필요한 이유
+
+`input-meta off` + `convert-meta on`이면 readline이 상위비트 바이트를 `ESC + (byte & 0x7F)`로 바꾼다. 한글 낱자 ㄱ~ㅎ(U+3131~U+314E)는 UTF-8 첫 바이트가 모두 `0xE3`이고, `0xE3 & 0x7F = 0x63 = 'c'`라서 Alt-C가 된다.
+
+```text
+ㅊ (U+314A) --UTF-8--> E3 85 8A
+                        └─ 0xE3 --convert-meta--> ESC + 0x63 == "\ec" == Alt-C
+                                                    └─> fzf __fzf_cd__ 위젯
+```
+
+IME 조합이 스페이스로 확정되는 순간 바이트가 전송되므로, 낱자 하나 치고 스페이스를 누르면 디렉터리 선택 창이 뜬다. `set input-meta on` / `set convert-meta off`가 바이트를 그대로 통과시켜 막는다.
+
+##### 재현 조건은 비로그인 셸이다
+
+readline은 초기화할 때 locale의 codeset을 보고 UTF-8이면 8bit clean을 **스스로 켠다**. 그래서 `LANG`만 잡혀 있으면 `~/.inputrc` 없이도 증상이 없다. Git Bash에서 `LANG`을 잡는 것은 `/etc/profile.d/lang.sh`인데, 이 파일은 **로그인 셸에서만** 실행된다.
+
+```bash
+# 로그인 셸 — lang.sh가 돎
+$ bash --login -i -c 'echo $LANG; INPUTRC=/dev/null bash -i -c "bind -v" | grep -E "convert-meta|input-meta"'
+ko_KR.UTF-8
+set convert-meta off        # inputrc 없이도 이미 정상
+set input-meta on
+
+# 비로그인 셸 — lang.sh가 안 돎
+$ echo "[$LANG]"; INPUTRC=/dev/null bash -i -c 'bind -v' | grep -E 'convert-meta|input-meta'
+[]
+set convert-meta on         # ← 여기서 터진다
+set input-meta off
+```
+
+```text
+Git Bash 바로가기          herdr pane / pty에 붙은 bash
+  bash --login -i            bash -i  (shell_mode 미설정)
+  /etc/profile.d/lang.sh ✓   /etc/profile.d/lang.sh ✗
+  LANG=ko_KR.UTF-8           LANG=""
+  readline 자동 8bit clean   convert-meta on → Alt-C 오인
+```
+
+Windows herdr는 `shell_mode`를 일부러 설정하지 않으므로(`AGENTS.md`의 herdr 절) pane이 비로그인 interactive bash로 뜬다. 증상을 못 재현했다면 로그인 셸에서 시도한 것이다.
+
+`LANG`을 강제하는 대안 대신 `.inputrc`만 건드린 이유가 여기 있다 — locale 변경은 다른 도구의 메시지·정렬·날짜 형식까지 바꾸는 넓은 side effect인 반면, 위 세 줄은 `LANG` 유무와 무관하게 같은 결과를 낸다.
 
 ## 유틸리티 스크립트 (Windows)
 
