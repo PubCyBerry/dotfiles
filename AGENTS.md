@@ -289,7 +289,7 @@ frontmatter 검증 engine은 `scripts/agent_validator.py`다. 단일 Claude agen
 uv run --with pyyaml --python 3.11 ~/.claude/skills/subagent-creator/scripts/validate_subagent.py <agent.md>
 ```
 
-> `scripts/agent_validator.py`는 `PubCyBerry/subagent-creator`의 `skills/subagent-creator/scripts/agent_validator.py`와 **동기화 대상**이다. 한쪽을 고치면 다른 쪽도 고친다. skill 사본을 없애지 못하는 이유는 CI(`test-agent-roles`)가 skill 설치 없이 돌아야 해서 저장소 안에 engine이 있어야 하기 때문이다.
+> `scripts/agent_validator.py`는 `PubCyBerry/subagent-creator`의 `skills/subagent-creator/scripts/agent_validator.py`와 **동기화 대상**이다. 한쪽을 고치면 다른 쪽도 고친다. skill 사본을 없애지 못하는 이유는 CI(`test-agent-roles`)가 skill 설치 없이 돌아야 해서 저장소 안에 engine이 있어야 하기 때문이다. 이 저장소는 engine만 소유한다 — `validate_subagent.py` wrapper와 그 테스트는 upstream 저장소에 있다.
 
 ## 설치/언인스톨 변경 지침
 
