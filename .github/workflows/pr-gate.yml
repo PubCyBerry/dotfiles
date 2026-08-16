@@ -129,6 +129,10 @@ jobs:
           test "$(grep -Fxc '# user-sentinel' "$HOME/.bashrc")" -eq 1
           test "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.bashrc")" -eq 1
           jq -e '.statusLine.command | contains("/mock/claude-hud")' "$HOME/.claude/settings.json" > /dev/null
+          # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
+          grep -Fq '$include /etc/inputrc' "$HOME/.inputrc"
+          grep -Fq 'set input-meta on' "$HOME/.inputrc"
+          grep -Fq 'set convert-meta off' "$HOME/.inputrc"
 
       - name: Verify rhwp tree and MCP registration
         run: |
@@ -294,10 +298,36 @@ jobs:
           if ((& $rhwpExe --version) -cne "rhwp v$version") { throw 'rhwp version mismatch' }
           if (-not (Test-Path (Join-Path $env:USERPROFILE 'rhwp\LICENSE'))) { throw 'rhwp archive not fully deployed' }
           if ((& yq -p=toml -o=json -r '.mcp_servers.rhwp.command' (Join-Path $env:USERPROFILE '.codex\config.toml')) -cne $rhwpExe) { throw 'codex MCP command is not the absolute tree path' }
+          # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
+          $inputrc = Get-Content (Join-Path $env:USERPROFILE '.inputrc') -Raw
+          foreach ($line in '$include /etc/inputrc', 'set input-meta on', 'set convert-meta off') {
+            if (-not $inputrc.Contains($line)) { throw ".inputrc lost: $line" }
+          }
 
       - name: rhwp ownership contract
         shell: pwsh
         run: pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
+
+  test-profiles:
+    name: Shell profile contract
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # install 없이 install 스크립트의 프로파일 함수만 로드해 돌린다(네트워크 없음).
+      # .inputrc의 $include / 8bit clean 회귀 가드가 여기서 실행된다.
+      - name: bash profile contract
+        if: runner.os == 'Linux'
+        run: bash tests/profile/profile-idempotency.sh
+
+      - name: PowerShell profile contract
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/profile/profile-idempotency.ps1
 
   test-configs:
     name: Config syntax
@@ -381,7 +411,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-configs, test-manifest-syntax, test-agent-roles]
+    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-profiles, test-configs, test-manifest-syntax, test-agent-roles]
     runs-on: ubuntu-24.04
     if: always()
     steps:
@@ -392,6 +422,7 @@ jobs:
             "test-apt-install:${{ needs.test-apt-install.result }}"
             "test-macos-install:${{ needs.test-macos-install.result }}"
             "test-windows-install:${{ needs.test-windows-install.result }}"
+            "test-profiles:${{ needs.test-profiles.result }}"
             "test-configs:${{ needs.test-configs.result }}"
             "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
             "test-agent-roles:${{ needs.test-agent-roles.result }}"

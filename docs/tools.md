@@ -306,6 +306,22 @@ $ INPUTRC=config/bash/inputrc bash -i -c 'bind -p' | grep -E '\\e\[1~|\\e\[4~|\\
 
 include는 파일 맨 위에 둔다. readline은 같은 설정이 여러 번 나오면 마지막 값을 쓰므로, 저장소 설정이 뒤에 와야 `bell-style none`이 시스템 `bell-style visible`을 이기고 `"\e[A": history-search-backward`가 `$if term=cygwin` 블록의 `previous-history`를 이긴다. `/etc/inputrc`가 없는 환경에서는 include가 조용히 무시되고 나머지 줄은 그대로 적용된다.
 
+#### 사용자 설정은 마커 블록 **뒤**에 둔다
+
+install 스크립트는 `~/.inputrc`를 마커 블록(`# ===== dotfiles-begin/end =====`)으로 배포하고, 블록이 없으면 파일 **끝**에 덧붙인다. `$include`는 그 블록 안에 있으므로, 마커 블록 **위**에 쓴 사용자 설정은 include가 끌어온 `/etc/inputrc` 값에 덮인다.
+
+```text
+~/.inputrc
+  set completion-query-items 200      # 사용자 설정 — /etc/inputrc의 40에 덮인다
+  # ===== dotfiles-begin =====
+  $include /etc/inputrc               # completion-query-items 40
+  ...저장소 설정...
+  # ===== dotfiles-end =====
+  set completion-query-items 200      # 여기 두면 이긴다
+```
+
+같은 이유로 마커 블록 뒤에 둔 사용자 설정은 저장소 설정도 이긴다. `bell-style`이나 `"\e[A"` 바인딩을 다르게 쓰고 싶으면 블록 뒤에 적는다.
+
 #### UTF-8 8bit clean이 필요한 이유
 
 `input-meta off` + `convert-meta on`이면 readline이 상위비트 바이트를 `ESC + (byte & 0x7F)`로 바꾼다. 한글 낱자 ㄱ~ㅎ(U+3131~U+314E)는 UTF-8 첫 바이트가 모두 `0xE3`이고, `0xE3 & 0x7F = 0x63 = 'c'`라서 Alt-C가 된다.
