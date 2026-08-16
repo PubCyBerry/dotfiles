@@ -14,6 +14,7 @@
     "showSpeed": true,
     "showUsage": true,
     "usageBarEnabled": true,
+    "sevenDayThreshold": 0,
     "showSessionName": true,
     "showDuration": true,
     "showSessionTokens": true,
