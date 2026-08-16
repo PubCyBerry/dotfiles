@@ -55,15 +55,30 @@ if (Get-Module -ListAvailable -Name PSFzf -ErrorAction SilentlyContinue) {
     Set-PsFzfOption -PSReadlineChordProvider 'Ctrl+t' -PSReadlineChordReverseHistory 'Ctrl+r'
 }
 
-# eza 별칭
+# eza / bat 별칭
+#
+# PowerShell의 명령 해석 순서는 Alias > Function > Cmdlet이다. Windows PowerShell이
+# 기본 제공하는 `ls`(Get-ChildItem), `cat`(Get-Content) 별칭이 같은 이름의 함수를
+# 가려서, function global:ls를 정의해도 `ls`는 계속 Get-ChildItem으로 해석됐다.
+# (Get-Command ls).Definition으로 확인할 수 있다. 내장 별칭을 먼저 걷어내야 한다.
+# `ll`/`lt`는 대응하는 내장 별칭이 없어 영향을 받지 않는다.
+#
+# 이 프로파일은 마커 블록으로 여러 번 로드될 수 있으므로 이미 지워진 경우를 무시한다.
+function private:Remove-ShadowingAlias([string]$Name) {
+    if (Get-Alias $Name -ErrorAction SilentlyContinue) {
+        Remove-Alias $Name -Force -Scope Global -ErrorAction SilentlyContinue
+    }
+}
+
 if (Get-Command eza -ErrorAction SilentlyContinue) {
+    Remove-ShadowingAlias 'ls'
     function global:ls  { eza @args }
     function global:ll  { eza -la @args }
     function global:lt  { eza --tree @args }
 }
 
-# bat 별칭
 if (Get-Command bat -ErrorAction SilentlyContinue) {
+    Remove-ShadowingAlias 'cat'
     function global:cat { bat @args }
 }
 
