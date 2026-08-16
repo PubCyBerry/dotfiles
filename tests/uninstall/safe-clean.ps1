@@ -22,6 +22,14 @@ try {
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.toml')) agent_allowlist
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.md'))) agent_extension
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\nested\planner.toml'))) agent_nested
+    # 구 로컬 skill 배포분: 소스가 사라져도 기존 머신 receipt entry를 정리할 수 있어야 한다.
+    # 이 판정이 막히면 preflight가 uninstall 전체를 중단시킨다.
+    Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\subagent-creator\SKILL.md')) legacy_claude_skill
+    Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\repo-scaffold\assets\scaffold.sh')) legacy_claude_skill_nested
+    Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.gemini\config\skills\subagent-creator\SKILL.md')) legacy_gemini_skill
+    # npx가 설치한 다른 skill은 receipt에 없다 — 이름 목록 밖은 여전히 거부한다.
+    Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\pdf\SKILL.md'))) npx_skill_rejected
+    Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\subagent-creator'))) legacy_skill_root_rejected
     $goodPrefix=Join-Path $env:APPDATA 'fnm\node-versions\v22\installation'
     New-Item -ItemType Directory -Force $goodPrefix | Out-Null
     Assert (Test-NpmPrefixAllowed $goodPrefix) npm_prefix

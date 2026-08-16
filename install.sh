@@ -21,7 +21,6 @@ CLAUDE_DIR="$HOME/.claude"
 CODEX_DIR="$HOME/.codex"
 GEMINI_DIR="$HOME/.gemini"
 GEMINI_CONFIG_DIR="$GEMINI_DIR/config"
-SKILLS_LOCAL_SRC="$ROOT/config/claude/skills"
 LOCAL_BIN="$HOME/.local/bin"
 NVIM_CONFIG_DIR="$HOME/.config/nvim"
 YAZI_CONFIG_DIR="$HOME/.config/yazi"
@@ -113,6 +112,15 @@ restore_claude_plugins() {
     (( failed == 0 ))
 }
 
+# npx skills는 설치한 skill을 ~/.agents/.skill-lock.json에 source와 함께 기록한다.
+# jq가 없으면 추적 여부를 판단할 수 없으므로 add로 처리한다(add는 언제나 안전하다).
+npx_skill_is_tracked() {
+    local name="$1" repo="$2" lock="$HOME/.agents/.skill-lock.json"
+    [[ -f "$lock" ]] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e --arg n "$name" --arg r "$repo" '(.skills // {})[$n].source == $r' "$lock" >/dev/null 2>&1
+}
+
 restore_claude_skills() {
     local path="$1" content row repo skill failed=0 count=0
     content="$(manifest_lines "$path")" || return 1
@@ -124,10 +132,21 @@ restore_claude_skills() {
         }
     done <<< "$content"
     (( count > 0 )) || { echo "skills manifest has no entries: $path" >&2; return 1; }
+    # npx가 같은 source로 이미 추적 중인 skill만 update로 갱신한다.
+    # 추적되지 않는 이름(구 로컬 skill 배포분, 다른 source의 동명 skill)은 add로 manifest source에 맞춘다.
+    # update가 실패하면 add로 내려간다 — upstream이 skill을 옮기거나 이름을 바꾸면 lock에는
+    # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
     while IFS= read -r row; do
         repo="${row%@*}"; skill="${row##*@}"
-        echo "    Adding skill: $skill from $repo..."
-        if ! npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+        if npx_skill_is_tracked "$skill" "$repo"; then
+            if npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
+                echo "    Updated skill: $skill"; continue
+            fi
+            echo "    Update failed, falling back to add: $skill"
+        fi
+        if npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+            echo "    Added skill: $skill from $repo"
+        else
             echo "    [!] Failed: $row"
             failed=1
         fi
@@ -2045,16 +2064,7 @@ install_claude_code_stage() {
         echo "    [!] config/claude/hooks not found, skipping."
     fi
 
-    # 로컬 skills/: dotfiles 소유 skill만 디렉터리 단위 배포 (원격 npx skill 보존)
-    SKILLS_LOCAL_SRC="$ROOT/config/claude/skills"
-    if [[ -d "$SKILLS_LOCAL_SRC" ]]; then
-        mkdir -p "$CLAUDE_DIR/skills"
-        for d in "$SKILLS_LOCAL_SRC"/*/; do
-            [[ -d "$d" ]] || continue
-            name="$(basename "$d")"
-            if install_managed_tree "$d" "$CLAUDE_DIR/skills/$name" skip true; then echo "    Deployed local skill: $name"; fi
-        done
-    fi
+    # skill은 이 저장소가 배포하지 않는다 — 전부 manifests/skills.txt의 npx skills 설치다 (6단계).
 
     # 공용 role: config/agents/roles/<name>/ = claude.frontmatter + body.md 조립
     # → ~/.claude/agents/<name>.md (사용자가 직접 만든 다른 agent 파일은 보존)
@@ -2118,16 +2128,6 @@ deploy_agy_stage() {
         echo "    [!] config/agy/hooks not found, skipping."
     fi
 
-    if [[ -d "$SKILLS_LOCAL_SRC" ]]; then
-        mkdir -p "$GEMINI_CONFIG_DIR/skills"
-        for d in "$SKILLS_LOCAL_SRC"/*/; do
-            [[ -d "$d" ]] || continue
-            name="$(basename "$d")"
-            if install_managed_tree "$d" "$GEMINI_CONFIG_DIR/skills/$name" skip true; then
-                echo "    Deployed local skill to Antigravity: $name"
-            fi
-        done
-    fi
 }
 run_optional_stage SKIP_AGY "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" deploy_agy_stage
 
@@ -2150,7 +2150,7 @@ echo
 install_shell_profiles
 
 # =============================================
-# 6. Claude Code skills 설치 (manifests/skills.txt)
+# 6. Claude Code skills 설치·업데이트 (manifests/skills.txt)
 # =============================================
 echo
 run_skills_stage "$ROOT/manifests/skills.txt"

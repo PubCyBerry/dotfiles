@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,9 +8,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VALIDATOR_DIR = (
-    ROOT / "config" / "claude" / "skills" / "subagent-creator" / "scripts"
-)
+# 검증 engine은 저장소가 소유한다. skill 사본(PubCyBerry/subagent-creator)의
+# validate_subagent.py wrapper는 그 저장소에서 테스트한다.
+VALIDATOR_DIR = ROOT / "scripts"
 sys.path.insert(0, str(VALIDATOR_DIR))
 
 from agent_validator import validate_text  # noqa: E402
@@ -159,21 +158,6 @@ body
             "permissionMode",
         ):
             self.assertTrue(any(field in error for error in errors), (field, errors))
-
-    def test_subagent_creator_wrapper_uses_same_rules(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            deployed_scripts = Path(tmp) / "scripts"
-            shutil.copytree(VALIDATOR_DIR, deployed_scripts)
-            path = Path(tmp) / "current-agent.md"
-            path.write_text(VALID_AGENT, encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, str(deployed_scripts / "validate_subagent.py"), str(path)],
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                check=False,
-            )
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_composed_claude_and_codex_role_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

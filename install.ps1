@@ -28,7 +28,6 @@ $GitFileExePaths = @(
 )
 $agentsGlobalSrc = Join-Path $ROOT "config\agents\global.md"
 $rolesSrc        = Join-Path $ROOT "config\agents\roles"
-$skillsLocalSrc  = Join-Path $ROOT "config\claude\skills"
 
 # =============================================
 # 헬퍼 함수
@@ -99,6 +98,17 @@ function Restore-ClaudePlugins([object[]]$Rows) {
     return $ok
 }
 
+# npx skills는 설치한 skill을 ~\.agents\.skill-lock.json에 source와 함께 기록한다.
+# 기록이 없거나 source가 다르면 우리가 심은 skill이 아니므로 update 대상이 아니다.
+function Test-NpxTrackedSkill([string]$Name, [string]$Repo) {
+    $lock = Join-Path $env:USERPROFILE '.agents\.skill-lock.json'
+    if (-not (Test-Path -LiteralPath $lock -PathType Leaf)) { return $false }
+    try { $data = Get-Content -Raw -LiteralPath $lock | ConvertFrom-Json } catch { return $false }
+    if ($null -eq $data -or $null -eq $data.skills) { return $false }
+    $entry = $data.skills.PSObject.Properties[$Name]
+    return ($null -ne $entry -and $entry.Value.source -eq $Repo)
+}
+
 function Restore-ClaudeSkills([string]$Path) {
     $rows = @(Get-ManifestLines $Path)
     if ($rows.Count -eq 0) { throw "skills manifest has no entries: $Path" }
@@ -108,11 +118,24 @@ function Restore-ClaudeSkills([string]$Path) {
         }
     }
     $ok = $true
+    # npx가 같은 source로 이미 추적 중인 skill만 update로 갱신한다.
+    # 추적되지 않는 이름(구 로컬 skill 배포분, 다른 source의 동명 skill)은 add로 manifest source에 맞춘다.
+    # update가 실패하면 add로 내려간다 — upstream이 skill을 옮기거나 이름을 바꾸면 lock에는
+    # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
     foreach ($row in $rows) {
         $repoSlug, $skillName = $row -split '@', 2
-        Write-Host "    Adding skill: $skillName from $repoSlug..."
+        if (Test-NpxTrackedSkill $skillName $repoSlug) {
+            npx -y skills update $skillName --global --yes 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "    Updated skill: $skillName"
+                continue
+            }
+            Write-Host "    Update failed, falling back to add: $skillName"
+        }
         npx -y skills add $repoSlug --skill $skillName --global --yes --agent claude-code 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "    Added skill: $skillName from $repoSlug"
+        } else {
             Write-Host "    [!] Failed: $row"
             $ok = $false
         }
@@ -1819,17 +1842,7 @@ if (Test-Path $hooksSrc) {
     Write-Host "    [!] config\claude\hooks not found, skipping."
 }
 
-# 로컬 skills/: dotfiles 소유 skill만 디렉터리 단위 배포 (원격 npx skill 보존)
-$skillsLocalSrc = Join-Path $ROOT "config\claude\skills"
-if (Test-Path $skillsLocalSrc) {
-    $skillsDst = Join-Path $ClaudeDir "skills"
-    New-Item -ItemType Directory -Force -Path $skillsDst | Out-Null
-    Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
-        if (Install-ManagedTree $_.FullName (Join-Path $skillsDst $_.Name) Skip $true) {
-            Write-Host "    Deployed local skill: $($_.Name)"
-        }
-    }
-}
+# skill은 이 저장소가 배포하지 않는다 — 전부 manifests\skills.txt의 npx skills 설치다 (6단계).
 
 # 공용 role: config\agents\roles\<name>\ = claude.frontmatter + body.md 조립
 # → ~\.claude\agents\<name>.md (사용자가 직접 만든 다른 agent 파일은 보존)
@@ -1890,15 +1903,6 @@ Invoke-OptionalInstallStage 'SKIP_AGY' "==> [CI] Skipping Antigravity (AGY) conf
         Write-Host "    [!] config\agy\hooks not found, skipping."
     }
 
-    if (Test-Path $skillsLocalSrc) {
-        $geminiSkillsDst = Join-Path $GeminiConfigDir "skills"
-        New-Item -ItemType Directory -Force -Path $geminiSkillsDst | Out-Null
-        Get-ChildItem $skillsLocalSrc -Directory | ForEach-Object {
-            if (Install-ManagedTree $_.FullName (Join-Path $geminiSkillsDst $_.Name) Skip $true) {
-                Write-Host "    Deployed local skill to Antigravity: $($_.Name)"
-            }
-        }
-    }
 }
 
 # =============================================
@@ -1966,7 +1970,7 @@ if (Test-Path $bashrcSrc) {
 }
 
 # =============================================
-# 6. Claude skills 설치 (manifests/skills.txt)
+# 6. Claude skills 설치·업데이트 (manifests/skills.txt)
 # =============================================
 Write-Host ""
 Write-Host "==> Restoring Claude Code skills..."

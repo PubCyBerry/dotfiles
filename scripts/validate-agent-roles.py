@@ -20,15 +20,7 @@ try:
 except ImportError:  # Python 3.10 이하
     sys.exit("Python 3.11+ 가 필요하다 (tomllib)")
 
-VALIDATOR_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "config"
-    / "claude"
-    / "skills"
-    / "subagent-creator"
-    / "scripts"
-)
-sys.path.insert(0, str(VALIDATOR_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_validator import validate_text  # noqa: E402
 
 REQUIRED_FILES = ("body.md", "claude.frontmatter", "codex.toml")

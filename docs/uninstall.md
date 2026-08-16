@@ -36,6 +36,8 @@ bash uninstall.sh
 - `~/.claude/settings.json`은 설치 마지막 단계의 `claude plugin` CLI가 다시 쓴다. install은 그 직후 소유권 해시를 설치 종료 시점 내용으로 갱신하므로, uninstall이 이 파일을 backup에서 복원할 수 있고 그 과정에서 `enabledPlugins`/`extraKnownMarketplaces` 등록도 함께 사라진다. `~/.claude/plugins/` 자체는 범위 밖이라 디스크에 남는다. 갱신은 install이 실제로 그 파일을 배포한 실행에서만 일어난다 — 보존으로 끝난 파일은 소유권에 들어가지 않는다.
 - 각 항목 완료 직후 receipt를 atomic 저장하므로 중단 후 다시 실행할 수 있다. 두 번째 실행은 no-op이다.
 
-자동 제거하지 않는 범위: receipt에 없는 Node 버전, remote skills, plugins/marketplaces, macOS defaults, legacy Codex skills, cache와 사용자 data.
+- 구 로컬 skill 배포분(`~/.claude/skills/{subagent-creator,repo-scaffold}/`, `~/.gemini/config/skills/{subagent-creator,repo-scaffold}/`)은 소스가 저장소에서 사라졌지만 receipt entry는 남아 있다. 그래서 이 두 이름만 고정 목록으로 소유권을 인정하고, unchanged 파일에 한해 제거한다. `npx skills`가 새로 설치한 skill은 receipt에 없으므로 이 경로에 걸리지 않는다.
+
+자동 제거하지 않는 범위: receipt에 없는 Node 버전, `npx skills`가 설치한 skills(`npx skills remove`로 지운다), plugins/marketplaces, macOS defaults, legacy Codex skills, cache와 사용자 data.
 
 변경되거나 provenance가 부족해 보존된 항목은 경고와 receipt entry가 남는다. 사용자가 내용을 확인하고 직접 정리하거나 원래 identity로 되돌린 뒤 스크립트를 다시 실행한다.

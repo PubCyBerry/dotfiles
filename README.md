@@ -107,9 +107,6 @@ dotfiles/
       settings.json                # Claude Code 설정 (hooks, env, permissions)
       hooks/
         temporal-context.sh        # Claude SessionStart 시간 컨텍스트 hook
-      skills/                      # 이 저장소가 소유한 로컬 skill (디렉터리 단위 배포)
-        subagent-creator/          # subagent 정의 생성·검증
-        repo-scaffold/             # 저장소를 에이전트 탐색용 형태로 스캐폴딩
     codex/
       config.toml                  # Codex 모델 기본값
       hooks.json                   # Codex hook 설정
