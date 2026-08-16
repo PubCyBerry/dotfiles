@@ -130,6 +130,17 @@ Copy-Item $src $dst
 
 `config/claude/claude-hud.json`은 Essential 기반에 Usage bar + git ahead/behind를 추가한 구성이다.
 
+### Weekly 한도가 안 보일 때
+
+`display.sevenDayThreshold`는 기본값이 `80`이다. 주간 사용량이 그 값 미만이면 claude-hud가 5h 창만 그리고 Weekly는 통째로 숨긴다. 구독 등급(Pro/Max)과 무관하며, 소진율이 높은 머신에서만 보이는 것이 이 때문이다.
+
+```text
+threshold 80   weekly 42%  →  [Usage] 5h: 31%
+threshold  0   weekly 42%  →  [Usage] 5h: 31% | Weekly: 42%
+```
+
+이 저장소 템플릿은 `0`(항상 표시)으로 둔다. 5h 창 데이터가 없을 때는 임계값과 무관하게 Weekly가 표시된다.
+
 ---
 
 ## 설정 키 참조
@@ -146,6 +157,7 @@ Copy-Item $src $dst
 | 출력 속도 | `display.showSpeed` |
 | Usage 한도 | `display.showUsage` |
 | Usage 바 스타일 | `display.usageBarEnabled` |
+| Weekly 표시 임계값 | `display.sevenDayThreshold` |
 | Session name | `display.showSessionName` |
 | 세션 시간 | `display.showDuration` |
 | 커스텀 라인 | `display.customLine` |
