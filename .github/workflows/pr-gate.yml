@@ -31,7 +31,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x install.sh
+      # 테스트 스크립트까지 검사한다. `! cmd` 단독(SC2251)은 errexit을 타지 않아
+      # 단언이 조용히 통과하므로, 게이트 스크립트에서 특히 위험하다.
+      - run: git ls-files '*.sh' | xargs shellcheck -x
 
   test-apt-install:
     name: Ubuntu install + verify

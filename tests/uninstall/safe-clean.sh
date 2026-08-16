@@ -43,11 +43,11 @@ unset -f brew
 
 # Marker: exact block만 제거하고 duplicate/inline은 보존한다.
 printf 'user\n# ===== dotfiles-begin =====\nmanaged\n# ===== dotfiles-end =====\nafter\n' > "$HOME/.bashrc"
-remove_marker_block "$HOME/.bashrc"; grep -Fxq user "$HOME/.bashrc"; ! grep -q dotfiles-begin "$HOME/.bashrc"
+remove_marker_block "$HOME/.bashrc"; grep -Fxq user "$HOME/.bashrc"; ! grep -q dotfiles-begin "$HOME/.bashrc" || fail marker-not-removed
 printf '# ===== dotfiles-begin =====\nx\n# ===== dotfiles-begin =====\nx\n# ===== dotfiles-end =====\n' > "$HOME/.inputrc"
-before="$(file_hash "$HOME/.inputrc")"; ! remove_marker_block "$HOME/.inputrc"; [[ "$(file_hash "$HOME/.inputrc")" == "$before" ]] || fail marker-duplicate
+before="$(file_hash "$HOME/.inputrc")"; ! remove_marker_block "$HOME/.inputrc" || fail marker-duplicate-accepted; [[ "$(file_hash "$HOME/.inputrc")" == "$before" ]] || fail marker-duplicate
 printf 'inline # ===== dotfiles-begin =====\n# ===== dotfiles-end =====\n' > "$HOME/.zshrc"
-before="$(file_hash "$HOME/.zshrc")"; ! remove_marker_block "$HOME/.zshrc"; [[ "$(file_hash "$HOME/.zshrc")" == "$before" ]] || fail marker-inline
+before="$(file_hash "$HOME/.zshrc")"; ! remove_marker_block "$HOME/.zshrc" || fail marker-inline-accepted; [[ "$(file_hash "$HOME/.zshrc")" == "$before" ]] || fail marker-inline
 
 mkdir -p "$HOME/.config/yazi" "$HOME/.codex" "$HOME/.claude" "$HOME/.local/bin" "$HOME/.local/opt/nvim-v1.2.3" "$HOME/.local/opt/nvim-v2.0.0" "$HOME/.local/share/fnm/node-versions/v22/installation"
 printf managed > "$HOME/.tmux.conf"; fresh_hash="$(file_hash "$HOME/.tmux.conf")"; chmod 640 "$HOME/.tmux.conf"; fresh_mode="$(file_mode "$HOME/.tmux.conf")"
@@ -119,19 +119,19 @@ jq -e '.packages|has("apt:curl") and has("apt:wget") and has("apt:tmux")' "$DOTF
 receipt_before="$(file_hash "$DOTFILES_RECEIPT_PATH")"; main || true; [[ "$(file_hash "$DOTFILES_RECEIPT_PATH")" == "$receipt_before" ]] || fail rerun
 
 # receipt absent는 marker만, invalid/symlink receipt는 artifact를 건드리지 않는다.
-rm -f "$DOTFILES_RECEIPT_PATH" "$HOME/.inputrc" "$HOME/.zshrc"; printf '# ===== dotfiles-begin =====\nx\n# ===== dotfiles-end =====\n' > "$HOME/.bashrc"; main; ! grep -q dotfiles-begin "$HOME/.bashrc"
-printf invalid > "$DOTFILES_RECEIPT_PATH"; printf keep > "$HOME/.tmux.conf"; ! main; [[ "$(cat "$HOME/.tmux.conf")" == keep ]] || fail invalid-receipt
-mv "$DOTFILES_RECEIPT_PATH" "$TMP/target"; ln -s "$TMP/target" "$DOTFILES_RECEIPT_PATH"; ! main; [[ "$(cat "$TMP/target")" == invalid ]] || fail receipt-symlink
+rm -f "$DOTFILES_RECEIPT_PATH" "$HOME/.inputrc" "$HOME/.zshrc"; printf '# ===== dotfiles-begin =====\nx\n# ===== dotfiles-end =====\n' > "$HOME/.bashrc"; main; ! grep -q dotfiles-begin "$HOME/.bashrc" || fail receipt-absent-marker
+printf invalid > "$DOTFILES_RECEIPT_PATH"; printf keep > "$HOME/.tmux.conf"; ! main || fail invalid-receipt-exit; [[ "$(cat "$HOME/.tmux.conf")" == keep ]] || fail invalid-receipt
+mv "$DOTFILES_RECEIPT_PATH" "$TMP/target"; ln -s "$TMP/target" "$DOTFILES_RECEIPT_PATH"; ! main || fail receipt-symlink-exit; [[ "$(cat "$TMP/target")" == invalid ]] || fail receipt-symlink
 
 # Whole-receipt zero mutation + arbitrary backup 차단.
 rm -f "$DOTFILES_RECEIPT_PATH"; printf '# ===== dotfiles-begin =====\nx\n# ===== dotfiles-end =====\n' > "$HOME/.bashrc"
 printf user > "$HOME/user-backup"; printf managed > "$HOME/.tmux.conf"; mh="$(file_hash "$HOME/.tmux.conf")"
 jq -n --arg p "$HOME/.tmux.conf" --arg b "$HOME/user-backup" --arg h "$mh" '{schemaVersion:1,artifacts:{($p):{before:{exists:true,hash:$h,mode:"644",backup:$b},installedHash:$h,installedMode:"644",pending:false}},packages:{},values:{}}' > "$DOTFILES_RECEIPT_PATH"
-! main; grep -q dotfiles-begin "$HOME/.bashrc"; [[ "$(cat "$HOME/user-backup")" == user ]] || fail arbitrary-backup
+! main || fail arbitrary-backup-exit; grep -q dotfiles-begin "$HOME/.bashrc"; [[ "$(cat "$HOME/user-backup")" == user ]] || fail arbitrary-backup
 
 # Mixed artifact discriminator는 whole preflight에서 zero mutation이다.
 jq -n --arg p "$HOME/.tmux.conf" --arg h "$mh" '{schemaVersion:1,artifacts:{($p):{before:{exists:false},installedHash:$h,installedMode:"644",installedTreeHash:$h,pending:false}},packages:{},values:{}}' > "$DOTFILES_RECEIPT_PATH"
-! main; grep -q dotfiles-begin "$HOME/.bashrc"; [[ "$(cat "$HOME/.tmux.conf")" == managed ]] || fail mixed-kind-zero-mutation
+! main || fail mixed-kind-exit; grep -q dotfiles-begin "$HOME/.bashrc"; [[ "$(cat "$HOME/.tmux.conf")" == managed ]] || fail mixed-kind-zero-mutation
 
 # Stable pending previous는 pending만 취소하고 기존 identity를 같은 호출에서 제거한다.
 rm -f "$DOTFILES_RECEIPT_PATH"; printf stable > "$HOME/.tmux.conf"; sh="$(file_hash "$HOME/.tmux.conf")"
@@ -152,8 +152,8 @@ uninstall_artifact "$HOME/.config/starship.toml"; [[ ! -e "$DOTFILES_RECEIPT_PAT
 # jq terminal marker: keep/changed/absent가 정확히 수렴한다.
 printf 'dotfiles-jq-terminal-v1\tapt\t1\n' > "$DOTFILES_RECEIPT_PATH"
 KEEP_PACKAGES=true; query_terminal_jq(){ TERMINAL_STATE=present;TERMINAL_VERSION=1; }; recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")"; [[ ! -e "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-keep
-printf 'dotfiles-jq-terminal-v1\tapt\t1\n' > "$DOTFILES_RECEIPT_PATH"; KEEP_PACKAGES=false; query_terminal_jq(){ TERMINAL_STATE=present;TERMINAL_VERSION=9; }; ! recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")"; [[ -f "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-changed
+printf 'dotfiles-jq-terminal-v1\tapt\t1\n' > "$DOTFILES_RECEIPT_PATH"; KEEP_PACKAGES=false; query_terminal_jq(){ TERMINAL_STATE=present;TERMINAL_VERSION=9; }; ! recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")" || fail terminal-changed-exit; [[ -f "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-changed
 query_terminal_jq(){ TERMINAL_STATE=absent;TERMINAL_VERSION=''; }; recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")"; [[ ! -e "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-absent
-printf 'dotfiles-jq-terminal-v1\tapt\t1\ninjected\n' > "$DOTFILES_RECEIPT_PATH"; ! recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")"; [[ -f "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-multiline
+printf 'dotfiles-jq-terminal-v1\tapt\t1\ninjected\n' > "$DOTFILES_RECEIPT_PATH"; ! recover_terminal_jq "$(cat "$DOTFILES_RECEIPT_PATH")" || fail terminal-multiline-exit; [[ -f "$DOTFILES_RECEIPT_PATH" ]] || fail terminal-multiline
 
 echo 'safe-clean uninstall bash: PASS'
