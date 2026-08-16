@@ -31,8 +31,10 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 ### Job 상세
 
 **lint**
-- `shellcheck -x install.sh`로 셸 스크립트 정적 분석
+- `git ls-files '*.sh'`로 저장소 전체 셸 스크립트를 `shellcheck -x` 정적 분석
 - 문법 오류, 불안전한 패턴(따옴표 누락 등)을 사전 차단
+- **러너 이미지의 사전 설치본을 쓰지 않는다.** `manifests/shellcheck.tsv`가 pin한 버전을 받아 SHA-256을 검증하고 PATH 앞에 둔다. install 스크립트도 같은 파일을 보므로 CI와 로컬이 한 버전으로 모인다 ([shellcheck 관리](../AGENTS.md#shellcheck-관리))
+- 내려받기 직후 `command -v shellcheck`와 `--version`으로 실제 해석되는 바이너리가 pin한 그 버전인지 단언한다. 이 단언이 없으면 PATH 해석이 바뀌는 순간 게이트가 조용히 뜻을 잃는다
 
 **test-apt-install**
 - apt 패키지 캐시 복원 후 `install.sh`를 두 번 실행
@@ -155,6 +157,10 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `SKIP_PLUGINS=1` | Claude Code plugins 설치 | 외부 marketplace 의존 |
+| `SKIP_HERDR=1` | herdr 설치 + 설정 배포 | pin되지 않은 원격 installer(`curl \| sh`, `irm`) |
+| `SKIP_AGY=1` | Antigravity 설정 배포 (`config/agy/` → `~/.gemini/`) | 설정만 배포하는 단계를 끌 때 |
+| `SKIP_SHELLCHECK=1` | pinned shellcheck 설치 | 로컬에서 다른 버전을 쓰려는 경우. **CI는 쓰지 않는다** — pin된 artifact라 설치 경로를 그대로 검증한다 |
+| `SKIP_RHWP=1` | rhwp 설치 + MCP 등록 | pinned artifact 다운로드를 제외할 때 |
 | `GITHUB_TOKEN=...` | `gh_release_tag()` 함수 | API rate limit 우회 |
 
 Safe-Clean-Uninstall의 config/profile 시나리오처럼 외부 패키지 설치를 제외해 실행하려면:

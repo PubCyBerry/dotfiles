@@ -22,6 +22,8 @@ try {
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.toml')) agent_allowlist
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\planner.md'))) agent_extension
     Assert (-not (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.codex\agents\nested\planner.toml'))) agent_nested
+    # shellcheck는 manifests\shellcheck.tsv가 pin한 direct artifact다.
+    Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe')) shellcheck_allowlist
     # 구 로컬 skill 배포분: 소스가 사라져도 기존 머신 receipt entry를 정리할 수 있어야 한다.
     # 이 판정이 막히면 preflight가 uninstall 전체를 중단시킨다.
     Assert (Test-ArtifactAllowed (Join-Path $env:USERPROFILE '.claude\skills\subagent-creator\SKILL.md')) legacy_claude_skill

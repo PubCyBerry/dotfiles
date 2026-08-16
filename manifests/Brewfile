@@ -6,7 +6,9 @@ brew "curl"
 brew "wget"
 brew "vim"
 brew "neovim"
-brew "shellcheck"
+# shellcheck는 여기서 빼 둔다. brew formula에는 versioned formula가 없어 항상 최신으로
+# 흐르는데, CI와 세 OS가 한 버전을 써야 하므로 manifests/shellcheck.tsv의 pinned
+# release로 설치한다 (AGENTS.md "shellcheck 관리").
 
 # Node 버전 관리
 brew "fnm"

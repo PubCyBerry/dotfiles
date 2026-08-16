@@ -43,6 +43,35 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      # 러너 이미지의 사전 설치본을 쓰지 않는다. 그 버전은 러너 이미지를 따라
+      # 움직이고(현재 ubuntu-24.04 = apt 0.9.0), 로컬 설치본과 어긋나는 순간
+      # "로컬에서는 통과하는데 CI에서 깨진다"가 시작된다. install.sh/install.ps1이
+      # 보는 것과 같은 manifests/shellcheck.tsv에서 받아 CI와 로컬을 한 버전으로 모은다.
+      - name: Install pinned ShellCheck
+        run: |
+          set -euo pipefail
+          row="$(awk -F '\t' '$1 == "linux-x86_64" { print; exit }' manifests/shellcheck.tsv)"
+          [[ -n "$row" ]] || { echo "no linux-x86_64 row in manifests/shellcheck.tsv"; exit 1; }
+          IFS=$'\t' read -r _ version _ url checksum <<< "$row"
+          bin="$RUNNER_TEMP/pinned-shellcheck"
+          mkdir -p "$bin"
+          curl --retry 3 --retry-delay 2 -fsSL -o "$RUNNER_TEMP/shellcheck.tar.gz" "$url"
+          echo "$checksum  $RUNNER_TEMP/shellcheck.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/shellcheck-v$version/shellcheck" "$bin/shellcheck"
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "SHELLCHECK_PINNED_VERSION=$version" >> "$GITHUB_ENV"
+
+      # GITHUB_PATH는 앞에 붙지만, 사전 설치본이 잡히면 게이트가 조용히 뜻을 잃는다.
+      # 실제로 해석되는 shellcheck가 pin한 그 바이너리인지 여기서 단언한다.
+      - name: Assert the pinned version is what runs
+        run: |
+          set -euo pipefail
+          test "$(command -v shellcheck)" = "$RUNNER_TEMP/pinned-shellcheck/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$SHELLCHECK_PINNED_VERSION"
+          echo "OK: shellcheck $SHELLCHECK_PINNED_VERSION"
+
       # 테스트 스크립트까지 검사한다. `! cmd` 단독(SC2251)은 errexit을 타지 않아
       # 단언이 조용히 통과하므로, 게이트 스크립트에서 특히 위험하다.
       # -z/-0: 공백·따옴표가 든 경로가 쪼개지지 않게 NUL 구분. -r: 대상이 0개일 때
@@ -101,6 +130,13 @@ jobs:
           starship --version
           fnm --version
           bun --version
+
+          # shellcheck는 러너 이미지의 /usr/bin/shellcheck(0.9.0)가 아니라
+          # manifests/shellcheck.tsv가 pin한 ~/.local/bin 쪽이 잡혀야 한다.
+          # 이 두 단언이 lint 잡과 로컬 설치가 같은 버전을 쓴다는 계약이다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          test "$(command -v shellcheck)" = "$HOME/.local/bin/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$sc_version"
 
       # SKIP_CLAUDE_CODE=1이라 ~/.claude 배포는 건너뛴다. Codex 쪽은 항상 실행되므로
       # install.sh의 실제 role 조립 로직을 여기서 검증한다.
@@ -249,6 +285,11 @@ jobs:
           [[ -f "$HOME/rhwp/LICENSE" ]]
           [[ "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" == "$HOME/rhwp/rhwp" ]]
 
+          # shellcheck: Brewfile이 아니라 manifests/shellcheck.tsv가 pin한 바이너리다.
+          # 이 잡은 ~/.local/bin을 PATH에 얹지 않으므로 절대 경로로 확인한다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          [[ "$("$HOME/.local/bin/shellcheck" --version | awk -F': *' '$1 == "version" { print $2 }')" == "$sc_version" ]]
+
           [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
@@ -272,6 +313,9 @@ jobs:
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       SKIP_HERDR: "1"
+      # shellcheck는 pinned artifact라 그대로 돌린다 (SKIP_PACKAGES와 무관한 별도
+      # 단계다 — User PATH를 건드리지 않으므로 아래 "config install changed User PATH"
+      # 단언과 충돌하지 않는다).
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -320,6 +364,13 @@ jobs:
           if ((& $rhwpExe --version) -cne "rhwp v$version") { throw 'rhwp version mismatch' }
           if (-not (Test-Path (Join-Path $env:USERPROFILE 'rhwp\LICENSE'))) { throw 'rhwp archive not fully deployed' }
           if ((& yq -p=toml -o=json -r '.mcp_servers.rhwp.command' (Join-Path $env:USERPROFILE '.codex\config.toml')) -cne $rhwpExe) { throw 'codex MCP command is not the absolute tree path' }
+          # shellcheck: winget이 아니라 manifests\shellcheck.tsv가 pin한 바이너리다.
+          # 첫 행이 windows-x86_64라 rhwp와 같은 방식으로 버전을 읽는다.
+          $scVersion = (Get-Content manifests\shellcheck.tsv | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } | Select-Object -First 1).Split("`t")[1]
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck was not installed' }
+          $scReported = @(& $scExe --version) | ForEach-Object { if ($_ -match '^\s*version:\s*(\S+)\s*$') { $Matches[1] } } | Select-Object -First 1
+          if ($scReported -cne $scVersion) { throw "shellcheck reports '$scReported', expected '$scVersion'" }
           # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
           $inputrc = Get-Content (Join-Path $env:USERPROFILE '.inputrc') -Raw
           foreach ($line in '$include /etc/inputrc', 'set input-meta on', 'set convert-meta off') {
@@ -407,6 +458,16 @@ jobs:
           source ./install.sh
           validate_rhwp_manifest manifests/rhwp.tsv
           echo "OK: manifests/rhwp.tsv"
+
+      # shellcheck manifest도 같은 이유로 install.sh의 실제 validator를 쓴다.
+      - name: Validate shellcheck manifest
+        run: |
+          set -euo pipefail
+          export DOTFILES_FUNCTIONS_ONLY=1
+          # shellcheck disable=SC1091
+          source ./install.sh
+          validate_shellcheck_manifest manifests/shellcheck.tsv
+          echo "OK: manifests/shellcheck.tsv"
 
   test-agent-roles:
     name: Agent role sources + composition

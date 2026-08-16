@@ -35,6 +35,13 @@ package_key_allowed() {
     local key="$1" kind name
     kind="${key%%:*}"; name="${key#*:}"
     case "$key" in npm:@anthropic-ai/claude-code|cask:claude-code) return 0;; esac
+    # 마이그레이션: ShellCheck는 apt/brew가 아니라 manifests/shellcheck.tsv의 pinned
+    # release로 옮겼다. manifest에서 빠졌으니 아래 조회로는 못 잡는데, 그 시절 설치본을
+    # 쓰던 머신 receipt에는 entry가 그대로 남아 있다. 여기서 허용하지 않으면
+    # preflight(main)가 uninstall 전체를 중단시킨다 — 무관한 항목까지 하나도 정리되지
+    # 않는다. 실제 제거 여부는 여전히 uninstall_package의 버전 대조가 정하므로,
+    # 사용자가 직접 올린 패키지는 보존된다.
+    case "$key" in apt:shellcheck|brew:shellcheck) return 0;; esac
     case "$kind" in
       apt) manifest_lines "$ROOT/manifests/apt.txt" | grep -Fxq "$name";;
       brew|cask) awk -F'"' '/^(brew|cask) "/ { kind=$1; sub(/[[:space:]]+$/, "", kind); print kind ":" $2 }' "$ROOT/manifests/Brewfile" | grep -Fxq "$key";;
@@ -204,7 +211,11 @@ artifact_allowed() {
         "$HOME/.local/bin/"*)
             name="${path##*/}"
             [[ "${path#"$HOME/.local/bin/"}" == "$name" ]] || return 1
-            case "$name" in starship|atuin|fnm|bun|bunx|yazi|ya|lazygit|fzf|nvim|delta|bat|fd|eza|yq|node|npm|npx) return 0;; esac ;;
+            # ShellCheck는 manifests/shellcheck.tsv의 pinned release다(다른 direct
+            # artifact와 달리 Linux·macOS 공통). agy는 없다 — Antigravity CLI 바이너리는
+            # 공식 installer가 같은 디렉터리에 두지만 install이 소유하지 않는다.
+            # (주석을 `# shellcheck`로 시작하면 ShellCheck가 directive로 읽어 죽는다)
+            case "$name" in starship|atuin|fnm|bun|bunx|yazi|ya|lazygit|fzf|nvim|delta|bat|fd|eza|yq|node|npm|npx|shellcheck) return 0;; esac ;;
         "$HOME/.local/share/fnm/fnm"|"$HOME/.bun/bin/bun"|"$HOME/.bun/bin/bunx") return 0 ;;
         "$HOME/.local/opt/nvim-v"*) [[ "${path#"$HOME/.local/opt/nvim-v"}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0 ;;
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests/rhwp.tsv).

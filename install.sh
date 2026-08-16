@@ -1042,6 +1042,94 @@ install_rhwp() {
 }
 
 # ---------------------------------------------
+# ShellCheck: pinned release 하나를 CI와 세 OS가 함께 쓴다.
+# (이 줄을 `# shellcheck`로 시작하면 ShellCheck가 directive로 읽어 SC1073으로 죽는다)
+#
+# 패키지 매니저를 쓰지 않는 이유는 어느 것도 한 버전으로 모이지 않기 때문이다.
+# apt는 배포판에 묶여 22.04=0.8.0 / 24.04=0.9.0 / 26.04=0.11.0을 주고, brew에는
+# versioned formula가 없어 늘 최신으로 흐르며, GitHub Actions ubuntu-24.04 러너의
+# 사전 설치본은 러너 이미지를 따라 움직인다(현재 0.9.0).
+#
+# 버전 차이는 그대로 오탐·미탐이 된다. 0.11.0에서 SC2002(useless use of cat)가
+# 기본 비활성으로 바뀌고 SC2236/SC2237이 optional로 내려갔으며 SC2327~SC2332,
+# SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는 실패한다
+# (반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
+# ---------------------------------------------
+shellcheck_platform() {
+    local machine
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+    case "$OS:$machine" in
+        Linux:x86_64|Linux:amd64) echo linux-x86_64 ;;
+        Linux:aarch64|Linux:arm64) echo linux-aarch64 ;;
+        Darwin:x86_64) echo macos-x86_64 ;;
+        Darwin:arm64|Darwin:aarch64) echo macos-aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 다섯 플랫폼 행이 모두 있고 전부 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
+# 한 행만 올라가면 그 플랫폼만 다른 버전을 받게 되어 pin의 의미가 사라진다.
+validate_shellcheck_manifest() {
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 5 || $1 !~ /^(windows-x86_64|linux-x86_64|linux-aarch64|macos-x86_64|macos-aarch64)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(tgz|zip)$/ || $4 !~ /^https:\/\/github\.com\/koalaman\/shellcheck\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/[^[:space:]]+$/ || $4 ~ /\/(latest|HEAD|main)\// || $5 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1]++ { bad=1; exit }
+      { count++; if (pinned == "") pinned = $2; else if ($2 != pinned) bad=1 }
+      END { exit (bad || count != 5) }
+    ' "$1"
+}
+
+install_shellcheck() {
+    local manifest="$ROOT/manifests/shellcheck.tsv" platform row version format url checksum
+    local work archive extract binary reported anchor
+    [[ -f "$manifest" ]] || { record_install_failure "Required manifest missing: manifests/shellcheck.tsv"; return 1; }
+    validate_shellcheck_manifest "$manifest" || { record_install_failure "Invalid manifests/shellcheck.tsv"; return 1; }
+    if ! platform="$(shellcheck_platform)"; then
+        echo "    [!] Unsupported shellcheck platform: $OS $(uname -m 2>/dev/null); skipping."
+        return 0
+    fi
+    row="$(awk -F '\t' -v p="$platform" '$1 == p { print; exit }' "$manifest")"
+    [[ -n "$row" ]] || { record_install_failure "No shellcheck manifest row for platform: $platform"; return 1; }
+    IFS=$'\t' read -r _ version format url checksum <<< "$row"
+
+    # ~/.local/bin은 bashrc 마커 블록이 PATH 맨 앞에 두므로, 배포판이 apt로 깐
+    # /usr/bin/shellcheck가 남아 있어도 pin한 쪽이 먼저 잡힌다.
+    anchor="$LOCAL_BIN/shellcheck"
+    direct_anchor_state "$anchor" "$version"
+    case "$DIRECT_STATE" in
+        current) echo "    shellcheck $version already installed: $anchor"; return 0 ;;
+        modified) record_install_failure "Managed shellcheck changed; preserving: $anchor"; return 1 ;;
+        upgrade-blocked)
+            record_install_failure "shellcheck $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1"
+            return 1 ;;
+        upgrade) echo "    Upgrading shellcheck: $DIRECT_INSTALLED_VERSION -> $version" ;;
+    esac
+
+    work="$(mktemp -d)"; _TMPFILES+=("$work")
+    archive="$work/archive"; extract="$work/extract"; mkdir -p "$extract"
+    download_verified "$url" "$checksum" "$archive" || { record_install_failure "shellcheck archive verification failed: $url"; return 1; }
+    case "$format" in
+        tgz) tar -xzf "$archive" -C "$extract" ;;
+        zip) unzip -q "$archive" -d "$extract" ;;
+        *)   record_install_failure "Unsupported shellcheck archive format: $format"; return 1 ;;
+    esac || { record_install_failure "shellcheck archive extraction failed: $url"; return 1; }
+
+    # 공식 tarball은 shellcheck-v<version>/ 한 겹 아래에 binary와 문서를 담는다.
+    # 경로에 버전이 박혀 있어, 엉뚱한 릴리즈를 받았다면 여기서 걸린다.
+    binary="$extract/shellcheck-v$version/shellcheck"
+    [[ -f "$binary" && ! -L "$binary" ]] || { record_install_failure "shellcheck binary missing in archive: $url"; return 1; }
+    chmod 755 "$binary" || return 1
+    # `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+    reported="$("$binary" --version 2>/dev/null | awk -F': *' '$1 == "version" { print $2; exit }' || true)"
+    [[ "$reported" == "$version" ]] || {
+        record_install_failure "shellcheck binary reports '${reported:-unknown}', expected '$version'"; return 1
+    }
+    install_direct_file shellcheck "$version" "$binary" "$anchor" || {
+        record_install_failure "shellcheck not installed: $anchor"; return 1
+    }
+}
+
+# ---------------------------------------------
 # herdr: 공식 installer(macOS는 Brewfile)에 맡기고, 설정만 이 저장소가 소유한다.
 #
 # rhwp와 달리 pinned artifact로 관리하지 않는다. herdr는 자체 업데이터를 갖기 때문에
@@ -1912,6 +2000,19 @@ install_herdr_stage() {
     if install_herdr; then deploy_herdr_config; fi
 }
 run_optional_stage SKIP_HERDR "==> [CI] Skipping herdr (SKIP_HERDR=1)" install_herdr_stage
+
+# =============================================
+# 1-8. shellcheck 설치 (manifests/shellcheck.tsv → ~/.local/bin/shellcheck)
+#
+# CI(pr-gate.yml의 lint 잡)와 같은 pinned 버전을 쓴다. 패키지 단계 뒤에 두는 이유는
+# receipt 기록에 jq가 필요하기 때문이다 — Linux는 apt, macOS는 Brewfile이 준다.
+# =============================================
+install_shellcheck_stage() {
+    echo
+    echo "==> Installing pinned shellcheck..."
+    install_shellcheck || true
+}
+run_optional_stage SKIP_SHELLCHECK "==> [CI] Skipping shellcheck (SKIP_SHELLCHECK=1)" install_shellcheck_stage
 
 # =============================================
 # 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)

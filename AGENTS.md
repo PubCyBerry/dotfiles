@@ -68,6 +68,7 @@ dotfiles/
 │   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex)
 │   ├── direct-artifacts.tsv # Linux direct artifact 버전·URL·SHA-256
 │   ├── rhwp.tsv         # rhwp pinned release 플랫폼·버전·URL·SHA-256 (전 OS 공통)
+│   ├── shellcheck.tsv   # shellcheck pinned release (전 OS + CI 공통 — 버전 drift 차단)
 │   ├── skills.txt       # Claude Code skills (owner/repo@skill-name)
 │   └── plugins.txt      # Claude Code 플러그인 (marketplace + plugin@marketplace + scope)
 ├── scripts/
@@ -97,6 +98,7 @@ dotfiles/
    1-5. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
    1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.windows.toml` → `%APPDATA%\herdr\config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀)
+   1-8. `manifests/shellcheck.tsv` → `%USERPROFILE%\.local\bin\shellcheck.exe` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀)
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -119,6 +121,7 @@ dotfiles/
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
    1-7. herdr 설치 확인(Brewfile이 담당) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
+   1-8. `manifests/shellcheck.tsv` → `~/.local/bin/shellcheck` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀). receipt 기록에 jq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -140,6 +143,7 @@ dotfiles/
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `manifests/direct-artifacts.tsv` → pinned release를 SHA-256 검증 후 `~/.local` 아래에 receipt-managed 설치
    1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
+   1-8. `manifests/shellcheck.tsv` → `~/.local/bin/shellcheck` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀). receipt 기록에 jq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -244,6 +248,54 @@ entry는 receipt `values`의 `mcp:<host>:<name>` 키로 소유권을 잡는다. 
 bash tests/rhwp/mcp-ownership.sh
 pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
 ```
+
+### shellcheck 관리
+
+ShellCheck는 `manifests/shellcheck.tsv`에 pinned release로 관리한다. rhwp와 같은 계약이고 형식도 같지만, 플랫폼이 다섯 개(`windows-x86_64` / `linux-x86_64` / `linux-aarch64` / `macos-x86_64` / `macos-aarch64`)다. 다섯 행이 모두 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 되며, validator가 그렇지 않은 manifest를 막는다.
+
+```text
+<platform>	<version>	<format>	<URL>	<SHA-256>
+```
+
+패키지 매니저를 쓰지 않는 이유는 **어느 것도 한 버전으로 모이지 않기 때문**이다. lint는 도구 버전이 곧 규칙 집합이라, 버전이 갈리면 같은 스크립트가 한쪽에서는 통과하고 다른 쪽에서는 실패한다.
+
+| 경로 | 주는 버전 | pin 가능? |
+|---|---|---|
+| GitHub Actions `ubuntu-24.04` 러너 사전 설치본 | 0.9.0 (`shellcheck 0.9.0-1`) | 아니오 — 러너 이미지를 따라 움직인다 |
+| Ubuntu apt | 22.04 = 0.8.0-2, 24.04 = 0.9.0-1, 26.04 = 0.11.0-2 | 아니오 — 배포판에 묶인다 |
+| Homebrew `shellcheck` | 0.11.0 (formula 최신) | 아니오 — `versioned_formulae`가 비어 있다 |
+| winget `koalaman.shellcheck` | 0.11.0 (최신) | 부분적 — `--version`은 되지만 다른 OS를 맞추지 못한다 |
+| upstream release 바이너리 | 지정한 값 | **예** |
+
+버전 차이가 실제로 만드는 결과는 0.11.0 릴리즈 노트에 그대로 있다. SC2002(useless use of cat)가 기본 비활성으로 바뀌고, SC2236/SC2237이 optional로 내려갔으며, SC2327~SC2332와 SC3062가 새로 생겼다. 0.9.0에서 깨끗한 스크립트가 0.11.0에서 새 경고를 받고, 0.11.0 기준으로 고친 코드가 0.9.0에서는 SC2002를 다시 맞는다.
+
+그래서 install 스크립트와 CI(`pr-gate.yml`의 `lint` 잡)가 **같은 파일 하나**를 본다. lint 잡은 러너 사전 설치본을 쓰지 않고 manifest에서 받아 SHA-256을 검증한 뒤, 실제로 해석되는 `shellcheck`가 그 바이너리이고 그 버전을 보고하는지까지 단언한다. 이 단언이 없으면 PATH 해석이 바뀌는 순간 게이트가 조용히 뜻을 잃는다.
+
+install 스크립트는 rhwp와 같은 순서로 확인한 뒤에만 파일을 만진다.
+
+1. manifest 형식(플랫폼 5종, 단일 버전, 세 자리 semver, `latest`/`HEAD`가 없는 koalaman release URL, 64자 SHA-256)
+2. 내려받은 archive의 SHA-256
+3. archive 안의 경로 — Unix tarball은 `shellcheck-v<version>/shellcheck`, Windows zip은 최상위 `shellcheck.exe`
+4. 바이너리가 `version: <version>`을 보고하는지
+
+`SHA256SUMS`를 upstream이 게시하지 않으므로 값은 두 경로로 대조해서 넣는다. 내려받은 파일의 `sha256sum`과, GitHub가 서버에서 계산해 API로 노출하는 asset digest(`gh api repos/koalaman/shellcheck/releases/tags/v<ver> --jq '.assets[].digest'`)다. Windows 행은 `microsoft/winget-pkgs`의 `koalaman.shellcheck` manifest에 있는 `InstallerSha256`과도 일치한다.
+
+배치 위치는 OS마다 다르되 결과는 같다 — 이 저장소가 배포하는 셸 프로파일이 이미 PATH 앞에 두는 자리에 넣는다.
+
+| 플랫폼 | 경로 | PATH에 오르는 경로 |
+|---|---|---|
+| Linux/macOS | `~/.local/bin/shellcheck` | `config/bash/bashrc`가 `$HOME/.local/bin`을 PATH 맨 앞에 둔다 |
+| Windows | `%USERPROFILE%\.local\bin\shellcheck.exe` | `config/powershell/profile.ps1`(pwsh)과 `config/bash/bashrc`(Git Bash)가 같은 일을 한다 |
+
+**User PATH(레지스트리)는 건드리지 않는다.** 프로파일이 이미 그 디렉터리를 앞에 두므로 새 side effect를 만들 이유가 없다. 이 선택 덕분에 배포판이 apt로 깔아 둔 `/usr/bin/shellcheck`가 남아 있어도 pin한 쪽이 먼저 잡힌다 — 그 상태를 CI의 Ubuntu 잡이 `command -v shellcheck`로 단언한다.
+
+`manifests/apt.txt`와 `manifests/Brewfile`에서는 shellcheck를 뺐다. 소유자가 둘이면 PATH 순서에 따라 어느 쪽이 잡힐지가 환경마다 달라지고, 그것이 애초에 없애려던 문제다.
+
+> 마이그레이션: 예전 설치본을 쓰던 Linux·macOS 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는다. manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정한다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
+
+버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다.
+
+`SKIP_SHELLCHECK=1`로 이 단계 전체를 건너뛸 수 있다. CI는 이 값을 쓰지 않는다 — pin된 artifact라 설치 경로를 그대로 검증한다.
 
 ### herdr 관리
 

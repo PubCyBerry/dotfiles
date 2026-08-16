@@ -10,7 +10,8 @@ curl
 wget
 git
 gpg
-shellcheck
+# shellcheck # X, apt는 배포판마다 다른 버전을 준다(22.04=0.8.0, 24.04=0.9.0, 26.04=0.11.0).
+#              CI와 어긋나므로 manifests/shellcheck.tsv의 pinned release로 설치
 unzip
 
 # 개발 환경 기초

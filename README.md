@@ -139,6 +139,7 @@ dotfiles/
     apt.txt                        # Ubuntu apt 패키지 목록
     Brewfile                       # macOS Homebrew 패키지 목록
     npm-global.txt                 # npm 전역 패키지 목록
+    shellcheck.tsv                 # shellcheck pinned release (전 OS + CI 공통 버전)
     skills.txt                     # Claude Code skills 목록
     plugins.txt                    # Claude Code 플러그인 목록
   docs/

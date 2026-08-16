@@ -49,9 +49,12 @@ jobs:
           bash install.sh
           # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
           test -x "$HOME/rhwp/rhwp"
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          test -x "$HOME/.local/bin/shellcheck"
           bash uninstall.sh --keep-packages
           bash uninstall.sh --keep-packages
           test ! -e "$HOME/rhwp"
+          test ! -e "$HOME/.local/bin/shellcheck"
           grep -Fxq user-sentinel "$HOME/user.txt"
           grep -Fq '# user profile sentinel' "$HOME/.bashrc"
           grep -Fq 'keep = true' "$HOME/.codex/config.toml"
@@ -107,11 +110,15 @@ jobs:
           # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
           $rhwpDir = Join-Path $env:USERPROFILE 'rhwp'
           if (-not (Test-Path (Join-Path $rhwpDir 'rhwp.exe'))) { throw 'rhwp tree missing after install' }
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck missing after install' }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "first uninstall failed: $LASTEXITCODE" }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "second uninstall failed: $LASTEXITCODE" }
           if (Test-Path $rhwpDir) { throw 'rhwp tree not removed by uninstall' }
+          if (Test-Path $scExe) { throw 'shellcheck not removed by uninstall' }
           if ((Get-Content (Join-Path $env:USERPROFILE 'user.txt')) -ne 'user-sentinel') { throw 'user sentinel changed' }
           if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
           if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }

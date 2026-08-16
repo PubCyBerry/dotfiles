@@ -19,6 +19,8 @@ artifact_allowed "$HOME/.local/share/fnm/fnm" || fail fnm-anchor-allowlist
 artifact_allowed "$HOME/.bun/bin/bun" || fail bun-anchor-allowlist
 artifact_allowed "$HOME/.bun/bin/bunx" || fail bunx-anchor-allowlist
 ! artifact_allowed "$HOME/.local/bin/nested/node" || fail nested-bin-rejected
+# ShellCheck는 manifests/shellcheck.tsv가 pin한 direct artifact다.
+artifact_allowed "$HOME/.local/bin/shellcheck" || fail shellcheck-anchor-allowlist
 artifact_allowed "$HOME/.codex/agents/planner.toml" || fail codex-agent-allowlist
 ! artifact_allowed "$HOME/.codex/agents/nested/planner.toml" || fail nested-agent-rejected
 ! artifact_allowed "$HOME/.codex/agents/planner.md" || fail agent-extension-rejected
@@ -33,6 +35,10 @@ artifact_allowed "$HOME/.gemini/config/skills/subagent-creator/SKILL.md" || fail
 package_key_allowed 'brew:oven-sh/bun/bun' || fail brew-tap-allowlist
 package_key_allowed 'cask:claude-code' || fail cask-allowlist
 ! package_key_allowed 'cask:codexbar' || fail unmanaged-cask-rejected
+# 마이그레이션: ShellCheck가 apt/brew에서 pinned release로 옮겨가 manifest에서 빠졌다.
+# 그 시절 receipt entry를 허용하지 않으면 preflight가 uninstall 전체를 중단시킨다.
+package_key_allowed 'apt:shellcheck' || fail legacy-apt-shellcheck-allowlist
+package_key_allowed 'brew:shellcheck' || fail legacy-brew-shellcheck-allowlist
 npm_prefix_allowed "$HOME/.local/share/fnm/node-versions/v22/installation" || fail npm-prefix-allowlist
 ! npm_prefix_allowed "$HOME/project/node-versions/v22/installation" || fail npm-project-prefix-rejected
 ( FNM_DIR="" OS="Darwin" npm_prefix_allowed "$HOME/Library/Application Support/fnm/node-versions/v22/installation" ) || fail npm-macos-prefix-allowlist

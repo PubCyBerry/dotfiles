@@ -1070,6 +1070,104 @@ function Install-Rhwp {
 }
 
 # ---------------------------------------------
+# ShellCheck: pinned release 하나를 CI와 세 OS가 함께 쓴다.
+#
+# 패키지 매니저를 쓰지 않는 이유는 어느 것도 한 버전으로 모이지 않기 때문이다.
+# winget의 koalaman.shellcheck는 최신으로 흐르고, apt는 배포판에 묶여
+# 22.04=0.8.0 / 24.04=0.9.0을 주며, GitHub Actions ubuntu-24.04 러너의 사전 설치본은
+# 러너 이미지를 따라 움직인다(현재 0.9.0).
+#
+# 버전 차이는 그대로 오탐·미탐이 된다. 0.11.0에서 SC2002가 기본 비활성으로 바뀌고
+# SC2327~SC2332, SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는
+# 실패한다(반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
+# ---------------------------------------------
+function Test-ShellCheckManifestRows([object[]]$Rows) {
+    if ($Rows.Count -ne 5) { return $false }
+    $platforms = @('windows-x86_64','linux-x86_64','linux-aarch64','macos-x86_64','macos-aarch64')
+    $seen = @{}
+    $pinned = $null
+    foreach ($row in $Rows) {
+        if ($row.Count -ne 5) { return $false }
+        $platform, $version, $format, $url, $checksum = $row
+        if ($platform -notin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        $seen[$platform] = $true
+        if ($version -notmatch '^\d+\.\d+\.\d+$' -or $format -notin @('tgz','zip')) { return $false }
+        # 다섯 행이 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
+        if (-not $pinned) { $pinned = $version } elseif ($version -cne $pinned) { return $false }
+        if ($url -notmatch '^https://github\.com/koalaman/shellcheck/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -match '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -notmatch '^[0-9a-f]{64}$') { return $false }
+    }
+    return $true
+}
+
+# `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+function Get-ShellCheckReportedVersion([string]$Exe) {
+    foreach ($line in @(& $Exe --version 2>$null)) {
+        if ($line -match '^\s*version:\s*(\S+)\s*$') { return $Matches[1] }
+    }
+    return $null
+}
+
+function Install-ShellCheck {
+    $manifest = Join-Path $ROOT 'manifests\shellcheck.tsv'
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { Add-InstallFailure 'Required manifest missing: manifests\shellcheck.tsv'; return $false }
+    $rows = @(Get-Content -LiteralPath $manifest |
+        Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } |
+        ForEach-Object { , @($_ -split "`t") })
+    if (-not (Test-ShellCheckManifestRows $rows)) { Add-InstallFailure 'Invalid manifests\shellcheck.tsv'; return $false }
+    if (-not [Environment]::Is64BitOperatingSystem -or
+        $env:PROCESSOR_ARCHITECTURE -notin @('AMD64','x86')) {
+        Write-Host "    [!] Unsupported shellcheck platform: $env:PROCESSOR_ARCHITECTURE; skipping."
+        return $true
+    }
+    $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    $version = $row[1]; $format = $row[2]; $url = $row[3]; $checksum = $row[4]
+    if ($format -cne 'zip') { Add-InstallFailure "Unsupported shellcheck archive format for Windows: $format"; return $false }
+
+    # ~\.local\bin은 config\powershell\profile.ps1과 config\bash\bashrc가 세션 PATH 앞에
+    # 두므로 pwsh와 Git Bash 양쪽에서 잡힌다. User PATH(레지스트리)는 건드리지 않는다.
+    $dest = Join-Path $LocalBin 'shellcheck.exe'
+    if ($script:ReceiptReady) {
+        $entry = $script:Receipt.artifacts[(Get-ManagedPath $dest)]
+        # 소유권(installedHash)과 identity(--version)가 둘 다 맞을 때만 내려받기를 건너뛴다.
+        if ($entry -and -not $entry.pending -and $entry.installedHash -and (Test-Path -LiteralPath $dest -PathType Leaf) -and
+            (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $entry.installedHash -and
+            (Get-ShellCheckReportedVersion $dest) -ceq $version) {
+            Write-Host "    shellcheck $version already installed: $dest"
+            return $true
+        }
+    }
+
+    $work = Join-Path ([IO.Path]::GetTempPath()) "dotfiles-shellcheck.$([guid]::NewGuid())"
+    New-Item -ItemType Directory -Force -Path $work | Out-Null
+    try {
+        $archive = Join-Path $work 'shellcheck.zip'
+        try { Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing -MaximumRetryCount 3 -RetryIntervalSec 2 }
+        catch { Add-InstallFailure "shellcheck download failed: $url"; return $false }
+        $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -cne $checksum) { Add-InstallFailure "shellcheck SHA-256 mismatch: $url"; return $false }
+        $extract = Join-Path $work 'extract'
+        try { Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force }
+        catch { Add-InstallFailure "shellcheck archive extraction failed: $url"; return $false }
+
+        # Windows zip은 Unix tarball과 달리 최상위에 파일을 바로 담는다
+        # (LICENSE.txt / README.txt / shellcheck.exe). 감쌀 디렉터리가 없다.
+        $binary = Join-Path $extract 'shellcheck.exe'
+        if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { Add-InstallFailure "shellcheck binary missing in archive: $url"; return $false }
+        $reported = Get-ShellCheckReportedVersion $binary
+        if ($reported -cne $version) {
+            Add-InstallFailure "shellcheck binary reports '$reported', expected '$version'"; return $false
+        }
+        # Skip: 사용자가 직접 둔 shellcheck.exe가 있으면 보존한다.
+        if (-not (Install-ManagedFile $binary $dest Skip)) { Add-InstallFailure "shellcheck not installed: $dest"; return $false }
+        Write-Host "    shellcheck $version -> $dest"
+    } finally {
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    return $true
+}
+
+# ---------------------------------------------
 # herdr: 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
 #
 # rhwp와 달리 pinned artifact로 관리하지 않는다. 이유가 둘이다.
@@ -1603,6 +1701,17 @@ Invoke-OptionalInstallStage 'SKIP_HERDR' "==> [CI] Skipping herdr (SKIP_HERDR=1)
     Write-Host ""
     Write-Host "==> Installing herdr and deploying config..."
     if (Install-Herdr) { Deploy-HerdrConfig }
+}
+
+# =============================================
+# 1-8. shellcheck 설치 (manifests\shellcheck.tsv → ~\.local\bin\shellcheck.exe)
+#
+# CI(pr-gate.yml의 lint 잡)와 같은 pinned 버전을 쓴다.
+# =============================================
+Invoke-OptionalInstallStage 'SKIP_SHELLCHECK' "==> [CI] Skipping shellcheck (SKIP_SHELLCHECK=1)" {
+    Write-Host ""
+    Write-Host "==> Installing pinned shellcheck..."
+    $null = Install-ShellCheck
 }
 
 # =============================================

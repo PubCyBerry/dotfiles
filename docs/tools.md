@@ -237,6 +237,20 @@ jq '.mcpServers.rhwp' ~/.claude.json                          # Claude Code 등�
 
 ## 코드 품질
 
+### shellcheck — 셸 스크립트 정적 분석
+
+`manifests/shellcheck.tsv`가 pin한 한 버전을 세 OS와 CI가 함께 쓴다. apt·brew·winget이 저마다 다른 버전을 주고 lint는 버전이 곧 규칙 집합이라, 버전이 갈리면 "로컬에서는 통과하는데 CI에서 깨진다"가 생긴다. 자세한 근거는 [AGENTS.md의 "shellcheck 관리"](../AGENTS.md#shellcheck-관리)에 있다.
+
+설치 위치는 `~/.local/bin/shellcheck`(Windows `%USERPROFILE%\.local\bin\shellcheck.exe`)다. 이 저장소가 배포하는 셸 프로파일이 그 디렉터리를 PATH 앞에 두므로, 배포판이 apt로 깔아 둔 구버전이 남아 있어도 pin한 쪽이 먼저 잡힌다.
+
+```bash
+shellcheck --version                       # pin한 버전인지 확인 (version: 줄)
+shellcheck -x script.sh                    # source된 파일까지 따라가며 검사
+git ls-files -z '*.sh' | xargs -0 -r shellcheck -x   # CI(lint 잡)와 같은 명령
+```
+
+버전을 올릴 때는 `manifests/shellcheck.tsv`의 다섯 행을 함께 올린다. 이미 설치된 머신은 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다.
+
 ### ruff — Python 린터/포매터 (선택적 설치)
 
 > winget.txt에 주석 처리되어 있다. 필요 시 주석 해제 후 `install.ps1` 재실행.
