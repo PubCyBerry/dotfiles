@@ -288,6 +288,19 @@ bun install        # npm install 대체 (빠름)
 | 자동완성 대소문자 무시 | `cd doc` → `Documents` 매칭 |
 | 히스토리 prefix 검색 | `git` 입력 후 `↑/↓` → git 명령어만 탐색 |
 | 컬러 자동완성 | 파일 타입별 색상 표시 |
+| UTF-8 8bit clean | 한글 입력이 Meta 키로 오인되지 않음 |
+
+#### UTF-8 8bit clean이 필요한 이유
+
+`input-meta off` + `convert-meta on`(locale이 UTF-8로 잡히지 않은 Git Bash의 기본값)이면 readline이 상위비트 바이트를 `ESC + (byte & 0x7F)`로 바꾼다. 한글 낱자 ㄱ~ㅎ(U+3131~U+314E)는 UTF-8 첫 바이트가 모두 `0xE3`이고, `0xE3 & 0x7F = 0x63 = 'c'`라서 Alt-C가 된다.
+
+```text
+ㅊ (U+314A) --UTF-8--> E3 85 8A
+                        └─ 0xE3 --convert-meta--> ESC + 0x63 == "\ec" == Alt-C
+                                                    └─> fzf __fzf_cd__ 위젯
+```
+
+IME 조합이 스페이스로 확정되는 순간 바이트가 전송되므로, 낱자 하나 치고 스페이스를 누르면 디렉터리 선택 창이 뜬다. `set input-meta on` / `set convert-meta off`가 바이트를 그대로 통과시켜 막는다.
 
 ## 유틸리티 스크립트 (Windows)
 

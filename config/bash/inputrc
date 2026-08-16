@@ -1,5 +1,13 @@
 # ~/.inputrc
 
+# UTF-8 8bit clean.
+# 이 설정이 없으면 readline이 상위비트 바이트를 `ESC + (byte & 0x7F)`로 변환한다.
+# 한글 낱자(ㄱ~ㅎ, U+3131~U+314E)의 UTF-8 첫 바이트가 0xE3이라
+# `0xE3 & 0x7F = 0x63 = 'c'` → Alt-C로 오인되어 fzf `__fzf_cd__` 위젯이 뜬다.
+set input-meta on
+set output-meta on
+set convert-meta off
+
 # 자동완성 대소문자 무시
 set completion-ignore-case on
 
