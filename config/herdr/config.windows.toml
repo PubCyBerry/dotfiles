@@ -1,0 +1,40 @@
+# herdr 설정 — Windows (%APPDATA%\herdr\config.toml)
+# 직접 실행하지 않음. install.ps1이 default merge로 배포한다 (destination 값 우선).
+#
+# [terminal] default_shell은 이 파일에 두지 않는다. install.ps1이 실제로 찾아낸
+# Git Bash 경로를 배포 직전에 yq로 주입한다 — Git for Windows가 Program Files와
+# Program Files (x86) 중 어디에 깔렸는지는 머신마다 다르기 때문이다.
+#
+# 경로는 forward slash로 쓴다. yq의 TOML 인코더가 백슬래시를 온전히 이스케이프하지
+# 못해 "C:\Program Files\Git\bin\bash.exe"가 \b(백스페이스)로 깨진다. herdr는
+# forward slash 경로를 그대로 받는다.
+
+[terminal]
+# shell_mode는 Windows에서 설정하지 않는다.
+#
+# herdr 0.8.0-preview에서 shell_mode = "login"을 주면 default_shell spawn이 조용히
+# 실패하고 bare cmd.exe로 fallback한다 — 서버 로그에도 에러가 남지 않고
+# pane.spawned outcome="ok"로 찍힌다. 경로 표기(forward slash / backslash / 8.3
+# 단축경로)와 무관하며, shell_mode를 지우면 그대로 Git Bash가 뜬다.
+#
+# 설정하지 않아도 손해가 없다. pty에 붙은 bash는 interactive non-login으로 떠서
+# ~/.bashrc를 직접 읽고, config/bash/bashrc의 alias·prompt 초기화가 모두 살아난다.
+# ~/.bash_profile은 ~/.bashrc를 source하는 것이 전부라 login 셸이 아니어도 잃는 게 없다.
+
+# pwsh 7 pane을 온디맨드로 띄우는 키바인딩.
+#
+# default_shell을 Git Bash로 고정하면 PowerShell 프로파일(config/powershell/profile.ps1)이
+# 배포된 pwsh 7 셸에 들어갈 방법이 없어진다. herdr는 fallback 셸을 지원하지 않으므로
+# (default_shell은 단일 문자열이고, 내장 fallback은 값이 비었을 때만 동작한다)
+# 두 번째 셸은 키바인딩으로 붙인다.
+#
+# command는 Windows에서 cmd.exe /d /c를 거치므로 PATH에서 pwsh를 찾는다. 절대 경로를
+# 박지 않는 이유는 PowerShell 7이 Store 패키지로 깔리면 경로에 버전이 들어가
+# (…\Microsoft.PowerShell_7.6.4.0_x64__…) 업데이트마다 깨지기 때문이다.
+[[keys.command]]
+key = "prefix+alt+p"
+type = "pane"
+command = "pwsh"
+
+[ui]
+agent_panel_sort = "priority"

@@ -1046,6 +1046,101 @@ function Install-Rhwp {
     return $true
 }
 
+# ---------------------------------------------
+# herdr: 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# rhwp와 달리 pinned artifact로 관리하지 않는다. 이유가 둘이다.
+#  1. Windows용 stable 바이너리가 없다 — v0.7.3~v0.8.0 릴리즈 asset은 linux/macos
+#     뿐이고, herdr-windows-x86_64.zip은 preview 태그에만 올라온다. pin할 semver가
+#     애초에 존재하지 않는다.
+#  2. herdr는 자체 업데이터를 갖는다(`herdr update`, `herdr channel set`). receipt로
+#     tree 해시를 잡으면 사용자가 업데이트하는 순간 해시가 어긋나 그 다음 실행부터
+#     "changed; preserving"으로 아무것도 못 하게 된다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다.
+# ---------------------------------------------
+$HerdrInstallUrl = 'https://herdr.dev/install.ps1'
+$HerdrBinDir     = Join-Path $env:LOCALAPPDATA 'Programs\Herdr\bin'
+
+function Get-HerdrCommand {
+    $cmd = Get-Command herdr -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $known = Join-Path $HerdrBinDir 'herdr.exe'
+    if (Test-Path -LiteralPath $known -PathType Leaf) { return $known }
+    return $null
+}
+
+function Install-Herdr {
+    $existing = Get-HerdrCommand
+    if ($existing) {
+        Write-Host "    herdr already installed: $existing"
+        Write-Host "    herdr manages its own updates (herdr update / herdr channel set)."
+        return $true
+    }
+    # 공식 installer는 실행 시점에 최신 빌드를 해석한다. manifests/*.tsv의 pinned
+    # SHA-256 계약에서 herdr만 예외라는 뜻이라 AGENTS.md에 근거를 남겨 둔다.
+    Write-Host "    Running the official herdr installer: $HerdrInstallUrl"
+    try {
+        $herdrInstaller = Invoke-RestMethod -Uri $HerdrInstallUrl -UseBasicParsing
+    } catch {
+        Add-InstallFailure "herdr installer download failed: $HerdrInstallUrl"
+        return $false
+    }
+    if (-not $herdrInstaller) { Add-InstallFailure "herdr installer returned an empty script: $HerdrInstallUrl"; return $false }
+    try {
+        & ([scriptblock]::Create($herdrInstaller))
+    } catch {
+        Add-InstallFailure "herdr installer failed: $($_.Exception.Message)"
+        return $false
+    }
+    # installer가 User PATH를 고쳐도 현재 프로세스에는 반영되지 않는다. 뒤따르는
+    # 설정 배포와 검증이 herdr를 찾을 수 있도록 이번 세션 PATH에만 얹는다.
+    if ((Test-Path -LiteralPath $HerdrBinDir) -and (($env:PATH -split ';') -notcontains $HerdrBinDir)) {
+        $env:PATH = "$HerdrBinDir;$env:PATH"
+    }
+    $installed = Get-HerdrCommand
+    if (-not $installed) { Add-InstallFailure 'herdr installer finished but herdr was not found.'; return $false }
+    Write-Host "    herdr installed: $installed"
+    return $true
+}
+
+function Deploy-HerdrConfig {
+    $src = Join-Path $ROOT 'config\herdr\config.windows.toml'
+    if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
+        Write-Host '    [!] config\herdr\config.windows.toml not found, skipping.'
+        return
+    }
+    if (-not (Get-Command yq -ErrorAction SilentlyContinue)) {
+        Write-Host '    [!] yq not found, keeping existing herdr config.toml'
+        return
+    }
+    # default_shell은 실제로 찾아낸 Git Bash 경로로만 쓴다. 없으면 그 키를 아예 넣지
+    # 않는다 — 존재하지 않는 셸을 지정하면 herdr가 pane을 못 띄운다.
+    $gitBash = $GitBashPaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    $staged = New-TemporaryFile
+    try {
+        Copy-Item -LiteralPath $src -Destination $staged -Force
+        if ($gitBash) {
+            # forward slash로 넣는다. yq의 TOML 인코더는 백슬래시를 온전히 이스케이프하지
+            # 못해 \b가 백스페이스로 깨진다. herdr는 forward slash 경로를 그대로 받는다.
+            $shellPath = $gitBash -replace '\\', '/'
+            & yq -i -p=toml -o=toml ".terminal.default_shell = `"$shellPath`"" $staged 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host '    [!] Could not set herdr default_shell, keeping existing herdr config.toml'
+                return
+            }
+        } else {
+            Write-Host '    [!] Git Bash not found; deploying herdr config without default_shell.'
+        }
+        $dst = Join-Path $env:APPDATA 'herdr\config.toml'
+        New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
+        # Merge-CodexConfig는 Codex 전용이 아니라 TOML default merge 그 자체다.
+        # destination에 이미 있는 키는 건드리지 않으므로 herdr UI가 기록한 값이 보존된다.
+        Merge-CodexConfig $staged $dst
+    } finally {
+        Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-FnmPruneIfRequested {
     if ($env:DOTFILES_PRUNE_NODE_VERSIONS -ne "1") { return }
     $activeVer = (fnm current 2>$null)
@@ -1392,6 +1487,17 @@ if (-not (Test-Path (Join-Path $nvimSrc "init.lua"))) {
         Write-Host "    lazy.nvim config deployed to $NvimConfigDir"
         Write-Host "    Run nvim to auto-install lazy.nvim on first launch."
     }
+}
+
+# =============================================
+# 1-7. herdr 설치 + 설정 배포 (config\herdr\config.windows.toml → %APPDATA%\herdr)
+#
+# winget 단계 뒤에 둔다 — 설정 병합에 yq가 필요하다.
+# =============================================
+Invoke-OptionalInstallStage 'SKIP_HERDR' "==> [CI] Skipping herdr (SKIP_HERDR=1)" {
+    Write-Host ""
+    Write-Host "==> Installing herdr and deploying config..."
+    if (Install-Herdr) { Deploy-HerdrConfig }
 }
 
 # =============================================

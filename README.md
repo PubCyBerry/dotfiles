@@ -117,6 +117,9 @@ dotfiles/
         temporal-context.sh         # Codex SessionStart 시간 컨텍스트 hook
     git/
       gitconfig                    # git 설정 (delta pager 포함, OS-중립)
+    herdr/
+      config.toml                  # herdr 설정 (Linux/macOS)
+      config.windows.toml          # herdr 설정 (Windows, default_shell=Git Bash)
     powershell/
       profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
     tmux/

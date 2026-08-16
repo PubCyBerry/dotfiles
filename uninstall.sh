@@ -198,7 +198,9 @@ drop_entry() { receipt_commit --arg group "$1" --arg key "$2" 'del(.[$group][$ke
 artifact_allowed() {
     local path="$1" rel name
     case "$path" in
-        "$HOME/.tmux.conf"|"$HOME/.config/starship.toml") return 0 ;;
+        # herdr는 설정만 소유한다. 바이너리는 공식 installer(macOS는 Homebrew)가 설치하고
+        # herdr가 스스로 업데이트하므로 install이 애초에 소유하지 않는다 — uninstall도 손대지 않는다.
+        "$HOME/.tmux.conf"|"$HOME/.config/starship.toml"|"$HOME/.config/herdr/config.toml") return 0 ;;
         "$HOME/.local/bin/"*)
             name="${path##*/}"
             [[ "${path#"$HOME/.local/bin/"}" == "$name" ]] || return 1

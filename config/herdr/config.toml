@@ -1,0 +1,16 @@
+# herdr 설정 — Linux / macOS (~/.config/herdr/config.toml)
+# 직접 실행하지 않음. install.sh가 default merge로 배포한다 (destination 값 우선).
+#
+# herdr는 UI에서 이 파일을 직접 다시 쓴다(onboarding이 [ui]를 기록한다). 그래서
+# 통째로 덮어쓰지 않고 dotfiles 기본값은 키가 없을 때만 채운다.
+
+[terminal]
+# default_shell은 비워 둔다 — herdr가 $SHELL, 그다음 /bin/sh를 따른다.
+# Unix에서는 그 기본 동작이 맞으므로 고정하지 않는다.
+
+# "auto"는 macOS에서만 login 셸로 띄운다. macOS는 login 셸에서만 PATH가 완성되는
+# 경우가 많아 그 동작이 필요하고, Linux는 non-login이어도 ~/.bashrc를 읽어 문제없다.
+shell_mode = "auto"
+
+[ui]
+agent_panel_sort = "priority"

@@ -1022,6 +1022,60 @@ install_rhwp() {
     (( failed == 0 )) || { record_install_failure "rhwp MCP registration incomplete."; return 1; }
 }
 
+# ---------------------------------------------
+# herdr: 공식 installer(macOS는 Brewfile)에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# rhwp와 달리 pinned artifact로 관리하지 않는다. herdr는 자체 업데이터를 갖기 때문에
+# (`herdr update`, `herdr channel set`) receipt로 바이너리 해시를 잡으면 사용자가
+# 업데이트하는 순간 "changed; preserving"으로 굳어 버린다. Windows 쪽은 그에 더해
+# stable 릴리즈에 Windows asset이 아예 없어 pin할 semver가 존재하지 않는다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다.
+# ---------------------------------------------
+HERDR_INSTALL_URL="https://herdr.dev/install.sh"
+
+install_herdr() {
+    if command -v herdr >/dev/null 2>&1; then
+        echo "    herdr already installed: $(command -v herdr)"
+        echo "    herdr manages its own updates (herdr update / herdr channel set)."
+        return 0
+    fi
+    # macOS는 manifests/Brewfile의 `brew "herdr"`가 담당한다. 여기까지 왔는데 없다는
+    # 것은 Brewfile 단계가 건너뛰였거나 실패했다는 뜻이라, curl로 우회 설치하지 않고
+    # 그 사실만 알린다 — Homebrew가 소유한 것을 두 경로로 관리하지 않는다.
+    if [[ "$OS" == "Darwin" ]]; then
+        echo "    [!] herdr not found. It is provided by manifests/Brewfile (brew \"herdr\")."
+        return 1
+    fi
+    # 공식 installer는 실행 시점에 최신 빌드를 해석한다. manifests/*.tsv의 pinned
+    # SHA-256 계약에서 herdr만 예외라는 뜻이라 AGENTS.md에 근거를 남겨 둔다.
+    echo "    Running the official herdr installer: $HERDR_INSTALL_URL"
+    if ! curl -fsSL "$HERDR_INSTALL_URL" | sh; then
+        record_install_failure "herdr installer failed: $HERDR_INSTALL_URL"
+        return 1
+    fi
+    # installer가 프로파일에 PATH를 추가해도 현재 셸에는 반영되지 않는다. 뒤따르는
+    # 설정 배포와 검증이 herdr를 찾을 수 있도록 알려진 설치 경로를 얹는다.
+    add_to_path_runtime "$HOME/.local/bin"
+    add_to_path_runtime "$HOME/.herdr/bin"
+    if ! command -v herdr >/dev/null 2>&1; then
+        record_install_failure "herdr installer finished but herdr was not found."
+        return 1
+    fi
+    echo "    herdr installed: $(command -v herdr)"
+}
+
+deploy_herdr_config() {
+    local src="$ROOT/config/herdr/config.toml" dst="$HOME/.config/herdr/config.toml"
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] config/herdr/config.toml not found, skipping."
+        return 0
+    fi
+    mkdir -p "$(dirname "$dst")"
+    # merge_codex_config는 Codex 전용이 아니라 TOML default merge 그 자체다.
+    # destination에 이미 있는 키는 건드리지 않으므로 herdr UI가 기록한 값이 보존된다.
+    merge_codex_config "$src" "$dst"
+}
+
 set_managed_git_value() {
     local name="$1" value="$2" before="" present=false entry="" pending_target="" pending_previous="" pending_present=false
     $RECEIPT_READY || return 0
@@ -1793,6 +1847,19 @@ else
 fi
 }
 run_optional_stage SKIP_PACKAGES "==> [CI] Skipping direct, Node.js, and npm packages (SKIP_PACKAGES=1)" install_runtime_packages
+
+# =============================================
+# 1-6. herdr 설치 + 설정 배포 (config/herdr/config.toml → ~/.config/herdr/config.toml)
+#
+# 패키지 단계 뒤에 둔다 — 설정 병합에 yq가 필요하고, Linux는 yq를
+# manifests/direct-artifacts.tsv에서, macOS는 Brewfile에서 받는다.
+# =============================================
+install_herdr_stage() {
+    echo
+    echo "==> Installing herdr and deploying config..."
+    if install_herdr; then deploy_herdr_config; fi
+}
+run_optional_stage SKIP_HERDR "==> [CI] Skipping herdr (SKIP_HERDR=1)" install_herdr_stage
 
 # =============================================
 # 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)

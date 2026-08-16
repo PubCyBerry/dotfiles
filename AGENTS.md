@@ -52,6 +52,9 @@ dotfiles/
 │   ├── codex/           # Codex 설정 (config.toml, hooks.json, hooks/)
 │   ├── git/
 │   │   └── gitconfig    # OS-중립. autocrlf/fileMode은 install 스크립트가 OS별 주입
+│   ├── herdr/           # herdr(터미널 멀티플렉서) 설정 — default merge로 배포
+│   │   ├── config.toml         # Linux/macOS
+│   │   └── config.windows.toml # Windows (default_shell은 install이 주입)
 │   ├── nvim/            # Neovim 설정 (lazy.nvim + yazi.nvim)
 │   ├── powershell/      # Windows 전용 (profile.ps1 — fnm, zoxide, starship 초기화)
 │   ├── tmux/            # tmux 설정 (tmux.windows.conf, tmux.linux.conf)
@@ -91,6 +94,7 @@ dotfiles/
    1-4. `config/yazi/` → `%APPDATA%\yazi\config\` 배포 (nvim opener 설정)
    1-5. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
+   1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.windows.toml` → `%APPDATA%\herdr\config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀)
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -112,6 +116,7 @@ dotfiles/
    1-4. `config/nvim/` → `~/.config/nvim/` 배포 (항상 덮어쓰기)
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
+   1-7. herdr 설치 확인(Brewfile이 담당) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -132,6 +137,7 @@ dotfiles/
    1-4. `config/nvim/` → `~/.config/nvim/` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `manifests/direct-artifacts.tsv` → pinned release를 SHA-256 검증 후 `~/.local` 아래에 receipt-managed 설치
+   1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
@@ -225,6 +231,40 @@ entry는 receipt `values`의 `mcp:<host>:<name>` 키로 소유권을 잡는다. 
 bash tests/rhwp/mcp-ownership.sh
 pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
 ```
+
+### herdr 관리
+
+herdr(코딩 에이전트용 터미널 멀티플렉서)는 이 저장소의 pinned artifact 계약에서 **예외**다. 바이너리는 소유하지 않고 설정만 소유한다.
+
+| 대상 | 소유자 | 경로 |
+|---|---|---|
+| 바이너리 (Windows) | 공식 installer (`https://herdr.dev/install.ps1`) | `%LOCALAPPDATA%\Programs\Herdr\bin` |
+| 바이너리 (Linux) | 공식 installer (`https://herdr.dev/install.sh`) | installer 기본 경로 |
+| 바이너리 (macOS) | Homebrew (`manifests/Brewfile`의 `brew "herdr"`) | brew prefix |
+| 설정 | **이 저장소** (receipt-managed) | `%APPDATA%\herdr\config.toml`, `~/.config/herdr/config.toml` |
+
+`manifests/rhwp.tsv`나 `manifests/direct-artifacts.tsv`처럼 URL + SHA-256으로 pin하지 않는 이유가 둘이다.
+
+1. **pin할 semver가 없다.** v0.7.3\~v0.8.0 stable 릴리즈의 asset은 linux/macos 넷뿐이고, `herdr-windows-x86_64.zip`은 preview 태그에만 올라온다. 주 환경인 Windows에 stable 바이너리가 존재하지 않는다.
+2. **herdr가 스스로 업데이트한다.** `herdr update`, `herdr channel set <stable|preview>`가 자체 채널로 바이너리를 교체한다. receipt로 tree 해시를 잡으면 사용자가 업데이트하는 순간 해시가 어긋나 그 다음 실행부터 "changed; preserving"으로 굳는다.
+
+그래서 install은 `herdr`가 이미 PATH에 있으면 **아무것도 하지 않는다**. 없을 때만 공식 installer를 한 번 돌려 부트스트랩하고, 이후 버전 관리는 herdr에 맡긴다. uninstall도 같은 이유로 바이너리를 건드리지 않고 `config.toml`만 소유권을 판정해 제거한다.
+
+설정은 default merge로 배포한다 — herdr UI가 onboarding에서 `[ui]`를 스스로 기록하므로 통째로 덮어쓰면 사용자·UI 값이 날아간다.
+
+`config/herdr/`에 파일이 둘인 이유는 셸 설정이 플랫폼마다 다르기 때문이다.
+
+- `config.toml` (Linux/macOS): `default_shell`을 비워 `$SHELL`을 따르고, `shell_mode = "auto"`로 macOS에서만 login 셸을 쓴다.
+- `config.windows.toml`: `default_shell`을 Git Bash로 고정한다. 값은 커밋하지 않고 install.ps1이 실제로 찾아낸 경로(`Program Files` / `Program Files (x86)`)를 yq로 주입한다.
+
+Windows 설정에서 알아 둘 두 가지가 있다.
+
+- **`shell_mode`를 Windows에서 설정하지 않는다.** herdr 0.8.0-preview에서 `shell_mode = "login"`을 주면 `default_shell` spawn이 조용히 실패하고 bare `cmd.exe`로 fallback한다. 서버 로그에도 에러가 남지 않고 `pane.spawned outcome="ok"`로 찍혀 원인 추적이 어렵다. 경로 표기(forward slash / backslash / 8.3 단축경로)와 무관하며 `shell_mode`를 지우면 그대로 Git Bash가 뜬다. 설정하지 않아도 pty에 붙은 bash는 interactive non-login으로 떠서 `~/.bashrc`를 읽으므로 잃는 것이 없다.
+- **경로는 forward slash로 쓴다.** yq의 TOML 인코더가 백슬래시를 온전히 이스케이프하지 못해 `C:\Program Files\Git\bin\bash.exe`가 `\b`(백스페이스)로 깨진다. herdr는 forward slash 경로를 그대로 받는다.
+
+`default_shell`은 단일 문자열이고 herdr에 fallback 체인이 없다(내장 fallback은 값이 비었을 때만 `$SHELL` → PowerShell/`/bin/sh`로 간다). Windows에서 두 번째 셸이 필요하면 `[[keys.command]]` 키바인딩으로 붙인다 — `config.windows.toml`이 `prefix+alt+p`에 pwsh 7 pane을 걸어 둔다.
+
+`SKIP_HERDR=1`로 이 단계 전체를 건너뛸 수 있다. CI는 원격 스크립트를 실행하지 않으므로 이 값을 쓴다.
 
 ### agent role 관리
 
