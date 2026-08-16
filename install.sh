@@ -1041,16 +1041,22 @@ install_herdr() {
     fi
     # macOS는 manifests/Brewfile의 `brew "herdr"`가 담당한다. 여기까지 왔는데 없다는
     # 것은 Brewfile 단계가 건너뛰였거나 실패했다는 뜻이라, curl로 우회 설치하지 않고
-    # 그 사실만 알린다 — Homebrew가 소유한 것을 두 경로로 관리하지 않는다.
+    # 그 사실만 알린다 — Homebrew가 소유한 것을 두 경로로 관리하지 않는다. 아래
+    # installer 실패와 마찬가지로 경고에 그친다(설정 배포만 건너뛴다).
     if [[ "$OS" == "Darwin" ]]; then
-        echo "    [!] herdr not found. It is provided by manifests/Brewfile (brew \"herdr\")."
+        echo "    [!] herdr not found. It is provided by manifests/Brewfile (brew \"herdr\") (config deployment skipped)."
         return 1
     fi
     # 공식 installer는 실행 시점에 최신 빌드를 해석한다. manifests/*.tsv의 pinned
     # SHA-256 계약에서 herdr만 예외라는 뜻이라 AGENTS.md에 근거를 남겨 둔다.
+    #
+    # 실패는 경고로만 남긴다(record_install_failure 아님). rhwp는 SHA-256으로 pin한
+    # artifact를 이 저장소가 소유하므로 실패가 곧 계약 위반이지만, herdr 바이너리는
+    # 소유하지 않기로 한 서드파티 CDN이다. 일시적 장애가 dotfiles 설치 전체를 실패로
+    # 만드는 것은 그 결정과 어긋난다 — 다음 실행이나 `herdr update`로 복구된다.
     echo "    Running the official herdr installer: $HERDR_INSTALL_URL"
     if ! curl -fsSL "$HERDR_INSTALL_URL" | sh; then
-        record_install_failure "herdr installer failed: $HERDR_INSTALL_URL"
+        echo "    [!] herdr installer failed: $HERDR_INSTALL_URL (config deployment skipped)"
         return 1
     fi
     # upstream installer는 프로파일을 건드리지 않는다 — 설치 디렉터리가 PATH에 없으면
@@ -1058,7 +1064,7 @@ install_herdr() {
     # ($HERDR_INSTALL_DIR 미설정 시 ~/.local/bin)를 이번 셸 PATH에만 얹는다.
     add_to_path_runtime "${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
     if ! command -v herdr >/dev/null 2>&1; then
-        record_install_failure "herdr installer finished but herdr was not found."
+        echo "    [!] herdr installer finished but herdr was not found (config deployment skipped)."
         return 1
     fi
     echo "    herdr installed: $(command -v herdr)"
@@ -1073,7 +1079,11 @@ deploy_herdr_config() {
     mkdir -p "$(dirname "$dst")"
     # merge_codex_config는 Codex 전용이 아니라 TOML default merge 그 자체다.
     # destination에 이미 있는 키는 건드리지 않으므로 herdr UI가 기록한 값이 보존된다.
-    merge_codex_config "$src" "$dst"
+    #
+    # .terminal.shell_mode만 예외로 넘긴다. install.ps1이 Windows에서 default_shell에
+    # 두는 예외와 같은 이유다 — herdr가 config를 다시 쓰면서 남기는 빈 값이 우리
+    # 기본값을 덮으면, 이 파일의 존재 이유인 macOS login 셸 동작이 조용히 죽는다.
+    merge_codex_config "$src" "$dst" .terminal.shell_mode
 }
 
 set_managed_git_value() {
@@ -1220,8 +1230,18 @@ merge_gitconfig() {
     echo "    gitconfig merged."
 }
 
+# merge_codex_config <src> <dst> [placeholder-key...]
+#
+# TOML default merge — destination에 이미 있는 키는 건드리지 않는다.
+#
+# placeholder-key는 그 규칙의 예외다. 도구가 스스로 config를 다시 쓰면서 남기는 빈 값
+# (예: herdr onboarding의 `shell_mode = ""`)은 사용자의 선택이 아니라 자리표시자인데,
+# destination 우선을 그대로 적용하면 그 빈 값이 우리 기본값을 영구히 덮는다. 그래서
+# 병합 전에 destination 쪽에서 "빈 문자열일 때만" 걷어내 src 기본값이 다시 채워지게
+# 한다. 사용자가 실제로 넣은 값은 비어 있지 않으므로 그대로 이긴다.
 merge_codex_config() {
-    local src="$1" dst="$2" tmp
+    local src="$1" dst="$2" tmp effective_dst strip_expr key
+    shift 2
 
     if [[ ! -f "$src" ]]; then
         echo "    [!] $src not found, skipping."
@@ -1247,10 +1267,23 @@ merge_codex_config() {
         return 0
     fi
 
+    effective_dst="$dst"
+    if (( $# > 0 )); then
+        strip_expr='.'
+        for key in "$@"; do strip_expr="$strip_expr | del($key | select(. == \"\"))"; done
+        effective_dst="$(mktemp)"; _TMPFILES+=("$effective_dst")
+        # strip에 실패하면 원본 destination으로 되돌린다 — 예외를 못 적용하는 것이
+        # 사용자 값을 잃는 것보다 낫다.
+        if ! yq -p=toml -o=toml "$strip_expr" "$dst" > "$effective_dst" 2>/dev/null \
+            || [[ ! -s "$effective_dst" ]]; then
+            effective_dst="$dst"
+        fi
+    fi
+
     tmp="$(mktemp)"; _TMPFILES+=("$tmp")
     if yq eval-all -p=toml -o=toml \
         'select(fileIndex == 0) * select(fileIndex == 1)' \
-        "$src" "$dst" > "$tmp" 2>/dev/null \
+        "$src" "$effective_dst" > "$tmp" 2>/dev/null \
         && [[ -s "$tmp" ]] \
         && yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1; then
         if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
@@ -1849,7 +1882,7 @@ fi
 run_optional_stage SKIP_PACKAGES "==> [CI] Skipping direct, Node.js, and npm packages (SKIP_PACKAGES=1)" install_runtime_packages
 
 # =============================================
-# 1-6. herdr 설치 + 설정 배포 (config/herdr/config.toml → ~/.config/herdr/config.toml)
+# 1-7. herdr 설치 + 설정 배포 (config/herdr/config.toml → ~/.config/herdr/config.toml)
 #
 # 패키지 단계 뒤에 둔다 — 설정 병합에 yq가 필요하고, Linux는 yq를
 # manifests/direct-artifacts.tsv에서, macOS는 Brewfile에서 받는다.

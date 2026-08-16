@@ -1078,14 +1078,23 @@ function Install-Herdr {
     }
     # 공식 installer는 실행 시점에 최신 빌드를 해석한다. manifests/*.tsv의 pinned
     # SHA-256 계약에서 herdr만 예외라는 뜻이라 AGENTS.md에 근거를 남겨 둔다.
+    #
+    # 이 함수의 실패는 경고로만 남긴다(Add-InstallFailure 아님). rhwp는 SHA-256으로
+    # pin한 artifact를 이 저장소가 소유하므로 실패가 곧 계약 위반이지만, herdr
+    # 바이너리는 소유하지 않기로 한 서드파티 CDN이다. 일시적 장애가 dotfiles 설치
+    # 전체를 실패로 만드는 것은 그 결정과 어긋난다 — 다음 실행이나 `herdr update`로
+    # 복구된다. 호출부가 $false를 받으면 설정 배포만 건너뛴다.
     Write-Host "    Running the official herdr installer: $HerdrInstallUrl"
     try {
         $herdrInstaller = Invoke-RestMethod -Uri $HerdrInstallUrl -UseBasicParsing
     } catch {
-        Add-InstallFailure "herdr installer download failed: $HerdrInstallUrl"
+        Write-Host "    [!] herdr installer download failed: $HerdrInstallUrl (config deployment skipped)"
         return $false
     }
-    if (-not $herdrInstaller) { Add-InstallFailure "herdr installer returned an empty script: $HerdrInstallUrl"; return $false }
+    if (-not $herdrInstaller) {
+        Write-Host "    [!] herdr installer returned an empty script: $HerdrInstallUrl (config deployment skipped)"
+        return $false
+    }
     # 자식 프로세스로 격리해서 실행한다. 받은 문자열을 scriptblock으로 만들어 같은
     # 프로세스에서 호출하면 내려받은 스크립트의 `exit`가
     # try/catch를 무시하고 install.ps1 자체를 끝낸다. upstream installer는 지금도
@@ -1095,7 +1104,7 @@ function Install-Herdr {
     # 0이라 사용자는 성공으로 본다. 자식으로 돌리면 그 exit는 종료 코드로만 온다.
     $pwshExe = Join-Path $PSHOME 'pwsh.exe'
     if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
-        Add-InstallFailure "herdr installer skipped: could not locate pwsh.exe in $PSHOME"
+        Write-Host "    [!] herdr installer skipped: could not locate pwsh.exe in $PSHOME"
         return $false
     }
     $installerFile = Join-Path ([IO.Path]::GetTempPath()) ("herdr-install-{0}.ps1" -f [guid]::NewGuid().ToString('N'))
@@ -1103,11 +1112,11 @@ function Install-Herdr {
         Set-Content -LiteralPath $installerFile -Value $herdrInstaller -Encoding utf8
         & $pwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installerFile
         if ($LASTEXITCODE -ne 0) {
-            Add-InstallFailure "herdr installer failed (exit $LASTEXITCODE): $HerdrInstallUrl"
+            Write-Host "    [!] herdr installer failed (exit $LASTEXITCODE): $HerdrInstallUrl (config deployment skipped)"
             return $false
         }
     } catch {
-        Add-InstallFailure "herdr installer failed: $($_.Exception.Message)"
+        Write-Host "    [!] herdr installer failed: $($_.Exception.Message) (config deployment skipped)"
         return $false
     } finally {
         Remove-Item -LiteralPath $installerFile -Force -ErrorAction SilentlyContinue
@@ -1118,7 +1127,10 @@ function Install-Herdr {
         $env:PATH = "$HerdrBinDir;$env:PATH"
     }
     $installed = Get-HerdrCommand
-    if (-not $installed) { Add-InstallFailure 'herdr installer finished but herdr was not found.'; return $false }
+    if (-not $installed) {
+        Write-Host '    [!] herdr installer finished but herdr was not found (config deployment skipped).'
+        return $false
+    }
     Write-Host "    herdr installed: $installed"
     return $true
 }

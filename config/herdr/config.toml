@@ -3,6 +3,11 @@
 #
 # herdr는 UI에서 이 파일을 직접 다시 쓴다(onboarding이 [ui]를 기록한다). 그래서
 # 통째로 덮어쓰지 않고 dotfiles 기본값은 키가 없을 때만 채운다.
+#
+# 예외는 shell_mode 하나다. herdr가 남기는 빈 값("")은 사용자 선택이 아니라
+# 자리표시자라, 병합 전에 걷어내 아래 기본값이 다시 채워지게 한다. 사용자가 직접
+# 넣은 값은 비어 있지 않으므로 그대로 이긴다. install.ps1이 Windows에서
+# default_shell에 두는 예외와 같은 규칙이다.
 
 [terminal]
 # default_shell은 비워 둔다 — herdr가 $SHELL, 그다음 /bin/sh를 따른다.

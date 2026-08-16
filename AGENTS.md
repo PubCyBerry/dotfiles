@@ -266,9 +266,22 @@ Windows PATH는 이 저장소의 `Add-ToUserPath` + receipt 경로를 타지 않
 
 installer는 자식 프로세스(`pwsh -NoProfile -NonInteractive -File <임시파일>`)로 격리해서 돌린다. 받은 문자열을 scriptblock으로 만들어 같은 프로세스에서 호출하면 그 안의 `exit`가 `try/catch`를 무시하고 install 전체를 끝내기 때문이다 — pin되지 않은 스크립트라 upstream이 `exit 0` 한 줄만 늘려도 이후 단계가 통째로 건너뛰어지고 종료 코드는 0이라 성공으로 보인다.
 
+부트스트랩 실패는 경고로 끝난다 — `record_install_failure`/`Add-InstallFailure`를 타지 않는다. rhwp는 SHA-256으로 pin한 artifact를 이 저장소가 소유하므로 실패가 곧 계약 위반이지만, herdr 바이너리는 소유하지 않기로 한 서드파티 CDN이다. 일시적 장애가 dotfiles 설치 전체를 실패로 만드는 것은 그 결정과 어긋난다. 실패하면 설정 배포만 건너뛰고, 다음 실행이나 `herdr update`로 복구된다.
+
 설정은 default merge로 배포한다 — herdr UI가 onboarding에서 `[ui]`를 스스로 기록하므로 통째로 덮어쓰면 사용자·UI 값이 날아간다.
 
-단 `default_shell`은 그 예외다. herdr가 스스로 기록하는 `default_shell = ""`는 사용자 선택이 아니라 placeholder인데, destination 우선 merge를 그대로 적용하면 그 빈 값이 install이 주입한 Git Bash 경로를 영구히 덮어 Windows pane이 PowerShell 5.1로 떨어진다. 비어 있거나 키가 없을 때만 다시 채우고, 사용자가 직접 넣은 경로는 보존한다.
+단 herdr가 **자기 손으로 쓰는 빈 값**은 그 예외다. `default_shell = ""`나 `shell_mode = ""`는 사용자 선택이 아니라 placeholder인데, destination 우선 merge를 그대로 적용하면 그 빈 값이 dotfiles 기본값을 영구히 덮는다. 비어 있을 때만 다시 채우고, 사용자가 직접 넣은 값은 보존한다.
+
+| 플랫폼 | 예외 키 | 덮이면 생기는 일 |
+|---|---|---|
+| Windows | `terminal.default_shell` | install이 주입한 Git Bash 경로가 죽고 pane이 PowerShell 5.1로 떨어진다 |
+| Linux/macOS | `terminal.shell_mode` | `"auto"`가 죽어 macOS에서 login 셸이 안 뜬다 (`config.toml`의 존재 이유) |
+
+Unix 쪽은 `merge_codex_config`에 placeholder 키를 가변 인자로 넘겨 처리한다 — 병합 전에 destination에서 그 키가 빈 문자열일 때만 걷어내면, 나머지는 기존 default merge 규칙 그대로다.
+
+```bash
+merge_codex_config "$src" "$dst" .terminal.shell_mode
+```
 
 `config/herdr/`에 파일이 둘인 이유는 셸 설정이 플랫폼마다 다르기 때문이다.
 
@@ -282,7 +295,12 @@ Windows 설정에서 알아 둘 두 가지가 있다.
 
 `default_shell`은 단일 문자열이고 herdr에 fallback 체인이 없다(내장 fallback은 값이 비었을 때만 `$SHELL` → PowerShell/`/bin/sh`로 간다). Windows에서 두 번째 셸이 필요하면 `[[keys.command]]` 키바인딩으로 붙인다 — `config.windows.toml`이 `prefix+alt+p`에 pwsh 7 pane을 걸어 둔다.
 
-`SKIP_HERDR=1`로 이 단계 전체를 건너뛸 수 있다. CI는 원격 스크립트를 실행하지 않으므로 이 값을 쓴다.
+`SKIP_HERDR=1`로 이 단계 전체를 건너뛸 수 있다. CI는 Linux/Windows 잡에서만 이 값을 쓴다 — 그쪽만 공식 installer(`curl | sh`, `Invoke-RestMethod`)를 타기 때문이다.
+
+**macOS 잡은 `SKIP_HERDR`를 걸지 않는다.** 바이너리를 Brewfile이 주므로 `install_herdr`가 `command -v herdr`에서 바로 통과하고 원격 스크립트는 한 줄도 실행되지 않는다. 덕분에 설정 경로를 공급망 리스크 없이 CI가 검증한다. `pr-gate.yml`의 macOS 잡은 herdr가 config를 다시 쓴 뒤의 상태(`shell_mode = ""` + 사용자가 고른 `agent_panel_sort = "name"`)를 seed한 뒤 install을 두 번 돌리고, 다음 두 가지를 확인한다.
+
+- `ui.agent_panel_sort == "name"` — 사용자 값이 보존된다
+- `terminal.shell_mode == "auto"` — placeholder가 dotfiles 기본값으로 다시 채워진다
 
 ### agent role 관리
 

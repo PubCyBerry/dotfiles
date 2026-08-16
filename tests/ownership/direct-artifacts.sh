@@ -136,9 +136,12 @@ mkdir "$TMP/tree-user"; printf user > "$TMP/tree-user/user"
 # 들여오면 그대로 실패한다. [scriptblock]::Create는 이 예외가 생기면서 함께 막는다 —
 # 내려받은 문자열을 실행하는 우회 경로이기 때문이다 (bare Invoke-Expression은
 # `fnm env` 출력 평가 같은 로컬 용도라 여기서 다루지 않는다).
+#
+# 면제 패턴은 herdr URL을 담은 변수명과 호스트로만 좁힌다. 단순히 "herdr"라는 단어가
+# 줄 어딘가에 있으면 통과시키면, 무관한 도구를 같은 줄 주석 한 마디로 들여올 수 있다.
 remote_hits="$(rg -n 'curl.*\|.*(sh|bash)|/latest/|/HEAD/|/main/|Invoke-RestMethod.*Invoke-Expression|scriptblock\]::Create' \
     "$ROOT/install.sh" "$ROOT/install.ps1" "$ROOT/manifests/direct-artifacts.tsv" || true)"
-remote_hits="$(printf '%s' "$remote_hits" | rg -iv 'herdr' || true)"
+remote_hits="$(printf '%s' "$remote_hits" | rg -v 'HERDR_INSTALL_URL|HerdrInstallUrl|herdr\.dev' || true)"
 [[ -z "$remote_hits" ]] || { printf '%s\n' "$remote_hits" >&2; fail static-remote-path; }
 ! rg -n '(install|cp|mv|ln).*/usr/local/(bin|share|lib)' "$ROOT/install.sh" || fail static-privileged-direct
 grep -Fq 'Begin-ManagedPackage "winget:$claudePackage"' "$ROOT/install.ps1" || fail windows-claude-receipt

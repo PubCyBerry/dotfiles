@@ -156,7 +156,11 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
-      SKIP_HERDR: "1"
+      # SKIP_HERDR는 여기서만 걸지 않는다. macOS는 herdr 바이너리를 Brewfile이 주므로
+      # install_herdr가 `command -v herdr`에서 바로 통과하고, 공식 installer(원격
+      # 스크립트)는 한 줄도 실행되지 않는다. 덕분에 herdr 설정의 default merge,
+      # 재실행 멱등성, uninstall 소유권 판정을 원격 실행 없이 이 잡에서 검증한다.
+      # Linux/Windows 잡은 curl|sh / irm 경로를 타므로 SKIP_HERDR=1을 유지한다.
     steps:
       - uses: actions/checkout@v4
 
@@ -173,6 +177,13 @@ jobs:
           printf '%s\n' 'sentinel = "keep"' > "$HOME/.codex/config.toml"
           printf '%s\n' '# user-sentinel' > "$HOME/.zshrc"
           : > "$GIT_CONFIG_GLOBAL"
+
+          # herdr가 config를 다시 쓴 뒤의 상태를 흉내낸다. agent_panel_sort는 사용자가
+          # 고른 값이라 보존되어야 하고, shell_mode = "" 는 herdr가 남긴 자리표시자라
+          # dotfiles 기본값("auto")으로 다시 채워져야 한다.
+          mkdir -p "$HOME/.config/herdr"
+          printf '%s\n' '[terminal]' 'shell_mode = ""' '[ui]' 'agent_panel_sort = "name"' \
+            > "$HOME/.config/herdr/config.toml"
 
       - name: First install (seeded environment)
         run: /bin/bash install.sh --with-defaults
@@ -203,6 +214,13 @@ jobs:
           command -v "${yazi_run%% *}"
 
           [[ "$(yq -p=toml -r '.sentinel' "$HOME/.codex/config.toml")" == "keep" ]]
+
+          # herdr: 바이너리는 Brewfile 소유, 설정은 이 저장소 소유.
+          brew list --formula --versions herdr
+          command -v herdr
+          herdr_cfg="$HOME/.config/herdr/config.toml"
+          [[ "$(yq -p=toml -r '.ui.agent_panel_sort' "$herdr_cfg")" == "name" ]]
+          [[ "$(yq -p=toml -r '.terminal.shell_mode' "$herdr_cfg")" == "auto" ]]
 
           # rhwp: pinned archive 전체가 ~/rhwp에 있고 MCP가 absolute path로 등록되어야 한다.
           # 네 플랫폼 행이 같은 버전을 pin하므로 아무 행에서나 읽어도 된다.
