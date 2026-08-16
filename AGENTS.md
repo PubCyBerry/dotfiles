@@ -71,7 +71,8 @@ dotfiles/
 │   ├── agent_validator.py         # Claude agent frontmatter 검증 engine
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
 ├── tests/
-│   └── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
+│   ├── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
+│   └── uninstall/                 # receipt 소유권 판정 계약 (구 로컬 skill legacy 경로 포함)
 └── docs/
     ├── tools.md                   # CLI 도구 사용법 cheatsheet
     ├── ai-agents.md               # Claude Code, 플러그인, skills 상세

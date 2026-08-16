@@ -138,10 +138,13 @@ restore_claude_skills() {
     # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
     while IFS= read -r row; do
         repo="${row%@*}"; skill="${row##*@}"
-        if npx_skill_is_tracked "$skill" "$repo" \
-            && npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
-            echo "    Updated skill: $skill"
-        elif npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+        if npx_skill_is_tracked "$skill" "$repo"; then
+            if npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
+                echo "    Updated skill: $skill"; continue
+            fi
+            echo "    Update failed, falling back to add: $skill"
+        fi
+        if npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
             echo "    Added skill: $skill from $repo"
         else
             echo "    [!] Failed: $row"
