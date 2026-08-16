@@ -38,6 +38,10 @@ npm_prefix_allowed "$HOME/.local/share/fnm/node-versions/v22/installation" || fa
 ( FNM_DIR="" OS="Darwin" npm_prefix_allowed "$HOME/Library/Application Support/fnm/node-versions/v22/installation" ) || fail npm-macos-prefix-allowlist
 RECEIPT_PATH="$DOTFILES_RECEIPT_PATH"; jq -n '{packages:{"brew:oven-sh/bun/bun":{before:{present:false},installed:"1"}},artifacts:{},values:{},schemaVersion:1}' > "$RECEIPT_PATH"
 brew(){ [[ "$1" == list && "$3" == 'oven-sh/bun/bun' ]] && printf 'bun 1.2.3\n'; }
+# 여기서 부르는 query_package는 line 7의 `source uninstall.sh`가 준 실물이다.
+# 아래쪽(main 시나리오용)에서 같은 이름을 stub으로 덮으므로 shellcheck 0.9가
+# 그 정의만 보고 "정의보다 먼저 호출"로 오판한다(0.11에서는 사라진 오탐).
+# shellcheck disable=SC2218
 query_package 'brew:oven-sh/bun/bun'; [[ "$PACKAGE_STATE:$PACKAGE_VERSION" == present:1.2.3 ]] || fail brew-short-name-query
 unset -f brew
 
