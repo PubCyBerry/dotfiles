@@ -1,9 +1,22 @@
 # ~/.inputrc
 
+# 시스템 기본값 복원.
+# readline은 ~/.inputrc가 있으면 /etc/inputrc를 아예 읽지 않는다. 이 파일이
+# 배포되는 순간 Git Bash의 /etc/inputrc가 통째로 가려져 Home(\e[1~) / End(\e[4~) /
+# Shift-Tab(\e[Z) / PageUp·Down 히스토리 바인딩과 completion-query-items,
+# mark-symlinked-directories가 함께 사라진다. 없는 파일이면 조용히 무시되므로
+# /etc/inputrc가 없는 환경에서도 안전하다.
+# 아래 설정은 전부 이 include 뒤에 와야 저장소 값이 시스템 값을 이긴다.
+$include /etc/inputrc
+
 # UTF-8 8bit clean.
+# /etc/inputrc에도 같은 설정이 있지만 배포 대상 전 OS가 그렇지는 않아 명시한다.
 # 이 설정이 없으면 readline이 상위비트 바이트를 `ESC + (byte & 0x7F)`로 변환한다.
 # 한글 낱자(ㄱ~ㅎ, U+3131~U+314E)의 UTF-8 첫 바이트가 0xE3이라
 # `0xE3 & 0x7F = 0x63 = 'c'` → Alt-C로 오인되어 fzf `__fzf_cd__` 위젯이 뜬다.
+# readline은 locale이 UTF-8이면 이 셋을 스스로 켜므로, LANG을 잡아 주는
+# /etc/profile.d/lang.sh가 도는 로그인 셸에서는 증상이 없다. 그 파일이 돌지 않는
+# 비로그인 셸(herdr pane 등)에서만 터진다 — 그래서 LANG과 무관하게 여기서 못박는다.
 set input-meta on
 set output-meta on
 set convert-meta off

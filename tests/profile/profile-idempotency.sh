@@ -65,6 +65,12 @@ done
 
 grep -Fq '\builtin pwd -L' "$HOME/.bashrc"
 grep -Fq '"\e[A": history-search-backward' "$HOME/.inputrc"
+grep -Fq '$include /etc/inputrc' "$HOME/.inputrc"
+grep -Fq 'set input-meta on' "$HOME/.inputrc"
+grep -Fq 'set convert-meta off' "$HOME/.inputrc"
+# include가 저장소 설정보다 먼저 와야 bell-style none / history-search 바인딩이 시스템 값을 이긴다.
+[[ "$(grep -nF '$include /etc/inputrc' "$HOME/.inputrc" | cut -d: -f1)" \
+   -lt "$(grep -nF 'set convert-meta off' "$HOME/.inputrc" | cut -d: -f1)" ]]
 grep -Fq '/opt/homebrew/bin/brew shellenv' "$HOME/.zprofile"
 grep -Fq '/usr/local/bin/brew shellenv' "$HOME/.zprofile"
 grep -Fq 'fnm env --use-on-cd --shell zsh' "$HOME/.zshrc"
