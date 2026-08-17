@@ -1013,6 +1013,9 @@ function Install-ManagedMcpServer([string]$McpHost, [string]$Name, [string]$Path
 # ---------------------------------------------
 # rhwp: 공식 archive 전체를 ~/rhwp tree에 두고 MCP를 등록한다.
 # ---------------------------------------------
+# shellcheck 쪽 Test-ShellCheckManifestRows와 같은 이유로 비교를 전부 case-sensitive로
+# 쓴다. install.sh의 validate_rhwp_manifest는 awk 정규식이라 대소문자를 가리는데,
+# 여기서만 통과시키면 아래 -ceq 행 선택이 $null을 집어 terminating error가 된다.
 function Test-RhwpManifestRows([object[]]$Rows) {
     if ($Rows.Count -ne 4) { return $false }
     $platforms = @('windows-x86_64','linux-x86_64','macos-x86_64','macos-aarch64')
@@ -1020,13 +1023,22 @@ function Test-RhwpManifestRows([object[]]$Rows) {
     foreach ($row in $Rows) {
         if ($row.Count -ne 5) { return $false }
         $platform, $version, $format, $url, $checksum = $row
-        if ($platform -notin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        if ($platform -cnotin $platforms -or $seen.ContainsKey($platform)) { return $false }
         $seen[$platform] = $true
-        if ($version -notmatch '^\d+\.\d+\.\d+$' -or $format -notin @('tgz','zip')) { return $false }
-        if ($url -notmatch '^https://github\.com/edwardkim/rhwp/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -match '/(latest|HEAD|main)/') { return $false }
-        if ($checksum -notmatch '^[0-9a-f]{64}$') { return $false }
+        if ($version -cnotmatch '^\d+\.\d+\.\d+$' -or $format -cnotin @('tgz','zip')) { return $false }
+        if ($url -cnotmatch '^https://github\.com/edwardkim/rhwp/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -cmatch '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -cnotmatch '^[0-9a-f]{64}$') { return $false }
     }
     return $true
+}
+
+# rhwp는 버전을 한 줄로 뱉는다(`rhwp v<version>`). 기동 실패를 흡수하는 이유는
+# Get-ShellCheckReportedVersion과 같다 — $ErrorActionPreference = 'Stop' 아래에서
+# native command가 뜨지 못하면 terminating error가 되어, Add-InstallFailure로
+# 모이는 이 함수의 다른 실패들과 달리 install.ps1 자체를 끝낸다.
+function Get-RhwpReportedVersion([string]$Exe) {
+    try { return (@(& $Exe --version 2>$null) -join "`n").Trim() }
+    catch { return '' }
 }
 
 function Install-Rhwp {
@@ -1042,6 +1054,9 @@ function Install-Rhwp {
         return $true
     }
     $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    # validator를 통과했으면 반드시 있다. 없을 때 $row[1]은 terminating error가 되어
+    # Add-InstallFailure 계약을 건너뛰므로 명시적으로 잡는다.
+    if (-not $row) { Add-InstallFailure 'No windows-x86_64 row in manifests\rhwp.tsv'; return $false }
     $version = $row[1]; $url = $row[3]; $checksum = $row[4]
     $desired = "{`"command`":$(ConvertTo-Json ((Join-Path $RhwpDir 'rhwp.exe')) -Compress),`"args`":[`"mcp-serve`"]}"
 
@@ -1075,7 +1090,7 @@ function Install-Rhwp {
             }
             $binary = Join-Path $tree 'rhwp.exe'
             if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { Add-InstallFailure "rhwp binary missing in archive: $url"; return $false }
-            $reported = (@(& $binary --version 2>$null) -join "`n").Trim()
+            $reported = Get-RhwpReportedVersion $binary
             if ($reported -cne "rhwp v$version") {
                 Add-InstallFailure "rhwp binary reports '$reported', expected 'rhwp v$version'"; return $false
             }

@@ -109,15 +109,17 @@ uppercase_manifest_field() {
         NR_kept++ == 0 {$f = toupper($f)} {print}' "$1"
 }
 
-# manifest validator는 install.ps1의 Test-ShellCheckManifestRows와 같은 판정을 내려야
-# 한다. awk 정규식은 대소문자를 가리는데 PowerShell 기본 비교는 그렇지 않으므로,
-# 양쪽이 같게 거부하는지 같은 변형으로 확인한다.
-validate_shellcheck_manifest "$repo/manifests/shellcheck.tsv"
-for field in 1 5; do
-    uppercase_manifest_field "$repo/manifests/shellcheck.tsv" "$field" > "$work/shellcheck-cased.tsv"
-    if validate_shellcheck_manifest "$work/shellcheck-cased.tsv"; then
-        echo "mis-cased shellcheck manifest field $field accepted" >&2; exit 1
-    fi
+# manifest validator는 install.ps1의 Test-*ManifestRows와 같은 판정을 내려야 한다.
+# awk 정규식은 대소문자를 가리는데 PowerShell 기본 비교는 그렇지 않으므로, 양쪽이
+# 같게 거부하는지 두 manifest에서 같은 변형으로 확인한다.
+for name in shellcheck rhwp; do
+    "validate_${name}_manifest" "$repo/manifests/$name.tsv"
+    for field in 1 5; do
+        uppercase_manifest_field "$repo/manifests/$name.tsv" "$field" > "$work/$name-cased.tsv"
+        if "validate_${name}_manifest" "$work/$name-cased.tsv"; then
+            echo "mis-cased $name manifest field $field accepted" >&2; exit 1
+        fi
+    done
 done
 
 # manifest에서 빠진 구 apt/brew 설치분은 install이 지우지 않는다(남의 소유 패키지다).

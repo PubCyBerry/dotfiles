@@ -81,6 +81,7 @@ try {
     $unlaunchable = Join-Path $work 'shellcheck.exe'
     Set-Content -LiteralPath $unlaunchable -Value 'not a PE image' -NoNewline
     Assert-True ($null -eq (Get-ShellCheckReportedVersion $unlaunchable)) '실행되지 않는 shellcheck 바이너리가 예외로 새어 나왔습니다.'
+    Assert-True ('' -eq (Get-RhwpReportedVersion $unlaunchable)) '실행되지 않는 rhwp 바이너리가 예외로 새어 나왔습니다.'
 
     # manifest validator는 install.sh의 awk validator와 같은 판정을 내려야 한다.
     # PowerShell 기본 비교는 case-insensitive라, -c* 없이는 대소문자가 틀린 행이
@@ -101,6 +102,7 @@ try {
         }
     }
     Assert-ManifestCaseSensitivity 'shellcheck.tsv' 'Test-ShellCheckManifestRows'
+    Assert-ManifestCaseSensitivity 'rhwp.tsv' 'Test-RhwpManifestRows'
 
     $skills = Join-Path $work 'skills.txt'
     'owner/repo@skill' | Set-Content $skills -Encoding utf8
