@@ -74,6 +74,36 @@ try {
     function global:claude { $script:ClaudeCalls++; $global:LASTEXITCODE = 7 }
     Assert-True (-not (Restore-ClaudePlugins @(Get-ValidatedPluginRows $validPlugins))) 'claude 실패가 plugin 실패로 전파되지 않았습니다.'
 
+    # shellcheck 바이너리가 아예 뜨지 못하는 환경(%TEMP% 실행을 막는 AppLocker/WDAC,
+    # 파일을 잡고 있는 AV, x64 에뮬레이션 없는 ARM64)에서도 install이 끊기면 안 된다.
+    # $ErrorActionPreference = 'Stop' 아래에서 native command 기동 실패는 terminating
+    # error라, 가드가 없으면 1-8 한 단계가 install.ps1 전체를 끝낸다.
+    $unlaunchable = Join-Path $work 'shellcheck.exe'
+    Set-Content -LiteralPath $unlaunchable -Value 'not a PE image' -NoNewline
+    Assert-True ($null -eq (Get-ShellCheckReportedVersion $unlaunchable)) '실행되지 않는 shellcheck 바이너리가 예외로 새어 나왔습니다.'
+    Assert-True ('' -eq (Get-RhwpReportedVersion $unlaunchable)) '실행되지 않는 rhwp 바이너리가 예외로 새어 나왔습니다.'
+
+    # manifest validator는 install.sh의 awk validator와 같은 판정을 내려야 한다.
+    # PowerShell 기본 비교는 case-insensitive라, -c* 없이는 대소문자가 틀린 행이
+    # 여기만 통과하고 뒤의 case-sensitive 행 선택에서 $null 인덱싱으로 죽는다.
+    function Read-ManifestRows([string]$Name) {
+        @(Get-Content -LiteralPath (Join-Path $repo "manifests\$Name") |
+            Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } |
+            ForEach-Object { , @($_ -split "`t") })
+    }
+    # platform(0)과 SHA-256(4)은 둘 다 소문자로만 유효하므로 대문자 사본은 거부되어야 한다.
+    function Assert-ManifestCaseSensitivity([string]$Name, [string]$Validator) {
+        $rows = Read-ManifestRows $Name
+        Assert-True (& $Validator $rows) "실제 manifest가 유효하지 않습니다: $Name"
+        foreach ($field in 0, 4) {
+            $mutated = @($rows | ForEach-Object { , @($_) })
+            $mutated[0][$field] = $mutated[0][$field].ToUpperInvariant()
+            Assert-True (-not (& $Validator $mutated)) "case-insensitive 비교가 manifest를 통과시켰습니다: $Name field $field"
+        }
+    }
+    Assert-ManifestCaseSensitivity 'shellcheck.tsv' 'Test-ShellCheckManifestRows'
+    Assert-ManifestCaseSensitivity 'rhwp.tsv' 'Test-RhwpManifestRows'
+
     $skills = Join-Path $work 'skills.txt'
     'owner/repo@skill' | Set-Content $skills -Encoding utf8
     function global:npx { $script:NpxCalls++; $global:LASTEXITCODE = 7 }

@@ -1,0 +1,18 @@
+# shellcheck pinned release: platform<TAB>version<TAB>format<TAB>URL<TAB>SHA-256
+#
+# platform : windows-x86_64 | linux-x86_64 | linux-aarch64 | macos-x86_64 | macos-aarch64
+# version  : upstream tag에서 앞의 v를 뗀 값 (`shellcheck --version`의 `version:` 줄과 대조)
+# format   : tgz | zip
+# URL      : 공식 release asset (latest/HEAD 경로 금지 — 공급망 계약)
+# SHA-256  : upstream이 SHA256SUMS를 게시하지 않아, 내려받은 파일의 sha256sum과
+#            GitHub가 서버에서 계산한 release asset digest
+#            (gh api repos/koalaman/shellcheck/releases/tags/v<ver> --jq '.assets[].digest')
+#            가 일치함을 확인한 값이다.
+#
+# CI(pr-gate.yml의 lint 잡)와 세 OS의 로컬 설치가 모두 이 파일 하나를 본다.
+# 버전을 올릴 때는 다섯 행을 같은 버전으로 함께 올린다 — validator가 그렇지 않으면 막는다.
+windows-x86_64	0.11.0	zip	https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip	8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e
+linux-x86_64	0.11.0	tgz	https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz	b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
+linux-aarch64	0.11.0	tgz	https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.gz	68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc
+macos-x86_64	0.11.0	tgz	https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.gz	c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51
+macos-aarch64	0.11.0	tgz	https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.gz	339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f

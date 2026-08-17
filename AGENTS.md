@@ -68,12 +68,15 @@ dotfiles/
 │   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex)
 │   ├── direct-artifacts.tsv # Linux direct artifact 버전·URL·SHA-256
 │   ├── rhwp.tsv         # rhwp pinned release 플랫폼·버전·URL·SHA-256 (전 OS 공통)
+│   ├── shellcheck.tsv   # shellcheck pinned release (전 OS + CI 공통 — 버전 drift 차단)
 │   ├── skills.txt       # Claude Code skills (owner/repo@skill-name)
 │   └── plugins.txt      # Claude Code 플러그인 (marketplace + plugin@marketplace + scope)
 ├── scripts/
 │   ├── agent_validator.py         # Claude agent frontmatter 검증 engine
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
 ├── tests/
+│   ├── install/                   # failure ledger + manifest validator 계약 (네트워크 없음)
+│   ├── ownership/                 # receipt 소유권 + direct artifact 버전 게이트 계약 (네트워크 없음)
 │   ├── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
 │   └── uninstall/                 # receipt 소유권 판정 계약 (구 로컬 skill legacy 경로 포함)
 └── docs/
@@ -97,12 +100,13 @@ dotfiles/
    1-5. Neovim PATH 환경변수 설정 (`C:\Program Files\Neovim\bin`)
    1-6. `config/nvim/` → `$LOCALAPPDATA\nvim\` 배포 (lazy.nvim Structured Setup, 항상 덮어쓰기)
    1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.windows.toml` → `%APPDATA%\herdr\config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀)
+   1-8. `manifests/shellcheck.tsv` → `%USERPROFILE%\.local\bin\shellcheck.exe` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀)
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code WinGet 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `%USERPROFILE%\rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. PowerShell 프로파일 설정 (`config/powershell/profile.ps1`, 마커 방식)
 5. Git Bash 프로파일 설정 (`config/bash/bashrc`, 마커 방식 → `~/.bashrc`)
@@ -119,12 +123,13 @@ dotfiles/
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `config/macos/.macos` → macOS 시스템 기본값 적용 (`--with-defaults` 플래그 시)
    1-7. herdr 설치 확인(Brewfile이 담당) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
+   1-8. `manifests/shellcheck.tsv` → `~/.local/bin/shellcheck` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀). receipt 기록에 jq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code Homebrew cask 설치 (`SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 5. `manifests/skills.txt` → npx skills 설치·업데이트
@@ -140,12 +145,13 @@ dotfiles/
    1-5. `config/starship.toml` → `~/.config/starship.toml` 배포
    1-6. `manifests/direct-artifacts.tsv` → pinned release를 SHA-256 검증 후 `~/.local` 아래에 receipt-managed 설치
    1-7. herdr 설치(공식 installer, 이미 있으면 건너뜀) + `config/herdr/config.toml` → `~/.config/herdr/config.toml` 배포 (`SKIP_HERDR=1`이면 건너뜀). 설정 병합에 yq가 필요해 실제 실행은 2-1 뒤다.
+   1-8. `manifests/shellcheck.tsv` → `~/.local/bin/shellcheck` (pinned release, `SKIP_SHELLCHECK=1`이면 건너뜀). receipt 기록에 jq가 필요해 실제 실행은 2-1 뒤다.
 2. fnm → Node.js LTS (기존 버전 보존, `DOTFILES_PRUNE_NODE_VERSIONS=1`일 때만 비활성 버전 정리)
    2-1. `manifests/npm-global.txt` → npm 전역 패키지
    2-2. `config/codex/` → `~/.codex/` 배포 (`config.toml` 기본값 병합, `config/agents/global.md` → `AGENTS.md` 복사, `config/codex/hooks/` → `~/.codex/hooks/` 복사, `config/agents/roles/` → `~/.codex/agents/` subagent 조립 배포)
 3. Claude Code npm package 설치 (Node.js 22+, `SKIP_CLAUDE_CODE=1`이면 설정과 함께 건너뜀)
    3-1. `config/claude/` → `~/.claude/` 배포 (settings.json registry 병합, `config/agents/global.md` → `CLAUDE.md` 복사, `config/agents/roles/` → `~/.claude/agents/` subagent 조립 배포)
-   3-2. `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
+   3-2. Antigravity CLI(`agy`) 설치(공식 installer, 이미 있으면 건너뜀, `SKIP_AGY_CLI=1`이면 건너뜀) + `config/agy/` → `~/.gemini/` 배포 (`config/agents/global.md` → `GEMINI.md` 복사, `hooks.json` 병합, `hooks/` 배포, `SKIP_AGY=1`이면 건너뜀)
    3-3. `manifests/rhwp.tsv` → `~/rhwp` receipt-managed tree + Codex/Claude/Gemini MCP 등록 (`SKIP_RHWP=1`이면 건너뜀)
 4. bash 프로파일 설정 (`config/bash/bashrc` → `~/.bashrc`, `config/bash/inputrc` → `~/.inputrc`, 마커 방식)
 6. `manifests/skills.txt` → npx skills 설치·업데이트
@@ -245,6 +251,88 @@ bash tests/rhwp/mcp-ownership.sh
 pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
 ```
 
+### shellcheck 관리
+
+ShellCheck는 `manifests/shellcheck.tsv`에 pinned release로 관리한다. rhwp와 같은 계약이고 형식도 같지만, 플랫폼이 다섯 개(`windows-x86_64` / `linux-x86_64` / `linux-aarch64` / `macos-x86_64` / `macos-aarch64`)다. 다섯 행이 모두 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 되며, validator가 그렇지 않은 manifest를 막는다.
+
+```text
+<platform>	<version>	<format>	<URL>	<SHA-256>
+```
+
+패키지 매니저를 쓰지 않는 이유는 **어느 것도 한 버전으로 모이지 않기 때문**이다. lint는 도구 버전이 곧 규칙 집합이라, 버전이 갈리면 같은 스크립트가 한쪽에서는 통과하고 다른 쪽에서는 실패한다.
+
+| 경로 | 주는 버전 | pin 가능? |
+|---|---|---|
+| GitHub Actions `ubuntu-24.04` 러너 사전 설치본 | 0.9.0 (`shellcheck 0.9.0-1`) | 아니오 — 러너 이미지를 따라 움직인다 |
+| Ubuntu apt | 22.04 = 0.8.0-2, 24.04 = 0.9.0-1, 26.04 = 0.11.0-2 | 아니오 — 배포판에 묶인다 |
+| Homebrew `shellcheck` | 0.11.0 (formula 최신) | 아니오 — `versioned_formulae`가 비어 있다 |
+| winget `koalaman.shellcheck` | 0.11.0 (최신) | 부분적 — `--version`은 되지만 다른 OS를 맞추지 못한다 |
+| upstream release 바이너리 | 지정한 값 | **예** |
+
+버전 차이가 실제로 만드는 결과는 0.11.0 릴리즈 노트에 그대로 있다. SC2002(useless use of cat)가 기본 비활성으로 바뀌고, SC2236/SC2237이 optional로 내려갔으며, SC2327~SC2332와 SC3062가 새로 생겼다. 0.9.0에서 깨끗한 스크립트가 0.11.0에서 새 경고를 받고, 0.11.0 기준으로 고친 코드가 0.9.0에서는 SC2002를 다시 맞는다.
+
+그래서 install 스크립트와 CI(`pr-gate.yml`의 `lint` 잡)가 **같은 파일 하나**를 본다. lint 잡은 러너 사전 설치본을 쓰지 않고 manifest에서 받아 SHA-256을 검증한 뒤, 실제로 해석되는 `shellcheck`가 그 바이너리이고 그 버전을 보고하는지까지 단언한다. 이 단언이 없으면 PATH 해석이 바뀌는 순간 게이트가 조용히 뜻을 잃는다.
+
+install 스크립트는 rhwp와 같은 순서로 확인한 뒤에만 파일을 만진다.
+
+1. manifest 형식(플랫폼 5종, 단일 버전, 세 자리 semver, `latest`/`HEAD`가 없는 koalaman release URL, 64자 SHA-256)
+2. 내려받은 archive의 SHA-256
+3. archive 안의 경로 — Unix tarball은 `shellcheck-v<version>/shellcheck`, Windows zip은 최상위 `shellcheck.exe`
+4. 바이너리가 `version: <version>`을 보고하는지
+
+`SHA256SUMS`를 upstream이 게시하지 않으므로 값은 두 경로로 대조해서 넣는다. 내려받은 파일의 `sha256sum`과, GitHub가 서버에서 계산해 API로 노출하는 asset digest(`gh api repos/koalaman/shellcheck/releases/tags/v<ver> --jq '.assets[].digest'`)다. Windows 행은 `microsoft/winget-pkgs`의 `koalaman.shellcheck` manifest에 있는 `InstallerSha256`과도 일치한다.
+
+배치 위치는 OS마다 다르되 결과는 같다 — 이 저장소가 배포하는 셸 프로파일이 이미 PATH 앞에 두는 자리에 넣는다.
+
+| 플랫폼 | 경로 | PATH에 오르는 경로 |
+|---|---|---|
+| Linux/macOS | `~/.local/bin/shellcheck` | `config/bash/bashrc`가 `$HOME/.local/bin`을 PATH 맨 앞에 둔다 |
+| Windows | `%USERPROFILE%\.local\bin\shellcheck.exe` | `config/powershell/profile.ps1`(pwsh)과 `config/bash/bashrc`(Git Bash)가 같은 일을 한다 |
+
+Windows에서 어느 행을 쓸지는 **OS 비트수 하나로** 정한다. upstream이 Windows용으로 `windows-x86_64` 하나만 내고, Windows 11 ARM64는 그 x86_64 PE를 에뮬레이션으로 그대로 실행하기 때문이다. `PROCESSOR_ARCHITECTURE`로 가르면 같은 ARM64 머신에서도 install을 네이티브 pwsh로 띄웠는지(`ARM64` → 건너뜀) x64 에뮬레이션으로 띄웠는지(`AMD64` → 설치)에 따라 결과가 갈린다 — 프로세스 비트수는 pin 계약과 아무 상관이 없다. 정말 실행되지 않는 환경은 설치 직전의 `--version` 대조가 실패로 잡는다. 32비트 Windows만 지원 밖으로 두고 경고 후 건너뛴다(Unix의 `shellcheck_platform`이 지원하지 않는 아키텍처를 다루는 방식과 같다 — 설치 실패로 기록하지 않는다).
+
+**User PATH(레지스트리)는 건드리지 않는다.** 프로파일이 이미 그 디렉터리를 앞에 두므로 새 side effect를 만들 이유가 없다. 이 선택 덕분에 배포판이 apt로 깔아 둔 `/usr/bin/shellcheck`가 남아 있어도 **셸 프로파일을 읽는 경로에서는** pin한 쪽이 먼저 잡힌다 — 그 상태를 CI의 Ubuntu 잡이 `command -v shellcheck`로 단언한다.
+
+`manifests/apt.txt`와 `manifests/Brewfile`에서는 shellcheck를 뺐다. 소유자가 둘이면 PATH 순서에 따라 어느 쪽이 잡힐지가 환경마다 달라지고, 그것이 애초에 없애려던 문제다.
+
+#### 마이그레이션: 기존 Linux·macOS 머신에서 구 패키지를 직접 지운다
+
+manifest에서 빼는 것은 **앞으로 설치하지 않는다**는 뜻일 뿐, 이미 깔린 패키지를 지우지 않는다. install이 남의 소유 패키지를 제거하지 않기 때문이다(Safe-Clean-Install). 그래서 이 PR 이전에 프로비저닝한 머신에는 `/usr/bin/shellcheck`(또는 brew prefix)와 `~/.local/bin/shellcheck`가 **둘 다** 남고, 어느 쪽이 잡히는지는 그 순간의 PATH가 정한다.
+
+`~/.bashrc` 마커 블록을 읽지 않는 소비자는 여전히 옛 버전을 본다 — VS Code ShellCheck 확장이 `/usr/bin/shellcheck`를 해석하는 경우, 프로파일을 거치지 않은 셸에서 실행된 Makefile, PATH가 씻긴 `sudo` 등이다. 그쪽에서는 CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
+
+문서만으로는 알아차릴 계기가 없으므로 install이 직접 알린다. `install_shellcheck`가 성공한 자리에서 `dpkg -s shellcheck` / `brew list --formula shellcheck`로 구 패키지가 남아 있는지 보고, 남아 있으면 두 줄짜리 안내를 출력한다. 알림에 그치고 `record_install_failure`를 타지 않는다 — 남의 소유 패키지라 이 스크립트가 지울 대상이 아니다(Safe-Clean-Install). `dpkg`/`brew`가 없는 환경에서는 `command -v`에서 바로 빠져 비용이 없다.
+
+**업그레이드하는 머신에서 한 번 실행한다.**
+
+```bash
+# Ubuntu — apt가 깔아 둔 구버전 제거
+dpkg -s shellcheck >/dev/null 2>&1 && sudo apt-get remove -y shellcheck
+
+# macOS — brew formula 제거
+brew list --formula shellcheck >/dev/null 2>&1 && brew uninstall shellcheck
+
+# 확인: pin한 경로 하나만 남아야 한다
+command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
+```
+
+> receipt 쪽 마이그레이션은 따로 있다. 예전 설치본을 쓰던 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는데, manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 위 명령으로 이미 지웠거나 사용자가 직접 올린 패키지는 문제가 되지 않는다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
+
+**손으로 둔 `~/.local/bin/shellcheck`는 install을 매 실행 실패시킨다.** receipt에 없는 파일이 그 자리에 있으면 `install_managed_file … skip`이 보존을 택하고 `install_shellcheck`가 그것을 실패로 기록한다 — 남의 파일을 덮지 않기 때문이다(Safe-Clean-Install). 다른 direct artifact는 `new` 상태에서 `command -v <name>`으로 기존 설치본에 양보하지만 shellcheck는 그럴 수 없다. 양보하면 `/usr/bin/shellcheck` 0.9.0이 pin을 이겨 이 절의 목적이 사라진다. 그래서 그 상태를 실패 메시지가 직접 구분해 대응 방법까지 적는다(`… exists but is not managed by dotfiles. Remove it and re-run`). rhwp의 unowned tree 충돌도 같은 모양이며, 안내는 `docs/tools.md`에 있다.
+
+버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
+
+이 게이트는 `tests/ownership/direct-artifacts.{sh,ps1}`가 단언한다. CI의 실제 install 잡은 매번 새 HOME에서 도는 탓에 `new` → `current` 전이만 지나므로, `upgrade` / `upgrade-blocked` / `modified`를 지나는 검사는 이 두 스크립트뿐이다. `pr-gate.yml`의 **세 install 잡 모두**가 돌린다 — bash 쪽은 `file_mode`/`tree_hash`의 BSD 경로(`stat -f`, `find -printf` 없음)를 지나므로 macOS에서 돌지 않으면 그쪽 회귀를 잡는 검사가 없다.
+
+```bash
+bash tests/ownership/direct-artifacts.sh
+pwsh -NoProfile -File tests/ownership/direct-artifacts.ps1
+```
+
+manifest validator는 두 벌(awk / PowerShell)이라 판정이 어긋날 수 있다. awk 정규식은 대소문자를 가리고 PowerShell의 `-in`/`-match`/`-eq`는 기본이 그렇지 않으므로, `Test-ShellCheckManifestRows`는 비교를 전부 `-c*`로 쓴다. 그러지 않으면 `Windows-x86_64` 같은 행이 PowerShell validator만 통과하고, 뒤의 case-sensitive 행 선택이 `$null`을 집어 terminating error로 install 전체를 끊는다. 같은 이유로 archive 안 바이너리의 `--version` 호출도 `try/catch`로 감싼다 — `$ErrorActionPreference = 'Stop'` 아래에서 실행 자체가 실패하면(`%TEMP%` 실행을 막는 AppLocker/WDAC, 파일을 잡고 있는 AV, x64 에뮬레이션 없는 ARM64) 그 예외가 `Add-InstallFailure` 계약을 우회한다. `tests/install/failure-contract.{sh,ps1}`가 두 경로를 모두 단언한다.
+
+`SKIP_SHELLCHECK=1`로 이 단계 전체를 건너뛸 수 있다. CI는 이 값을 쓰지 않는다 — pin된 artifact라 설치 경로를 그대로 검증한다.
+
 ### herdr 관리
 
 herdr(코딩 에이전트용 터미널 멀티플렉서)는 이 저장소의 pinned artifact 계약에서 **예외**다. 바이너리는 소유하지 않고 설정만 소유한다.
@@ -314,6 +402,48 @@ Windows 설정에서 알아 둘 두 가지가 있다.
 
 - `ui.agent_panel_sort == "name"` — 사용자 값이 보존된다
 - `terminal.shell_mode == "auto"` — placeholder가 dotfiles 기본값으로 다시 채워진다
+
+### Antigravity CLI 관리
+
+Antigravity CLI(바이너리 이름은 `agy`)는 herdr와 같은 예외다. **바이너리는 소유하지 않고 설정만 소유한다.** 설정(`config/agy/` → `~/.gemini/`)은 예전부터 이 저장소가 배포해 왔고, 이번에 CLI 자체의 설치가 붙었다.
+
+| 대상 | 소유자 | 경로 |
+|---|---|---|
+| 바이너리 (Windows) | 공식 installer (`https://antigravity.google/cli/install.ps1`) | `%LOCALAPPDATA%\agy\bin\agy.exe` |
+| 바이너리 (Linux/macOS) | 공식 installer (`https://antigravity.google/cli/install.sh`) | `~/.local/bin/agy` |
+| 설정 | **이 저장소** (receipt-managed) | `~/.gemini/`, `~/.gemini/config/` |
+
+pin하지 않는 이유가 둘이다.
+
+1. **CLI가 스스로 업데이트한다.** 공식 installer가 그렇게 밝힌다 — "The Antigravity CLI automatically self-updates in the background during regular runs". receipt로 바이너리 해시를 잡으면 첫 실행 직후 어긋나 그 다음 실행부터 "changed; preserving"으로 굳는다. herdr와 똑같은 구조의 문제다.
+2. **pin할 대상이 없다.** 배포가 버전 없는 auto-updater manifest 엔드포인트(`/manifests/<platform>.json`)를 거쳐 항상 최신을 해석하고, `google-antigravity/antigravity-cli` 릴리즈는 2~3일에 하나씩 나온다. 그 속도로 SHA-256을 옮기는 것은 `manifests/*.tsv`가 지키려는 "검토한 바이너리만 들어온다"와 실질이 다르다.
+
+winget에 `Google.AntigravityCLI`가 있지만 쓰지 않는다. Google이 올린 것이 아니라 봇(`YamlCreate.ps1 Dumplings Mod`)이 만든 커뮤니티 manifest이고, `portable` 타입이라 바이너리가 다른 두 OS와 또 다른 자리(`%LOCALAPPDATA%\Microsoft\WinGet\Packages`·`Links`)에 놓인다. 무엇보다 위 1번 때문에 winget이 기록한 버전은 첫 실행 직후 낡는다 — 소유권을 주장하지만 실제로는 추적하지 못하는 상태가 되는데, 그것이 이 저장소가 피하려는 바로 그 상태다.
+
+그래서 install은 `agy`가 이미 있으면 **아무것도 하지 않는다**. 없을 때만 공식 installer를 한 번 돌려 부트스트랩한다. installer 자체도 같은 판단을 해서, 대상 경로에 바이너리가 있으면 안내만 출력하고 `exit 0`으로 끝난다.
+
+부트스트랩 실패는 경고로 끝난다 — `record_install_failure`/`Add-InstallFailure`를 타지 않는다. herdr와 같은 이유이며, 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로 만들지 않는다.
+
+순서는 3-2에 둔다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때 Gemini MCP를 등록한다. 3-2의 설정 배포가 그 디렉터리를 먼저 만들므로 `SKIP_AGY`를 걸지 않은 실행에서는 디렉터리 조건이 먼저 성립하고, `agy` 조회는 그때 판정에 관여하지 않는다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는 `SKIP_AGY=1`로 설정 배포를 건너뛰어 디렉터리가 없는 실행이다 — 그때도 MCP 등록이 이뤄진다. 뒤집어 말하면 `SKIP_AGY_CLI=1`만으로는 Gemini MCP 등록이 꺼지지 않는다(CI가 세 OS 모두 그 상태로 돌고 등록은 그대로 이뤄진다).
+
+Unix 쪽은 `sh`가 아니라 **`bash`로 파이프한다**. installer가 `set -euo pipefail`을 쓰는데 우분투의 `/bin/sh`(dash)에는 `pipefail`이 없어 첫 줄에서 죽는다. Windows 쪽은 herdr와 같이 자식 프로세스(`pwsh -NoProfile -NonInteractive -File <임시파일>`)로 격리한다 — 이 installer도 sourcing이 아닐 때 최상위에서 `exit $exitCode`를 호출하므로, 같은 프로세스에서 돌리면 그 `exit`가 `try/catch`를 무시하고 install 전체를 끝낸다.
+
+#### 공식 installer가 만드는 side effect
+
+소유하지 않기로 한 대가이므로 uninstall이 되돌리지 않는다. 지우려면 직접 정리한다.
+
+| 플랫폼 | side effect |
+|---|---|
+| Windows | `%LOCALAPPDATA%\agy\bin\agy.exe` 실행 파일 |
+| Windows | `%LOCALAPPDATA%\antigravity\staging` (installer가 성공·실패와 무관하게 정리하지만 디렉터리는 남는다) |
+| Linux/macOS | `~/.local/bin/agy` 실행 파일 하나 |
+| Linux/macOS | `~/.cache/antigravity/staging` (installer의 `trap`이 내용물을 지운다) |
+| 공통 | installer 마지막 단계가 `agy install`을 호출해 셸 환경을 설정한다. 이 저장소는 그 동작을 소유하지 않으며 정확한 범위를 검증하지 않았다. |
+| 공통 | `agy` 첫 실행 시 Google Sign-In이 필요하다. 설치 자체는 비대화형이고, 인증은 사용자가 처음 쓸 때 일어난다. |
+
+`~/.local/bin/agy`가 이 저장소의 direct artifact들과 같은 디렉터리에 놓이지만 uninstall의 소유권 목록에는 없다. 그 이름은 `artifact_allowed`/`Test-ArtifactAllowed`가 거부하며, `tests/uninstall/`이 그 거부를 단언한다.
+
+`SKIP_AGY_CLI=1`로 이 단계를 건너뛸 수 있다. 설정 배포를 끄는 `SKIP_AGY`와 별개다 — 소유자가 다르기 때문이다. CI는 세 OS 모두 `SKIP_AGY_CLI=1`을 쓴다(pin되지 않은 원격 installer라 실행하지 않는다).
 
 ### agent role 관리
 

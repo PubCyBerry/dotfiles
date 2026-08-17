@@ -16,7 +16,7 @@
 
 ## 파이프라인 1: PR Gate
 
-`install.sh`, `config/`, `manifests/`, `scripts/` 변경 시 자동 실행되는 게이트 파이프라인이다.
+`install.sh`, `install.ps1`, `uninstall.sh`, `uninstall.ps1`, `config/`, `manifests/`, `scripts/`, `tests/` 변경 시 자동 실행되는 게이트 파이프라인이다. `tests/**`가 통째로 들어 있으므로 계약 스크립트를 새로 붙일 때 트리거를 따로 넓힐 필요가 없다 — 그 스크립트를 실행하는 단계만 잡에 추가하면 된다.
 
 ### 실행 흐름
 
@@ -31,26 +31,33 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 ### Job 상세
 
 **lint**
-- `shellcheck -x install.sh`로 셸 스크립트 정적 분석
+- `git ls-files '*.sh'`로 저장소 전체 셸 스크립트를 `shellcheck -x` 정적 분석
 - 문법 오류, 불안전한 패턴(따옴표 누락 등)을 사전 차단
+- **러너 이미지의 사전 설치본을 쓰지 않는다.** `manifests/shellcheck.tsv`가 pin한 버전을 받아 SHA-256을 검증하고 PATH 앞에 둔다. install 스크립트도 같은 파일을 보므로 CI와 로컬이 한 버전으로 모인다 ([shellcheck 관리](../AGENTS.md#shellcheck-관리))
+- 내려받기 직후 `command -v shellcheck`와 `--version`으로 실제 해석되는 바이너리가 pin한 그 버전인지 단언한다. 이 단언이 없으면 PATH 해석이 바뀌는 순간 게이트가 조용히 뜻을 잃는다
 
 **test-apt-install**
 - apt 패키지 캐시 복원 후 `install.sh`를 두 번 실행
 - Claude Code, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
 - 사용자 Codex 설정, shell profile, Claude statusLine sentinel 보존과 marker 멱등성을 확인
-- `tests/install/failure-contract.sh`로 failure ledger, plugin 전체 사전검증, skip guard를 확인
+- `tests/install/failure-contract.sh`로 failure ledger, plugin 전체 사전검증, skip guard, shellcheck manifest validator와 구 패키지 안내를 확인
+- `tests/ownership/install-receipt.sh`, `tests/ownership/direct-artifacts.sh`로 receipt 소유권과 direct artifact 버전 게이트를 확인. 실제 install 잡은 매번 새 HOME이라 `new` → `current` 전이만 지나므로, `upgrade`/`upgrade-blocked`/`modified`를 지나는 검사는 이 두 스크립트뿐이다
+- `direct-artifacts.sh`는 install 스크립트에 pin되지 않은 원격 실행(`curl \| sh`, `latest`/`HEAD` 경로)이 새로 들어오는지도 정적으로 막는다. 면제는 herdr와 Antigravity CLI 두 installer뿐이며, 그 두 줄 **전체**와 일치할 때만 성립한다 — 호스트 이름이 줄 어딘가에 있으면 통과시키는 부분 일치를 쓰면 같은 줄 주석 한 마디로 제3의 호스트를 들여올 수 있다. 스크립트가 그 우회를 직접 단언한다
 - `config/agents/roles/`의 실제 조립 결과를 `yq`로 검증한다
 
 **test-macos-install**
 - `/bin/bash install.sh --with-defaults`와 `/bin/bash install.sh`를 이어서 실행해 fresh 및 update 경로를 검증
 - Homebrew Neovim, Git editor, Yazi opener가 실제 `nvim` executable을 가리키는지 확인
 - 기존 Codex TOML과 `.zshrc` sentinel이 보존되고 profile marker가 중복되지 않는지 확인
+- `tests/ownership/install-receipt.sh`, `tests/ownership/direct-artifacts.sh`를 Ubuntu 잡과 같이 돌린다. 두 스크립트는 `file_mode`/`tree_hash`의 BSD 경로(`stat -f`, `find -printf` 없음, `tar --sort` 없음)를 지나므로, 여기서 돌지 않으면 macOS 전용 회귀를 잡는 검사가 하나도 없다. `jq`/`rg`를 Brewfile이 주므로 install 뒤에 둔다
 
 **test-windows-install**
 - fake `USERPROFILE`/`HOME`/`GIT_CONFIG_GLOBAL`에서 `install.ps1`을 두 번 실행
 - 사용자 Codex config/hook, PowerShell profile, Git 설정, 환경변수와 기존 PATH entry 보존 확인
-- `tests/install/failure-contract.ps1`로 failure ledger와 plugin 사전검증을 확인
+- `tests/install/failure-contract.ps1`로 failure ledger, plugin 사전검증, shellcheck manifest validator의 case-sensitivity, 실행되지 않는 shellcheck 바이너리가 install을 끊지 않는지를 확인
+- `tests/ownership/install-receipt.ps1`, `tests/ownership/direct-artifacts.ps1`로 receipt 소유권과 `Get-DirectFileState`/`Set-DirectFileVersion`의 버전 게이트를 확인. Ubuntu 잡의 같은 이름 스크립트와 짝을 이루는 계약이다
+- 이 두 스크립트는 receipt를 `jq`로 읽으므로 `Ensure yq and jq` 단계가 `yq`와 함께 확보한다 (`SKIP_PACKAGES=1`이라 winget 단계가 깔지 않는다)
 
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
@@ -155,6 +162,11 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 | `SKIP_CLAUDE_CODE=1` | Claude Code 설치 + 설정 배포 | 계정/토큰 필요 |
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `SKIP_PLUGINS=1` | Claude Code plugins 설치 | 외부 marketplace 의존 |
+| `SKIP_HERDR=1` | herdr 설치 + 설정 배포 | pin되지 않은 원격 installer(`curl \| sh`, `irm`) |
+| `SKIP_AGY_CLI=1` | Antigravity CLI(`agy`) 설치 | pin되지 않은 원격 installer(`curl \| bash`, `irm`). 이 값만으로는 Gemini MCP 등록이 꺼지지 않는다 — 3-3의 조건은 `~/.gemini` 존재 **또는** `agy` PATH이고, 설정 배포가 그 디렉터리를 먼저 만든다 |
+| `SKIP_AGY=1` | Antigravity 설정 배포 (`config/agy/` → `~/.gemini/`) | CLI와 소유자가 달라 플래그도 별개 |
+| `SKIP_SHELLCHECK=1` | pinned shellcheck 설치 | 로컬에서 다른 버전을 쓰려는 경우. **CI는 쓰지 않는다** — pin된 artifact라 설치 경로를 그대로 검증한다 |
+| `SKIP_RHWP=1` | rhwp 설치 + MCP 등록 | pinned artifact 다운로드를 제외할 때 |
 | `GITHUB_TOKEN=...` | `gh_release_tag()` 함수 | API rate limit 우회 |
 
 Safe-Clean-Uninstall의 config/profile 시나리오처럼 외부 패키지 설치를 제외해 실행하려면:

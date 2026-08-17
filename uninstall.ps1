@@ -64,6 +64,9 @@ function Test-ArtifactAllowed([string]$Path) {
         (Join-Path $homeRoot '.gemini\config\GEMINI.md'), (Join-Path $homeRoot '.gemini\GEMINI.md'), (Join-Path $homeRoot '.gemini\config\hooks.json'),
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests\rhwp.tsv).
         (Join-Path $homeRoot 'rhwp'),
+        # shellcheck는 manifests\shellcheck.tsv의 pinned release다. Windows는 심볼릭
+        # 링크 없이 바이너리 하나만 두므로 파일 단위로 소유한다.
+        (Join-Path $homeRoot '.local\bin\shellcheck.exe'),
         # herdr는 설정만 소유한다. 바이너리는 공식 installer가 설치하고 herdr가 스스로
         # 업데이트하므로 install이 애초에 소유하지 않는다 — uninstall도 손대지 않는다.
         (Join-Path $env:APPDATA 'herdr\config.toml')

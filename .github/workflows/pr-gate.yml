@@ -43,6 +43,35 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      # 러너 이미지의 사전 설치본을 쓰지 않는다. 그 버전은 러너 이미지를 따라
+      # 움직이고(현재 ubuntu-24.04 = apt 0.9.0), 로컬 설치본과 어긋나는 순간
+      # "로컬에서는 통과하는데 CI에서 깨진다"가 시작된다. install.sh/install.ps1이
+      # 보는 것과 같은 manifests/shellcheck.tsv에서 받아 CI와 로컬을 한 버전으로 모은다.
+      - name: Install pinned ShellCheck
+        run: |
+          set -euo pipefail
+          row="$(awk -F '\t' '$1 == "linux-x86_64" { print; exit }' manifests/shellcheck.tsv)"
+          [[ -n "$row" ]] || { echo "no linux-x86_64 row in manifests/shellcheck.tsv"; exit 1; }
+          IFS=$'\t' read -r _ version _ url checksum <<< "$row"
+          bin="$RUNNER_TEMP/pinned-shellcheck"
+          mkdir -p "$bin"
+          curl --retry 3 --retry-delay 2 -fsSL -o "$RUNNER_TEMP/shellcheck.tar.gz" "$url"
+          echo "$checksum  $RUNNER_TEMP/shellcheck.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/shellcheck-v$version/shellcheck" "$bin/shellcheck"
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "SHELLCHECK_PINNED_VERSION=$version" >> "$GITHUB_ENV"
+
+      # GITHUB_PATH는 앞에 붙지만, 사전 설치본이 잡히면 게이트가 조용히 뜻을 잃는다.
+      # 실제로 해석되는 shellcheck가 pin한 그 바이너리인지 여기서 단언한다.
+      - name: Assert the pinned version is what runs
+        run: |
+          set -euo pipefail
+          test "$(command -v shellcheck)" = "$RUNNER_TEMP/pinned-shellcheck/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$SHELLCHECK_PINNED_VERSION"
+          echo "OK: shellcheck $SHELLCHECK_PINNED_VERSION"
+
       # 테스트 스크립트까지 검사한다. `! cmd` 단독(SC2251)은 errexit을 타지 않아
       # 단언이 조용히 통과하므로, 게이트 스크립트에서 특히 위험하다.
       # -z/-0: 공백·따옴표가 든 경로가 쪼개지지 않게 NUL 구분. -r: 대상이 0개일 때
@@ -58,6 +87,9 @@ jobs:
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       SKIP_HERDR: "1"
+      # Antigravity CLI는 pin되지 않은 원격 installer(curl | bash)를 탄다. herdr와 같은
+      # 정책으로 CI에서는 실행하지 않는다. shellcheck는 pinned artifact라 그대로 돌린다.
+      SKIP_AGY_CLI: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +133,13 @@ jobs:
           starship --version
           fnm --version
           bun --version
+
+          # shellcheck는 러너 이미지의 /usr/bin/shellcheck(0.9.0)가 아니라
+          # manifests/shellcheck.tsv가 pin한 ~/.local/bin 쪽이 잡혀야 한다.
+          # 이 두 단언이 lint 잡과 로컬 설치가 같은 버전을 쓴다는 계약이다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          test "$(command -v shellcheck)" = "$HOME/.local/bin/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$sc_version"
 
       # SKIP_CLAUDE_CODE=1이라 ~/.claude 배포는 건너뛴다. Codex 쪽은 항상 실행되므로
       # install.sh의 실제 role 조립 로직을 여기서 검증한다.
@@ -168,6 +207,19 @@ jobs:
       - name: Failure contract
         run: bash tests/install/failure-contract.sh
 
+      # receipt 소유권과 direct artifact 버전 게이트의 단위 계약. 네트워크를 타지 않고
+      # (curl은 스크립트 안에서 stub된다) 격리된 HOME에서만 돈다.
+      #
+      # 이 잡 뒤에 두는 이유는 두 가지가 실제 설치본을 요구하기 때문이다. jq/rg는
+      # manifests/apt.txt가 주고, direct-artifacts.sh의 정적 검사는 그중 rg를 쓴다.
+      # 그 검사는 install 스크립트에 pin되지 않은 원격 실행(`curl | sh`, latest/HEAD
+      # 경로)이 새로 들어오는 것을 막는다 — herdr와 agy 두 예외만 면제된다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
   test-macos-install:
     name: macOS install + verify
     runs-on: macos-latest
@@ -176,6 +228,9 @@ jobs:
       SKIP_CLAUDE_CODE: "1"
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
+      # Antigravity CLI는 brew formula가 없어 macOS도 원격 installer(curl | bash)를 탄다.
+      # herdr와 달리 여기서도 건너뛴다.
+      SKIP_AGY_CLI: "1"
       # SKIP_HERDR는 여기서만 걸지 않는다. macOS는 herdr 바이너리를 Brewfile이 주므로
       # install_herdr가 `command -v herdr`에서 바로 통과하고, 공식 installer(원격
       # 스크립트)는 한 줄도 실행되지 않는다. 덕분에 herdr 설정의 default merge,
@@ -249,6 +304,11 @@ jobs:
           [[ -f "$HOME/rhwp/LICENSE" ]]
           [[ "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" == "$HOME/rhwp/rhwp" ]]
 
+          # shellcheck: Brewfile이 아니라 manifests/shellcheck.tsv가 pin한 바이너리다.
+          # 이 잡은 ~/.local/bin을 PATH에 얹지 않으므로 절대 경로로 확인한다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          [[ "$("$HOME/.local/bin/shellcheck" --version | awk -F': *' '$1 == "version" { print $2 }')" == "$sc_version" ]]
+
           [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
           [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
@@ -262,6 +322,16 @@ jobs:
       - name: rhwp ownership contract
         run: bash tests/rhwp/mcp-ownership.sh
 
+      # Ubuntu·Windows 잡과 같은 단위 계약을 macOS에서도 돌린다. 두 스크립트는 BSD
+      # 계열 도구(stat, find, tar)에서 갈라지는 경로를 그대로 지나므로, 여기서 돌지
+      # 않으면 file_mode / tree_hash의 macOS 전용 회귀를 잡는 검사가 하나도 없다.
+      # Ubuntu 잡과 같은 이유로 install 뒤에 둔다 — jq/rg를 Brewfile이 준다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
   test-windows-install:
     name: Windows install + verify
     runs-on: windows-latest
@@ -272,6 +342,11 @@ jobs:
       SKIP_SKILLS: "1"
       SKIP_PLUGINS: "1"
       SKIP_HERDR: "1"
+      # Antigravity CLI는 pin되지 않은 원격 installer(irm | iex)를 탄다. herdr와 같은
+      # 정책으로 CI에서는 실행하지 않는다. shellcheck는 pinned artifact라 그대로 돌린다
+      # (SKIP_PACKAGES와 무관한 별도 단계다 — User PATH를 건드리지 않으므로 아래
+      # "config install changed User PATH" 단언과 충돌하지 않는다).
+      SKIP_AGY_CLI: "1"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -281,10 +356,27 @@ jobs:
         run: pwsh -NoProfile -File tests/install/failure-contract.ps1
 
       # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
-      # TOML 편집을 하므로 여기서만 따로 확보한다.
-      - name: Ensure yq
+      # TOML 편집을 하고, tests/ownership/install-receipt.ps1이 receipt를 jq로 읽으므로
+      # 여기서만 따로 확보한다.
+      - name: Ensure yq and jq
         shell: pwsh
-        run: if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { choco install yq -y --no-progress }
+        run: |
+          foreach ($tool in 'yq', 'jq') {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { choco install $tool -y --no-progress }
+          }
+
+      # receipt 소유권과 direct file 버전 게이트의 단위 계약. 네트워크 없이 격리된
+      # USERPROFILE에서만 돌아 설치 전에 세울 수 있다. Get-DirectFileState /
+      # Set-DirectFileVersion의 upgrade / upgrade-blocked / modified 상태를 단언하는
+      # 유일한 검사라, 여기 없으면 shellcheck의 pin 계약이 회귀해도 보드가 초록으로 남는다
+      # (아래 install 잡은 fresh HOME이라 new -> current 전이만 지난다).
+      - name: Receipt ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/install-receipt.ps1
+
+      - name: Direct artifact ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/direct-artifacts.ps1
 
       - name: Run isolated config install twice
         shell: pwsh
@@ -320,6 +412,13 @@ jobs:
           if ((& $rhwpExe --version) -cne "rhwp v$version") { throw 'rhwp version mismatch' }
           if (-not (Test-Path (Join-Path $env:USERPROFILE 'rhwp\LICENSE'))) { throw 'rhwp archive not fully deployed' }
           if ((& yq -p=toml -o=json -r '.mcp_servers.rhwp.command' (Join-Path $env:USERPROFILE '.codex\config.toml')) -cne $rhwpExe) { throw 'codex MCP command is not the absolute tree path' }
+          # shellcheck: winget이 아니라 manifests\shellcheck.tsv가 pin한 바이너리다.
+          # 첫 행이 windows-x86_64라 rhwp와 같은 방식으로 버전을 읽는다.
+          $scVersion = (Get-Content manifests\shellcheck.tsv | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } | Select-Object -First 1).Split("`t")[1]
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck was not installed' }
+          $scReported = @(& $scExe --version) | ForEach-Object { if ($_ -match '^\s*version:\s*(\S+)\s*$') { $Matches[1] } } | Select-Object -First 1
+          if ($scReported -cne $scVersion) { throw "shellcheck reports '$scReported', expected '$scVersion'" }
           # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
           $inputrc = Get-Content (Join-Path $env:USERPROFILE '.inputrc') -Raw
           foreach ($line in '$include /etc/inputrc', 'set input-meta on', 'set convert-meta off') {
@@ -407,6 +506,16 @@ jobs:
           source ./install.sh
           validate_rhwp_manifest manifests/rhwp.tsv
           echo "OK: manifests/rhwp.tsv"
+
+      # shellcheck manifest도 같은 이유로 install.sh의 실제 validator를 쓴다.
+      - name: Validate shellcheck manifest
+        run: |
+          set -euo pipefail
+          export DOTFILES_FUNCTIONS_ONLY=1
+          # shellcheck disable=SC1091
+          source ./install.sh
+          validate_shellcheck_manifest manifests/shellcheck.tsv
+          echo "OK: manifests/shellcheck.tsv"
 
   test-agent-roles:
     name: Agent role sources + composition

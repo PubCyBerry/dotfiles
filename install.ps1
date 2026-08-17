@@ -525,6 +525,47 @@ function Install-ManagedDirectTree([string]$SourceDir, [string]$DestDir, [string
     return $true
 }
 
+function Get-DirectFileState([string]$Path, [string]$Version) {
+    # Unix install.sh의 direct_anchor_state와 같은 계약을 파일 단위로 준다.
+    # Install-ManagedFile은 소유권(installedHash)만 보므로 manifest 버전이 올라가면
+    # 조용히 새 바이너리로 갈아탄다 — lint 도구처럼 버전이 곧 규칙 집합인 artifact는
+    # 그 교체가 눈에 보여야 하므로 directVersion을 따로 들고 비교한다.
+    #
+    # 반환 State: new | recover | current | modified | upgrade | upgrade-blocked
+    $result = @{ State = 'new'; InstalledVersion = '' }
+    if (-not $script:ReceiptReady) { return $result }
+    $entry = $script:Receipt.artifacts[(Get-ManagedPath $Path)]
+    if (-not $entry) { return $result }
+    # pending이거나 directVersion이 없으면(구 설치본) 판정할 근거가 없다.
+    # recover로 두어 아래에서 정상 설치 경로를 다시 태운다.
+    if ($entry.pending) { $result.State = 'recover'; return $result }
+    $installed = if ($entry.Contains('directVersion')) { [string]$entry.directVersion } else { '' }
+    $result.InstalledVersion = $installed
+    if (-not $installed) { $result.State = 'recover'; return $result }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        -not $entry.installedHash -or
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.installedHash) {
+        $result.State = 'modified'; return $result
+    }
+    if ($installed -cne $Version) {
+        $result.State = if ($env:DOTFILES_UPGRADE_DIRECT -eq '1') { 'upgrade' } else { 'upgrade-blocked' }
+        return $result
+    }
+    $result.State = 'current'
+    return $result
+}
+
+function Set-DirectFileVersion([string]$Path, [string]$Version) {
+    if (-not $script:ReceiptReady) { return $false }
+    $entry = $script:Receipt.artifacts[(Get-ManagedPath $Path)]
+    if (-not $entry -or $entry.pending -or $entry.Contains('installedTreeHash')) { return $false }
+    if ($entry.directVersion -ceq $Version) { return $true }
+    $entry.directVersion = $Version
+    Save-InstallReceipt
+    return $true
+}
+
 function Sync-ManagedFileHash([string]$Path) {
     # `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
     # receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
@@ -972,6 +1013,9 @@ function Install-ManagedMcpServer([string]$McpHost, [string]$Name, [string]$Path
 # ---------------------------------------------
 # rhwp: 공식 archive 전체를 ~/rhwp tree에 두고 MCP를 등록한다.
 # ---------------------------------------------
+# shellcheck 쪽 Test-ShellCheckManifestRows와 같은 이유로 비교를 전부 case-sensitive로
+# 쓴다. install.sh의 validate_rhwp_manifest는 awk 정규식이라 대소문자를 가리는데,
+# 여기서만 통과시키면 아래 -ceq 행 선택이 $null을 집어 terminating error가 된다.
 function Test-RhwpManifestRows([object[]]$Rows) {
     if ($Rows.Count -ne 4) { return $false }
     $platforms = @('windows-x86_64','linux-x86_64','macos-x86_64','macos-aarch64')
@@ -979,13 +1023,22 @@ function Test-RhwpManifestRows([object[]]$Rows) {
     foreach ($row in $Rows) {
         if ($row.Count -ne 5) { return $false }
         $platform, $version, $format, $url, $checksum = $row
-        if ($platform -notin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        if ($platform -cnotin $platforms -or $seen.ContainsKey($platform)) { return $false }
         $seen[$platform] = $true
-        if ($version -notmatch '^\d+\.\d+\.\d+$' -or $format -notin @('tgz','zip')) { return $false }
-        if ($url -notmatch '^https://github\.com/edwardkim/rhwp/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -match '/(latest|HEAD|main)/') { return $false }
-        if ($checksum -notmatch '^[0-9a-f]{64}$') { return $false }
+        if ($version -cnotmatch '^\d+\.\d+\.\d+$' -or $format -cnotin @('tgz','zip')) { return $false }
+        if ($url -cnotmatch '^https://github\.com/edwardkim/rhwp/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -cmatch '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -cnotmatch '^[0-9a-f]{64}$') { return $false }
     }
     return $true
+}
+
+# rhwp는 버전을 한 줄로 뱉는다(`rhwp v<version>`). 기동 실패를 흡수하는 이유는
+# Get-ShellCheckReportedVersion과 같다 — $ErrorActionPreference = 'Stop' 아래에서
+# native command가 뜨지 못하면 terminating error가 되어, Add-InstallFailure로
+# 모이는 이 함수의 다른 실패들과 달리 install.ps1 자체를 끝낸다.
+function Get-RhwpReportedVersion([string]$Exe) {
+    try { return (@(& $Exe --version 2>$null) -join "`n").Trim() }
+    catch { return '' }
 }
 
 function Install-Rhwp {
@@ -1001,6 +1054,9 @@ function Install-Rhwp {
         return $true
     }
     $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    # validator를 통과했으면 반드시 있다. 없을 때 $row[1]은 terminating error가 되어
+    # Add-InstallFailure 계약을 건너뛰므로 명시적으로 잡는다.
+    if (-not $row) { Add-InstallFailure 'No windows-x86_64 row in manifests\rhwp.tsv'; return $false }
     $version = $row[1]; $url = $row[3]; $checksum = $row[4]
     $desired = "{`"command`":$(ConvertTo-Json ((Join-Path $RhwpDir 'rhwp.exe')) -Compress),`"args`":[`"mcp-serve`"]}"
 
@@ -1034,7 +1090,7 @@ function Install-Rhwp {
             }
             $binary = Join-Path $tree 'rhwp.exe'
             if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { Add-InstallFailure "rhwp binary missing in archive: $url"; return $false }
-            $reported = (@(& $binary --version 2>$null) -join "`n").Trim()
+            $reported = Get-RhwpReportedVersion $binary
             if ($reported -cne "rhwp v$version") {
                 Add-InstallFailure "rhwp binary reports '$reported', expected 'rhwp v$version'"; return $false
             }
@@ -1066,6 +1122,154 @@ function Install-Rhwp {
         Write-Host "    Antigravity not present; skipping ~/.gemini/config/mcp_config.json MCP registration."
     }
     if (-not $ok) { Add-InstallFailure 'rhwp MCP registration incomplete.'; return $false }
+    return $true
+}
+
+# ---------------------------------------------
+# ShellCheck: pinned release 하나를 CI와 세 OS가 함께 쓴다.
+#
+# 패키지 매니저를 쓰지 않는 이유는 어느 것도 한 버전으로 모이지 않기 때문이다.
+# winget의 koalaman.shellcheck는 최신으로 흐르고, apt는 배포판에 묶여
+# 22.04=0.8.0 / 24.04=0.9.0을 주며, GitHub Actions ubuntu-24.04 러너의 사전 설치본은
+# 러너 이미지를 따라 움직인다(현재 0.9.0).
+#
+# 버전 차이는 그대로 오탐·미탐이 된다. 0.11.0에서 SC2002가 기본 비활성으로 바뀌고
+# SC2327~SC2332, SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는
+# 실패한다(반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
+# ---------------------------------------------
+# 비교 연산자를 전부 case-sensitive(-c*)로 쓴다. install.sh의
+# validate_shellcheck_manifest는 awk 정규식이라 대소문자를 가리는데, PowerShell의
+# -in/-match/-eq는 기본이 case-insensitive다. 그대로 두면 `Windows-x86_64` 같은 행이
+# 이 validator만 통과하고, 뒤의 행 선택은 -ceq라 $null을 집어 "Cannot index into a
+# null array"로 죽는다. 두 validator가 같은 manifest를 같게 판정해야 한다.
+function Test-ShellCheckManifestRows([object[]]$Rows) {
+    if ($Rows.Count -ne 5) { return $false }
+    $platforms = @('windows-x86_64','linux-x86_64','linux-aarch64','macos-x86_64','macos-aarch64')
+    $seen = @{}
+    $pinned = $null
+    foreach ($row in $Rows) {
+        if ($row.Count -ne 5) { return $false }
+        $platform, $version, $format, $url, $checksum = $row
+        if ($platform -cnotin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        $seen[$platform] = $true
+        if ($version -cnotmatch '^\d+\.\d+\.\d+$' -or $format -cnotin @('tgz','zip')) { return $false }
+        # 다섯 행이 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
+        if (-not $pinned) { $pinned = $version } elseif ($version -cne $pinned) { return $false }
+        if ($url -cnotmatch '^https://github\.com/koalaman/shellcheck/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -cmatch '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -cnotmatch '^[0-9a-f]{64}$') { return $false }
+    }
+    return $true
+}
+
+# `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+#
+# 기동 실패를 여기서 흡수한다. $ErrorActionPreference = 'Stop' 아래에서 native command가
+# 아예 뜨지 못하면 terminating error가 되는데, install.ps1에는 top-level try/trap이 없고
+# Invoke-OptionalInstallStage도 bare `& $Action`이라 그 예외가 스크립트를 그대로 끝낸다.
+# 그러면 1-8에서 죽어 뒤따르는 단계(Node, npm, Codex, Claude, agy, rhwp, 프로파일,
+# skills, plugins)가 통째로 건너뛰어진다 — 같은 함수의 다른 실패는 전부
+# Add-InstallFailure로 모여 설치가 계속되는데 이 경로만 빠져나가는 셈이다.
+# 실제로 그럴 수 있는 환경이 있다: %TEMP% 실행을 막는 AppLocker/WDAC 기본 규칙,
+# 추출 직후 파일을 잡고 있는 AV, x64 에뮬레이션이 없는 ARM64 Windows 10.
+# $null을 돌려주면 호출부의 "reports '', expected ..." 분기가 받아 준다 —
+# Unix 쪽 `"$binary" --version ... || true`와 같은 계약이다.
+function Get-ShellCheckReportedVersion([string]$Exe) {
+    try {
+        foreach ($line in @(& $Exe --version 2>$null)) {
+            if ($line -match '^\s*version:\s*(\S+)\s*$') { return $Matches[1] }
+        }
+    } catch {
+        return $null
+    }
+    return $null
+}
+
+function Install-ShellCheck {
+    $manifest = Join-Path $ROOT 'manifests\shellcheck.tsv'
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { Add-InstallFailure 'Required manifest missing: manifests\shellcheck.tsv'; return $false }
+    $rows = @(Get-Content -LiteralPath $manifest |
+        Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } |
+        ForEach-Object { , @($_ -split "`t") })
+    if (-not (Test-ShellCheckManifestRows $rows)) { Add-InstallFailure 'Invalid manifests\shellcheck.tsv'; return $false }
+    # 판정 기준은 OS 비트수 하나다. PROCESSOR_ARCHITECTURE로 가르면 ARM64 머신에서
+    # 스크립트를 네이티브 pwsh로 띄웠는지 x64 에뮬레이션으로 띄웠는지에 따라
+    # 설치 여부가 갈린다(ARM64 / AMD64). Windows 11 ARM64는 x86_64 PE를 그대로
+    # 실행하므로 같은 manifest 행을 쓰고, 정말 못 도는 바이너리는 아래 --version
+    # 대조가 실패로 잡는다.
+    if (-not [Environment]::Is64BitOperatingSystem) {
+        Write-Host "    [!] Unsupported shellcheck platform: 32-bit Windows; skipping."
+        return $true
+    }
+    $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    # validator를 통과했으면 이 행은 반드시 있다. 그래도 확인하고 간다 — 없을 때
+    # $row[1]은 "Cannot index into a null array" terminating error가 되어 아래의
+    # Add-InstallFailure 계약을 건너뛰고 install 전체를 끊는다.
+    if (-not $row) { Add-InstallFailure 'No windows-x86_64 row in manifests\shellcheck.tsv'; return $false }
+    $version = $row[1]; $format = $row[2]; $url = $row[3]; $checksum = $row[4]
+    if ($format -cne 'zip') { Add-InstallFailure "Unsupported shellcheck archive format for Windows: $format"; return $false }
+
+    # ~\.local\bin은 config\powershell\profile.ps1과 config\bash\bashrc가 세션 PATH 앞에
+    # 두므로 pwsh와 Git Bash 양쪽에서 잡힌다. User PATH(레지스트리)는 건드리지 않는다.
+    $dest = Join-Path $LocalBin 'shellcheck.exe'
+    # Unix install.sh의 direct_anchor_state와 같은 계약이다. 소유권(installedHash)과
+    # 버전(directVersion)이 둘 다 맞을 때만 내려받기를 건너뛰고, manifest 버전이
+    # 올라갔으면 DOTFILES_UPGRADE_DIRECT=1 없이는 바꾸지 않는다 — lint 규칙 집합이
+    # 조용히 바뀌지 않게 하려는 것이다.
+    $anchor = Get-DirectFileState $dest $version
+    switch ($anchor.State) {
+        'current' {
+            Write-Host "    shellcheck $version already installed: $dest"
+            return $true
+        }
+        'modified' {
+            Add-InstallFailure "Managed shellcheck changed; preserving: $dest"
+            return $false
+        }
+        'upgrade-blocked' {
+            Add-InstallFailure "shellcheck $($anchor.InstalledVersion) -> $version requires DOTFILES_UPGRADE_DIRECT=1"
+            return $false
+        }
+        'upgrade' { Write-Host "    Upgrading shellcheck: $($anchor.InstalledVersion) -> $version" }
+    }
+
+    $work = Join-Path ([IO.Path]::GetTempPath()) "dotfiles-shellcheck.$([guid]::NewGuid())"
+    New-Item -ItemType Directory -Force -Path $work | Out-Null
+    try {
+        $archive = Join-Path $work 'shellcheck.zip'
+        try { Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing -MaximumRetryCount 3 -RetryIntervalSec 2 }
+        catch { Add-InstallFailure "shellcheck download failed: $url"; return $false }
+        $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -cne $checksum) { Add-InstallFailure "shellcheck SHA-256 mismatch: $url"; return $false }
+        $extract = Join-Path $work 'extract'
+        try { Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force }
+        catch { Add-InstallFailure "shellcheck archive extraction failed: $url"; return $false }
+
+        # Windows zip은 Unix tarball과 달리 최상위에 파일을 바로 담는다
+        # (LICENSE.txt / README.txt / shellcheck.exe). 감쌀 디렉터리가 없다.
+        $binary = Join-Path $extract 'shellcheck.exe'
+        if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { Add-InstallFailure "shellcheck binary missing in archive: $url"; return $false }
+        $reported = Get-ShellCheckReportedVersion $binary
+        if ($reported -cne $version) {
+            Add-InstallFailure "shellcheck binary reports '$reported', expected '$version'"; return $false
+        }
+        # Skip: 사용자가 직접 둔 shellcheck.exe가 있으면 보존한다. 다만 그 상태로는 이후
+        # 모든 실행이 같은 자리에서 실패하므로(다른 direct artifact와 달리 PATH의 기존
+        # 설치본에 양보할 수 없다 — 양보하면 pin이 무력해진다) 대응 방법을 메시지에 적는다.
+        if (-not (Install-ManagedFile $binary $dest Skip)) {
+            if ($anchor.State -ceq 'new' -and $null -ne (Get-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue)) {
+                Add-InstallFailure "shellcheck not installed: $dest exists but is not managed by dotfiles. Remove it and re-run (see docs/tools.md)."
+            } else {
+                Add-InstallFailure "shellcheck not installed: $dest"
+            }
+            return $false
+        }
+        # 다음 실행이 버전을 대조할 근거. 기록에 실패하면 그때 upgrade 게이트가 무력해지므로
+        # 성공으로 넘기지 않는다.
+        if (-not (Set-DirectFileVersion $dest $version)) { Add-InstallFailure "shellcheck version not recorded: $dest"; return $false }
+        Write-Host "    shellcheck $version -> $dest"
+    } finally {
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
     return $true
 }
 
@@ -1244,6 +1448,90 @@ function Deploy-HerdrConfig {
     } finally {
         Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
     }
+}
+
+# ---------------------------------------------
+# Antigravity CLI(agy): 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# herdr와 같은 예외이며 근거도 같은 모양이다.
+#  1. CLI가 스스로 업데이트한다. 공식 installer가 "The Antigravity CLI automatically
+#     self-updates in the background during regular runs"라고 직접 밝힌다. receipt로
+#     바이너리를 잡으면 첫 실행 직후 해시가 어긋나 "changed; preserving"으로 굳는다.
+#  2. pin할 대상이 없다. 배포가 버전 없는 auto-updater manifest 엔드포인트를 거치고,
+#     GitHub 릴리즈는 2~3일에 하나씩 나온다.
+#
+# winget에도 Google.AntigravityCLI가 있지만 쓰지 않는다. Google이 올린 것이 아니라
+# 봇(YamlCreate Dumplings Mod)이 만든 커뮤니티 manifest이고, portable 타입이라
+# 바이너리가 다른 두 OS와 또 다른 자리(WinGet Packages/Links)에 놓인다. 게다가 위
+# 1번 때문에 winget이 기록한 버전은 첫 실행 직후 낡는다.
+# ---------------------------------------------
+$AgyInstallUrl = 'https://antigravity.google/cli/install.ps1'
+$AgyBinDir     = Join-Path $env:LOCALAPPDATA 'agy\bin'
+
+function Get-AgyCommand {
+    $cmd = Get-Command agy -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $known = Join-Path $AgyBinDir 'agy.exe'
+    if (Test-Path -LiteralPath $known -PathType Leaf) { return $known }
+    return $null
+}
+
+function Install-AgyCli {
+    $existing = Get-AgyCommand
+    if ($existing) {
+        Write-Host "    Antigravity CLI already installed: $existing"
+        Write-Host "    agy manages its own updates (background self-update on regular runs)."
+        return $true
+    }
+    # 실패는 경고로만 남긴다(Add-InstallFailure 아님) — herdr와 같은 이유다. 소유하지
+    # 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로 만들지 않는다.
+    Write-Host "    Running the official Antigravity CLI installer: $AgyInstallUrl"
+    try {
+        $agyInstaller = Invoke-RestMethod -Uri $AgyInstallUrl -UseBasicParsing
+    } catch {
+        Write-Host "    [!] Antigravity CLI installer download failed: $AgyInstallUrl"
+        return $false
+    }
+    if (-not $agyInstaller) {
+        Write-Host "    [!] Antigravity CLI installer returned an empty script: $AgyInstallUrl"
+        return $false
+    }
+    # herdr와 같은 이유로 자식 프로세스에 격리한다. 이 installer도 sourcing이 아닐 때
+    # 최상위에서 `exit $exitCode`를 호출하므로, 같은 프로세스에서 돌리면 그 exit가
+    # try/catch를 무시하고 install.ps1 자체를 끝낸다 — 이후 단계(Codex, Claude,
+    # 프로파일, skills, plugins)가 통째로 건너뛰어지고 종료 코드는 0이라 성공으로 보인다.
+    $pwshExe = Join-Path $PSHOME 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
+        Write-Host "    [!] Antigravity CLI installer skipped: could not locate pwsh.exe in $PSHOME"
+        return $false
+    }
+    $installerFile = Join-Path ([IO.Path]::GetTempPath()) ("agy-install-{0}.ps1" -f [guid]::NewGuid().ToString('N'))
+    try {
+        Set-Content -LiteralPath $installerFile -Value $agyInstaller -Encoding utf8
+        & $pwshExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installerFile
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    [!] Antigravity CLI installer failed (exit $LASTEXITCODE): $AgyInstallUrl"
+            return $false
+        }
+    } catch {
+        Write-Host "    [!] Antigravity CLI installer failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $installerFile -Force -ErrorAction SilentlyContinue
+    }
+    # installer가 User PATH를 고쳐도 현재 프로세스에는 반영되지 않는다. 뒤따르는
+    # 3-3(rhwp)이 `Get-Command agy`로 Gemini MCP 등록 여부를 판단하므로 이번 세션
+    # PATH에만 얹는다.
+    if ((Test-Path -LiteralPath $AgyBinDir) -and (($env:PATH -split ';') -notcontains $AgyBinDir)) {
+        $env:PATH = "$AgyBinDir;$env:PATH"
+    }
+    $installed = Get-AgyCommand
+    if (-not $installed) {
+        Write-Host '    [!] Antigravity CLI installer finished but agy was not found.'
+        return $false
+    }
+    Write-Host "    Antigravity CLI installed: $installed"
+    return $true
 }
 
 function Invoke-FnmPruneIfRequested {
@@ -1606,6 +1894,17 @@ Invoke-OptionalInstallStage 'SKIP_HERDR' "==> [CI] Skipping herdr (SKIP_HERDR=1)
 }
 
 # =============================================
+# 1-8. shellcheck 설치 (manifests\shellcheck.tsv → ~\.local\bin\shellcheck.exe)
+#
+# CI(pr-gate.yml의 lint 잡)와 같은 pinned 버전을 쓴다.
+# =============================================
+Invoke-OptionalInstallStage 'SKIP_SHELLCHECK' "==> [CI] Skipping shellcheck (SKIP_SHELLCHECK=1)" {
+    Write-Host ""
+    Write-Host "==> Installing pinned shellcheck..."
+    $null = Install-ShellCheck
+}
+
+# =============================================
 # 2. Node.js LTS 설치 (fnm)
 # =============================================
 function Invoke-NodePackagesStage {
@@ -1868,8 +2167,20 @@ if (Test-Path $rolesSrc) {
 }
 
 # =============================================
-# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+#
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때
+# Gemini MCP를 등록하는데, 설정 배포(SKIP_AGY 미설정)가 그 디렉터리를 먼저 만들므로
+# 보통은 디렉터리 쪽에서 먼저 걸린다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는
+# `SKIP_AGY=1`(설정 생략)로 디렉터리가 없을 때다 — 그때도 MCP 등록이 이뤄진다.
+# 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
 # =============================================
+Invoke-OptionalInstallStage 'SKIP_AGY_CLI' "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" {
+    Write-Host ""
+    Write-Host "==> Installing Antigravity CLI (agy)..."
+    $null = Install-AgyCli
+}
+
 Write-Host ""
 Invoke-OptionalInstallStage 'SKIP_AGY' "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" {
     Write-Host "==> Deploying Antigravity (AGY) config..."

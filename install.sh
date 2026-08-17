@@ -1042,6 +1042,127 @@ install_rhwp() {
 }
 
 # ---------------------------------------------
+# ShellCheck: pinned release 하나를 CI와 세 OS가 함께 쓴다.
+# (이 줄을 `# shellcheck`로 시작하면 ShellCheck가 directive로 읽어 SC1073으로 죽는다)
+#
+# 패키지 매니저를 쓰지 않는 이유는 어느 것도 한 버전으로 모이지 않기 때문이다.
+# apt는 배포판에 묶여 22.04=0.8.0 / 24.04=0.9.0 / 26.04=0.11.0을 주고, brew에는
+# versioned formula가 없어 늘 최신으로 흐르며, GitHub Actions ubuntu-24.04 러너의
+# 사전 설치본은 러너 이미지를 따라 움직인다(현재 0.9.0).
+#
+# 버전 차이는 그대로 오탐·미탐이 된다. 0.11.0에서 SC2002(useless use of cat)가
+# 기본 비활성으로 바뀌고 SC2236/SC2237이 optional로 내려갔으며 SC2327~SC2332,
+# SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는 실패한다
+# (반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
+# ---------------------------------------------
+shellcheck_platform() {
+    local machine
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+    case "$OS:$machine" in
+        Linux:x86_64|Linux:amd64) echo linux-x86_64 ;;
+        Linux:aarch64|Linux:arm64) echo linux-aarch64 ;;
+        Darwin:x86_64) echo macos-x86_64 ;;
+        Darwin:arm64|Darwin:aarch64) echo macos-aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 다섯 플랫폼 행이 모두 있고 전부 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
+# 한 행만 올라가면 그 플랫폼만 다른 버전을 받게 되어 pin의 의미가 사라진다.
+validate_shellcheck_manifest() {
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 5 || $1 !~ /^(windows-x86_64|linux-x86_64|linux-aarch64|macos-x86_64|macos-aarch64)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(tgz|zip)$/ || $4 !~ /^https:\/\/github\.com\/koalaman\/shellcheck\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/[^[:space:]]+$/ || $4 ~ /\/(latest|HEAD|main)\// || $5 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1]++ { bad=1; exit }
+      { count++; if (pinned == "") pinned = $2; else if ($2 != pinned) bad=1 }
+      END { exit (bad || count != 5) }
+    ' "$1"
+}
+
+# manifest에서 shellcheck를 뺐다고 이미 깔린 패키지가 사라지지는 않는다 — install은 남의
+# 소유 패키지를 제거하지 않는다(Safe-Clean-Install). 그래서 이 PR 이전에 프로비저닝한
+# 머신에는 apt/brew 설치분이 pin한 쪽과 그대로 공존하고, 어느 쪽이 잡히는지는 그 순간의
+# PATH가 정한다. ~/.bashrc 마커 블록을 읽지 않는 소비자 — VS Code ShellCheck 확장,
+# 프로파일을 거치지 않은 셸의 Makefile, PATH가 씻긴 sudo — 는 계속 구버전을 보고,
+# CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
+#
+# 정리 명령은 docs/tools.md에 있지만 문서만으로는 알아차릴 계기가 없다. 설치가 끝난
+# 자리에서 한 줄로 알린다. 알림에 그치고 실패로 기록하지 않는다 — 남의 소유 패키지라
+# 이 스크립트가 지울 대상이 아니다.
+warn_legacy_shellcheck_package() {
+    local owner=""
+    if command -v dpkg >/dev/null 2>&1 && dpkg -s shellcheck >/dev/null 2>&1; then
+        owner=apt
+    elif command -v brew >/dev/null 2>&1 && brew list --formula shellcheck >/dev/null 2>&1; then
+        owner=brew
+    fi
+    [[ -n "$owner" ]] || return 0
+    echo "    [!] An older $owner-managed shellcheck is still installed alongside the pinned one."
+    echo "        Remove it so every consumer sees one version (see docs/tools.md)."
+    return 0
+}
+
+install_shellcheck() {
+    local manifest="$ROOT/manifests/shellcheck.tsv" platform row version format url checksum
+    local work archive extract binary reported anchor
+    [[ -f "$manifest" ]] || { record_install_failure "Required manifest missing: manifests/shellcheck.tsv"; return 1; }
+    validate_shellcheck_manifest "$manifest" || { record_install_failure "Invalid manifests/shellcheck.tsv"; return 1; }
+    if ! platform="$(shellcheck_platform)"; then
+        echo "    [!] Unsupported shellcheck platform: $OS $(uname -m 2>/dev/null); skipping."
+        return 0
+    fi
+    row="$(awk -F '\t' -v p="$platform" '$1 == p { print; exit }' "$manifest")"
+    [[ -n "$row" ]] || { record_install_failure "No shellcheck manifest row for platform: $platform"; return 1; }
+    IFS=$'\t' read -r _ version format url checksum <<< "$row"
+
+    # ~/.local/bin은 bashrc 마커 블록이 PATH 맨 앞에 두므로, 배포판이 apt로 깐
+    # /usr/bin/shellcheck가 남아 있어도 pin한 쪽이 먼저 잡힌다.
+    anchor="$LOCAL_BIN/shellcheck"
+    direct_anchor_state "$anchor" "$version"
+    case "$DIRECT_STATE" in
+        current) echo "    shellcheck $version already installed: $anchor"; warn_legacy_shellcheck_package; return 0 ;;
+        modified) record_install_failure "Managed shellcheck changed; preserving: $anchor"; return 1 ;;
+        upgrade-blocked)
+            record_install_failure "shellcheck $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1"
+            return 1 ;;
+        upgrade) echo "    Upgrading shellcheck: $DIRECT_INSTALLED_VERSION -> $version" ;;
+    esac
+
+    work="$(mktemp -d)"; _TMPFILES+=("$work")
+    archive="$work/archive"; extract="$work/extract"; mkdir -p "$extract"
+    download_verified "$url" "$checksum" "$archive" || { record_install_failure "shellcheck archive verification failed: $url"; return 1; }
+    case "$format" in
+        tgz) tar -xzf "$archive" -C "$extract" ;;
+        zip) unzip -q "$archive" -d "$extract" ;;
+        *)   record_install_failure "Unsupported shellcheck archive format: $format"; return 1 ;;
+    esac || { record_install_failure "shellcheck archive extraction failed: $url"; return 1; }
+
+    # 공식 tarball은 shellcheck-v<version>/ 한 겹 아래에 binary와 문서를 담는다.
+    # 경로에 버전이 박혀 있어, 엉뚱한 릴리즈를 받았다면 여기서 걸린다.
+    binary="$extract/shellcheck-v$version/shellcheck"
+    [[ -f "$binary" && ! -L "$binary" ]] || { record_install_failure "shellcheck binary missing in archive: $url"; return 1; }
+    chmod 755 "$binary" || return 1
+    # `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+    reported="$("$binary" --version 2>/dev/null | awk -F': *' '$1 == "version" { print $2; exit }' || true)"
+    [[ "$reported" == "$version" ]] || {
+        record_install_failure "shellcheck binary reports '${reported:-unknown}', expected '$version'"; return 1
+    }
+    install_direct_file shellcheck "$version" "$binary" "$anchor" || {
+        # 가장 흔한 원인은 사용자가 손으로 둔 파일이다. skip 계약상 이 저장소는 남의 파일을
+        # 덮지 않고, 다른 direct artifact처럼 PATH의 기존 설치본에 양보할 수도 없다
+        # (양보하면 apt의 0.9.0이 pin을 이긴다). 그래서 안내가 없으면 그 머신의 install이
+        # 매 실행 같은 자리에서 실패한다 — 대응 방법을 실패 메시지에 함께 적는다.
+        if [[ "$DIRECT_STATE" == new ]] && [[ -e "$anchor" || -L "$anchor" ]]; then
+            record_install_failure "shellcheck not installed: $anchor exists but is not managed by dotfiles. Remove it and re-run (see docs/tools.md)."
+        else
+            record_install_failure "shellcheck not installed: $anchor"
+        fi
+        return 1
+    }
+    warn_legacy_shellcheck_package
+}
+
+# ---------------------------------------------
 # herdr: 공식 installer(macOS는 Brewfile)에 맡기고, 설정만 이 저장소가 소유한다.
 #
 # rhwp와 달리 pinned artifact로 관리하지 않는다. herdr는 자체 업데이터를 갖기 때문에
@@ -1103,6 +1224,47 @@ deploy_herdr_config() {
     # 두는 예외와 같은 이유다 — herdr가 config를 다시 쓰면서 남기는 빈 값이 우리
     # 기본값을 덮으면, 이 파일의 존재 이유인 macOS login 셸 동작이 조용히 죽는다.
     merge_codex_config "$src" "$dst" .terminal.shell_mode
+}
+
+# ---------------------------------------------
+# Antigravity CLI(agy): 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# herdr와 같은 예외이며 근거도 같은 모양이다.
+#  1. CLI가 스스로 업데이트한다. 공식 installer가 "The Antigravity CLI automatically
+#     self-updates in the background during regular runs"라고 직접 밝힌다. receipt로
+#     바이너리를 잡으면 첫 실행 직후 해시가 어긋나 "changed; preserving"으로 굳는다.
+#  2. pin할 대상이 없다. 배포가 버전 없는 auto-updater manifest 엔드포인트를 거치고,
+#     GitHub 릴리즈는 2~3일에 하나씩 나온다. 그 속도로 SHA-256을 옮기는 것은
+#     manifests/*.tsv가 지키려는 "검토한 바이너리만 들어온다"와 실질이 다르다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다. 설정(config/agy/)만
+# 이 저장소가 소유하며 그쪽은 SKIP_AGY가 따로 관리한다.
+# ---------------------------------------------
+AGY_INSTALL_URL="https://antigravity.google/cli/install.sh"
+
+install_agy_cli() {
+    if command -v agy >/dev/null 2>&1; then
+        echo "    Antigravity CLI already installed: $(command -v agy)"
+        echo "    agy manages its own updates (background self-update on regular runs)."
+        return 0
+    fi
+    # 실패는 경고로만 남긴다(record_install_failure 아님) — herdr와 같은 이유다.
+    # 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로
+    # 만들지 않는다. 다음 실행이나 agy 자체 업데이트로 복구된다.
+    echo "    Running the official Antigravity CLI installer: $AGY_INSTALL_URL"
+    # sh가 아니라 bash로 파이프한다 — installer가 `set -euo pipefail`을 쓰는데
+    # dash(우분투의 /bin/sh)에는 pipefail이 없어 첫 줄에서 죽는다.
+    if ! curl -fsSL "$AGY_INSTALL_URL" | bash; then
+        echo "    [!] Antigravity CLI installer failed: $AGY_INSTALL_URL"
+        return 1
+    fi
+    # installer는 프로파일을 건드리지 않는다. 뒤따르는 단계(rhwp의 Gemini MCP 등록)가
+    # agy를 찾을 수 있도록 기본 설치 경로를 이번 셸 PATH에만 얹는다.
+    add_to_path_runtime "$LOCAL_BIN"
+    if ! command -v agy >/dev/null 2>&1; then
+        echo "    [!] Antigravity CLI installer finished but agy was not found."
+        return 1
+    fi
+    echo "    Antigravity CLI installed: $(command -v agy)"
 }
 
 set_managed_git_value() {
@@ -1914,6 +2076,19 @@ install_herdr_stage() {
 run_optional_stage SKIP_HERDR "==> [CI] Skipping herdr (SKIP_HERDR=1)" install_herdr_stage
 
 # =============================================
+# 1-8. shellcheck 설치 (manifests/shellcheck.tsv → ~/.local/bin/shellcheck)
+#
+# CI(pr-gate.yml의 lint 잡)와 같은 pinned 버전을 쓴다. 패키지 단계 뒤에 두는 이유는
+# receipt 기록에 jq가 필요하기 때문이다 — Linux는 apt, macOS는 Brewfile이 준다.
+# =============================================
+install_shellcheck_stage() {
+    echo
+    echo "==> Installing pinned shellcheck..."
+    install_shellcheck || true
+}
+run_optional_stage SKIP_SHELLCHECK "==> [CI] Skipping shellcheck (SKIP_SHELLCHECK=1)" install_shellcheck_stage
+
+# =============================================
 # 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)
 # =============================================
 echo
@@ -2082,8 +2257,21 @@ install_claude_code_stage() {
 run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
 
 # =============================================
-# 3-2. Antigravity (AGY) 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+# 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+#
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때
+# Gemini MCP를 등록하는데, 설정 배포(SKIP_AGY 미설정)가 그 디렉터리를 먼저 만들므로
+# 보통은 디렉터리 쪽에서 먼저 걸린다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는
+# SKIP_AGY=1(설정 생략)로 디렉터리가 없을 때다 — 그때도 MCP 등록이 이뤄진다.
+# 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
 # =============================================
+install_agy_cli_stage() {
+    echo
+    echo "==> Installing Antigravity CLI (agy)..."
+    install_agy_cli || true
+}
+run_optional_stage SKIP_AGY_CLI "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" install_agy_cli_stage
+
 deploy_agy_stage() {
     echo
     echo "==> Deploying Antigravity (AGY) config..."

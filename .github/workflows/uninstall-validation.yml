@@ -34,6 +34,9 @@ jobs:
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
           SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
         run: |
           export HOME="$RUNNER_TEMP/dotfiles-home"
           export DOTFILES_RECEIPT_PATH="$HOME/.local/state/dotfiles/install-receipt.json"
@@ -49,9 +52,12 @@ jobs:
           bash install.sh
           # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
           test -x "$HOME/rhwp/rhwp"
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          test -x "$HOME/.local/bin/shellcheck"
           bash uninstall.sh --keep-packages
           bash uninstall.sh --keep-packages
           test ! -e "$HOME/rhwp"
+          test ! -e "$HOME/.local/bin/shellcheck"
           grep -Fxq user-sentinel "$HOME/user.txt"
           grep -Fq '# user profile sentinel' "$HOME/.bashrc"
           grep -Fq 'keep = true' "$HOME/.codex/config.toml"
@@ -81,6 +87,9 @@ jobs:
           SKIP_SKILLS: '1'
           SKIP_PLUGINS: '1'
           SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
         run: |
           $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
           $env:HOME = $env:USERPROFILE
@@ -107,11 +116,15 @@ jobs:
           # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
           $rhwpDir = Join-Path $env:USERPROFILE 'rhwp'
           if (-not (Test-Path (Join-Path $rhwpDir 'rhwp.exe'))) { throw 'rhwp tree missing after install' }
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck missing after install' }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "first uninstall failed: $LASTEXITCODE" }
           & ./uninstall.ps1 -KeepPackages
           if ($LASTEXITCODE -ne 0) { throw "second uninstall failed: $LASTEXITCODE" }
           if (Test-Path $rhwpDir) { throw 'rhwp tree not removed by uninstall' }
+          if (Test-Path $scExe) { throw 'shellcheck not removed by uninstall' }
           if ((Get-Content (Join-Path $env:USERPROFILE 'user.txt')) -ne 'user-sentinel') { throw 'user sentinel changed' }
           if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
           if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }

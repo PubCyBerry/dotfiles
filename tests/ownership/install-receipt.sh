@@ -3,7 +3,11 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d)"
+# 물리 경로로 풀어서 받는다. macOS의 `mktemp -d`는 `/var/folders/...`를 주는데 `/var`가
+# symlink라 `managed_parent_is_safe`가 상위 경로를 거부한다 — 실제 설치 대상은 `$HOME`
+# 아래라 그 walk가 boundary에서 멈추므로 제품 동작이 아니라 fixture 위치의 문제다.
+# `/private/var/...`로 풀면 그 차이가 사라지고, Linux·Git Bash에서는 값이 그대로다.
+TMP="$(cd -P "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home"
 # TMPDIR도 격리한다. fnm multishell fixture가 실제 임시 디렉터리에 잔재를 남기면 안 된다.

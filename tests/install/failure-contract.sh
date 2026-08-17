@@ -102,4 +102,51 @@ chmod +x "$work/bin/npx"
 printf '%s\n' 'owner/repo@skill' > "$work/skills.txt"
 if restore_claude_skills "$work/skills.txt"; then echo 'npx failure swallowed' >&2; exit 1; fi
 
+# 첫 데이터 행의 한 필드만 대문자로 바꾼 사본을 만든다. platform(1)과 SHA-256(5)은
+# 둘 다 소문자로만 유효하므로, validator가 대소문자를 가리면 반드시 거부해야 한다.
+uppercase_manifest_field() {
+    awk -F '\t' -v f="$2" 'BEGIN{OFS="\t"} /^#/ || /^[[:space:]]*$/ {print; next}
+        NR_kept++ == 0 {$f = toupper($f)} {print}' "$1"
+}
+
+# manifest validator는 install.ps1의 Test-*ManifestRows와 같은 판정을 내려야 한다.
+# awk 정규식은 대소문자를 가리는데 PowerShell 기본 비교는 그렇지 않으므로, 양쪽이
+# 같게 거부하는지 두 manifest에서 같은 변형으로 확인한다.
+for name in shellcheck rhwp; do
+    "validate_${name}_manifest" "$repo/manifests/$name.tsv"
+    for field in 1 5; do
+        uppercase_manifest_field "$repo/manifests/$name.tsv" "$field" > "$work/$name-cased.tsv"
+        if "validate_${name}_manifest" "$work/$name-cased.tsv"; then
+            echo "mis-cased $name manifest field $field accepted" >&2; exit 1
+        fi
+    done
+done
+
+# manifest에서 빠진 구 apt/brew 설치분은 install이 지우지 않는다(남의 소유 패키지다).
+# 대신 남아 있다는 사실을 설치 직후 한 줄로 알린다. 알림에 그쳐야 하므로 실패를
+# 기록하지 않고, set -e 아래에서 설치를 끊지도 않아야 한다.
+cat > "$work/bin/dpkg" <<'SH'
+#!/usr/bin/env bash
+[[ "$*" == "-s shellcheck" && -n "${LEGACY_APT_SHELLCHECK:-}" ]]
+SH
+cat > "$work/bin/brew" <<'SH'
+#!/usr/bin/env bash
+[[ "$*" == "list --formula shellcheck" && -n "${LEGACY_BREW_SHELLCHECK:-}" ]]
+SH
+chmod +x "$work/bin/dpkg" "$work/bin/brew"
+export LEGACY_APT_SHELLCHECK=1 LEGACY_BREW_SHELLCHECK=""
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ "$notice" == *'apt-managed shellcheck'* && "$notice" == *'docs/tools.md'* ]] || {
+    echo 'apt legacy notice missing' >&2; exit 1
+}
+export LEGACY_APT_SHELLCHECK="" LEGACY_BREW_SHELLCHECK=1
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ "$notice" == *'brew-managed shellcheck'* ]] || { echo 'brew legacy notice missing' >&2; exit 1; }
+INSTALL_FAILURES=""
+warn_legacy_shellcheck_package >/dev/null
+[[ -z "$INSTALL_FAILURES" ]] || { echo 'legacy notice was recorded as an install failure' >&2; exit 1; }
+export LEGACY_APT_SHELLCHECK="" LEGACY_BREW_SHELLCHECK=""
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ -z "$notice" ]] || { echo 'legacy notice fired without a legacy package' >&2; exit 1; }
+
 echo 'install failure contract checks passed'
