@@ -1122,6 +1122,11 @@ function Install-Rhwp {
 # SC2327~SC2332, SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는
 # 실패한다(반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
 # ---------------------------------------------
+# 비교 연산자를 전부 case-sensitive(-c*)로 쓴다. install.sh의
+# validate_shellcheck_manifest는 awk 정규식이라 대소문자를 가리는데, PowerShell의
+# -in/-match/-eq는 기본이 case-insensitive다. 그대로 두면 `Windows-x86_64` 같은 행이
+# 이 validator만 통과하고, 뒤의 행 선택은 -ceq라 $null을 집어 "Cannot index into a
+# null array"로 죽는다. 두 validator가 같은 manifest를 같게 판정해야 한다.
 function Test-ShellCheckManifestRows([object[]]$Rows) {
     if ($Rows.Count -ne 5) { return $false }
     $platforms = @('windows-x86_64','linux-x86_64','linux-aarch64','macos-x86_64','macos-aarch64')
@@ -1130,21 +1135,36 @@ function Test-ShellCheckManifestRows([object[]]$Rows) {
     foreach ($row in $Rows) {
         if ($row.Count -ne 5) { return $false }
         $platform, $version, $format, $url, $checksum = $row
-        if ($platform -notin $platforms -or $seen.ContainsKey($platform)) { return $false }
+        if ($platform -cnotin $platforms -or $seen.ContainsKey($platform)) { return $false }
         $seen[$platform] = $true
-        if ($version -notmatch '^\d+\.\d+\.\d+$' -or $format -notin @('tgz','zip')) { return $false }
+        if ($version -cnotmatch '^\d+\.\d+\.\d+$' -or $format -cnotin @('tgz','zip')) { return $false }
         # 다섯 행이 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
         if (-not $pinned) { $pinned = $version } elseif ($version -cne $pinned) { return $false }
-        if ($url -notmatch '^https://github\.com/koalaman/shellcheck/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -match '/(latest|HEAD|main)/') { return $false }
-        if ($checksum -notmatch '^[0-9a-f]{64}$') { return $false }
+        if ($url -cnotmatch '^https://github\.com/koalaman/shellcheck/releases/download/v\d+\.\d+\.\d+/\S+$' -or $url -cmatch '/(latest|HEAD|main)/') { return $false }
+        if ($checksum -cnotmatch '^[0-9a-f]{64}$') { return $false }
     }
     return $true
 }
 
 # `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+#
+# 기동 실패를 여기서 흡수한다. $ErrorActionPreference = 'Stop' 아래에서 native command가
+# 아예 뜨지 못하면 terminating error가 되는데, install.ps1에는 top-level try/trap이 없고
+# Invoke-OptionalInstallStage도 bare `& $Action`이라 그 예외가 스크립트를 그대로 끝낸다.
+# 그러면 1-8에서 죽어 뒤따르는 단계(Node, npm, Codex, Claude, agy, rhwp, 프로파일,
+# skills, plugins)가 통째로 건너뛰어진다 — 같은 함수의 다른 실패는 전부
+# Add-InstallFailure로 모여 설치가 계속되는데 이 경로만 빠져나가는 셈이다.
+# 실제로 그럴 수 있는 환경이 있다: %TEMP% 실행을 막는 AppLocker/WDAC 기본 규칙,
+# 추출 직후 파일을 잡고 있는 AV, x64 에뮬레이션이 없는 ARM64 Windows 10.
+# $null을 돌려주면 호출부의 "reports '', expected ..." 분기가 받아 준다 —
+# Unix 쪽 `"$binary" --version ... || true`와 같은 계약이다.
 function Get-ShellCheckReportedVersion([string]$Exe) {
-    foreach ($line in @(& $Exe --version 2>$null)) {
-        if ($line -match '^\s*version:\s*(\S+)\s*$') { return $Matches[1] }
+    try {
+        foreach ($line in @(& $Exe --version 2>$null)) {
+            if ($line -match '^\s*version:\s*(\S+)\s*$') { return $Matches[1] }
+        }
+    } catch {
+        return $null
     }
     return $null
 }
@@ -1166,6 +1186,10 @@ function Install-ShellCheck {
         return $true
     }
     $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
+    # validator를 통과했으면 이 행은 반드시 있다. 그래도 확인하고 간다 — 없을 때
+    # $row[1]은 "Cannot index into a null array" terminating error가 되어 아래의
+    # Add-InstallFailure 계약을 건너뛰고 install 전체를 끊는다.
+    if (-not $row) { Add-InstallFailure 'No windows-x86_64 row in manifests\shellcheck.tsv'; return $false }
     $version = $row[1]; $format = $row[2]; $url = $row[3]; $checksum = $row[4]
     if ($format -cne 'zip') { Add-InstallFailure "Unsupported shellcheck archive format for Windows: $format"; return $false }
 

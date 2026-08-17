@@ -316,6 +316,8 @@ command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
 
 버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
 
+manifest validator는 두 벌(awk / PowerShell)이라 판정이 어긋날 수 있다. awk 정규식은 대소문자를 가리고 PowerShell의 `-in`/`-match`/`-eq`는 기본이 그렇지 않으므로, `Test-ShellCheckManifestRows`는 비교를 전부 `-c*`로 쓴다. 그러지 않으면 `Windows-x86_64` 같은 행이 PowerShell validator만 통과하고, 뒤의 case-sensitive 행 선택이 `$null`을 집어 terminating error로 install 전체를 끊는다. 같은 이유로 archive 안 바이너리의 `--version` 호출도 `try/catch`로 감싼다 — `$ErrorActionPreference = 'Stop'` 아래에서 실행 자체가 실패하면(`%TEMP%` 실행을 막는 AppLocker/WDAC, 파일을 잡고 있는 AV, x64 에뮬레이션 없는 ARM64) 그 예외가 `Add-InstallFailure` 계약을 우회한다. `tests/install/failure-contract.{sh,ps1}`가 두 경로를 모두 단언한다.
+
 `SKIP_SHELLCHECK=1`로 이 단계 전체를 건너뛸 수 있다. CI는 이 값을 쓰지 않는다 — pin된 artifact라 설치 경로를 그대로 검증한다.
 
 ### herdr 관리

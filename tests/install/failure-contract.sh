@@ -102,4 +102,22 @@ chmod +x "$work/bin/npx"
 printf '%s\n' 'owner/repo@skill' > "$work/skills.txt"
 if restore_claude_skills "$work/skills.txt"; then echo 'npx failure swallowed' >&2; exit 1; fi
 
+# 첫 데이터 행의 한 필드만 대문자로 바꾼 사본을 만든다. platform(1)과 SHA-256(5)은
+# 둘 다 소문자로만 유효하므로, validator가 대소문자를 가리면 반드시 거부해야 한다.
+uppercase_manifest_field() {
+    awk -F '\t' -v f="$2" 'BEGIN{OFS="\t"} /^#/ || /^[[:space:]]*$/ {print; next}
+        NR_kept++ == 0 {$f = toupper($f)} {print}' "$1"
+}
+
+# manifest validator는 install.ps1의 Test-ShellCheckManifestRows와 같은 판정을 내려야
+# 한다. awk 정규식은 대소문자를 가리는데 PowerShell 기본 비교는 그렇지 않으므로,
+# 양쪽이 같게 거부하는지 같은 변형으로 확인한다.
+validate_shellcheck_manifest "$repo/manifests/shellcheck.tsv"
+for field in 1 5; do
+    uppercase_manifest_field "$repo/manifests/shellcheck.tsv" "$field" > "$work/shellcheck-cased.tsv"
+    if validate_shellcheck_manifest "$work/shellcheck-cased.tsv"; then
+        echo "mis-cased shellcheck manifest field $field accepted" >&2; exit 1
+    fi
+done
+
 echo 'install failure contract checks passed'
