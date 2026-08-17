@@ -241,7 +241,7 @@ jq '.mcpServers.rhwp' ~/.claude.json                          # Claude Code 등�
 
 `manifests/shellcheck.tsv`가 pin한 한 버전을 세 OS와 CI가 함께 쓴다. apt·brew·winget이 저마다 다른 버전을 주고 lint는 버전이 곧 규칙 집합이라, 버전이 갈리면 "로컬에서는 통과하는데 CI에서 깨진다"가 생긴다. 자세한 근거는 [AGENTS.md의 "shellcheck 관리"](../AGENTS.md#shellcheck-관리)에 있다.
 
-설치 위치는 `~/.local/bin/shellcheck`(Windows `%USERPROFILE%\.local\bin\shellcheck.exe`)다. 이 저장소가 배포하는 셸 프로파일이 그 디렉터리를 PATH 앞에 두므로, 배포판이 apt로 깔아 둔 구버전이 남아 있어도 pin한 쪽이 먼저 잡힌다.
+설치 위치는 `~/.local/bin/shellcheck`(Windows `%USERPROFILE%\.local\bin\shellcheck.exe`)다. 이 저장소가 배포하는 셸 프로파일이 그 디렉터리를 PATH 앞에 두므로, 배포판이 apt로 깔아 둔 구버전이 남아 있어도 **그 프로파일을 읽는 셸에서는** pin한 쪽이 먼저 잡힌다.
 
 ```bash
 shellcheck --version                       # pin한 버전인지 확인 (version: 줄)
@@ -249,7 +249,17 @@ shellcheck -x script.sh                    # source된 파일까지 따라가며
 git ls-files -z '*.sh' | xargs -0 -r shellcheck -x   # CI(lint 잡)와 같은 명령
 ```
 
-버전을 올릴 때는 `manifests/shellcheck.tsv`의 다섯 행을 함께 올린다. 이미 설치된 머신은 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다.
+> **업그레이드하는 Linux·macOS 머신은 구 패키지를 직접 지운다.** 예전 `install.sh`는 apt/brew로 shellcheck를 깔았고, manifest에서 뺐다고 이미 깔린 패키지가 사라지지는 않는다(install은 남의 소유 패키지를 제거하지 않는다). 두 벌이 남으면 `~/.bashrc` 마커 블록을 읽지 않는 소비자 — VS Code ShellCheck 확장, 프로파일을 거치지 않은 셸의 Makefile, PATH가 씻긴 `sudo` — 가 여전히 구버전을 본다.
+>
+> ```bash
+> dpkg -s shellcheck >/dev/null 2>&1 && sudo apt-get remove -y shellcheck   # Ubuntu
+> brew list --formula shellcheck >/dev/null 2>&1 && brew uninstall shellcheck  # macOS
+> command -v shellcheck   # ~/.local/bin/shellcheck 하나만 남아야 한다
+> ```
+>
+> Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
+
+버전을 올릴 때는 `manifests/shellcheck.tsv`의 다섯 행을 함께 올린다. 이미 설치된 머신은 세 OS 모두 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 없으면 install이 실패로 멈추고 바이너리를 바꾸지 않는다.
 
 ### ruff — Python 린터/포매터 (선택적 설치)
 

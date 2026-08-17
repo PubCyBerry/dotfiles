@@ -43,6 +43,7 @@ bash uninstall.sh
 - 각 항목 완료 직후 receipt를 atomic 저장하므로 중단 후 다시 실행할 수 있다. 두 번째 실행은 no-op이다.
 
 - 구 apt/brew shellcheck 설치분(`apt:shellcheck`, `brew:shellcheck`)은 `manifests/apt.txt`·`manifests/Brewfile`에서 빠졌지만 그 시절 설치본을 쓰던 머신 receipt에는 남아 있다. 그래서 이 두 key만 고정 목록으로 소유권을 인정한다 — 인정하지 않으면 preflight가 uninstall 전체를 중단시켜 무관한 항목까지 하나도 정리되지 않는다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 사용자가 직접 올린 패키지는 보존된다.
+  - install은 이 패키지를 지우지 않는다. manifest에서 뺐다는 것은 앞으로 설치하지 않는다는 뜻일 뿐이라, 업그레이드한 머신에는 구 `/usr/bin/shellcheck`가 그대로 남아 pin한 `~/.local/bin/shellcheck`와 공존한다. 직접 정리하는 명령은 [docs/tools.md의 shellcheck 절](tools.md#shellcheck--셸-스크립트-정적-분석)에 있다. 먼저 지우고 나서 uninstall을 돌려도 문제없다 — 패키지가 없으면 receipt entry만 조용히 걷힌다.
 
 - 구 로컬 skill 배포분(`~/.claude/skills/{subagent-creator,repo-scaffold}/`, `~/.gemini/config/skills/{subagent-creator,repo-scaffold}/`)은 소스가 저장소에서 사라졌지만 receipt entry는 남아 있다. 그래서 이 두 이름만 고정 목록으로 소유권을 인정하고, unchanged 파일에 한해 제거한다. `npx skills`가 새로 설치한 skill은 receipt에 없으므로 이 경로에 걸리지 않는다.
 

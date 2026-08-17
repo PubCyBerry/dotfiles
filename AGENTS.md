@@ -287,13 +287,34 @@ install 스크립트는 rhwp와 같은 순서로 확인한 뒤에만 파일을 �
 | Linux/macOS | `~/.local/bin/shellcheck` | `config/bash/bashrc`가 `$HOME/.local/bin`을 PATH 맨 앞에 둔다 |
 | Windows | `%USERPROFILE%\.local\bin\shellcheck.exe` | `config/powershell/profile.ps1`(pwsh)과 `config/bash/bashrc`(Git Bash)가 같은 일을 한다 |
 
-**User PATH(레지스트리)는 건드리지 않는다.** 프로파일이 이미 그 디렉터리를 앞에 두므로 새 side effect를 만들 이유가 없다. 이 선택 덕분에 배포판이 apt로 깔아 둔 `/usr/bin/shellcheck`가 남아 있어도 pin한 쪽이 먼저 잡힌다 — 그 상태를 CI의 Ubuntu 잡이 `command -v shellcheck`로 단언한다.
+Windows에서 어느 행을 쓸지는 **OS 비트수 하나로** 정한다. upstream이 Windows용으로 `windows-x86_64` 하나만 내고, Windows 11 ARM64는 그 x86_64 PE를 에뮬레이션으로 그대로 실행하기 때문이다. `PROCESSOR_ARCHITECTURE`로 가르면 같은 ARM64 머신에서도 install을 네이티브 pwsh로 띄웠는지(`ARM64` → 건너뜀) x64 에뮬레이션으로 띄웠는지(`AMD64` → 설치)에 따라 결과가 갈린다 — 프로세스 비트수는 pin 계약과 아무 상관이 없다. 정말 실행되지 않는 환경은 설치 직전의 `--version` 대조가 실패로 잡는다. 32비트 Windows만 지원 밖으로 두고 경고 후 건너뛴다(Unix의 `shellcheck_platform`이 지원하지 않는 아키텍처를 다루는 방식과 같다 — 설치 실패로 기록하지 않는다).
+
+**User PATH(레지스트리)는 건드리지 않는다.** 프로파일이 이미 그 디렉터리를 앞에 두므로 새 side effect를 만들 이유가 없다. 이 선택 덕분에 배포판이 apt로 깔아 둔 `/usr/bin/shellcheck`가 남아 있어도 **셸 프로파일을 읽는 경로에서는** pin한 쪽이 먼저 잡힌다 — 그 상태를 CI의 Ubuntu 잡이 `command -v shellcheck`로 단언한다.
 
 `manifests/apt.txt`와 `manifests/Brewfile`에서는 shellcheck를 뺐다. 소유자가 둘이면 PATH 순서에 따라 어느 쪽이 잡힐지가 환경마다 달라지고, 그것이 애초에 없애려던 문제다.
 
-> 마이그레이션: 예전 설치본을 쓰던 Linux·macOS 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는다. manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정한다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
+#### 마이그레이션: 기존 Linux·macOS 머신에서 구 패키지를 직접 지운다
 
-버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다.
+manifest에서 빼는 것은 **앞으로 설치하지 않는다**는 뜻일 뿐, 이미 깔린 패키지를 지우지 않는다. install이 남의 소유 패키지를 제거하지 않기 때문이다(Safe-Clean-Install). 그래서 이 PR 이전에 프로비저닝한 머신에는 `/usr/bin/shellcheck`(또는 brew prefix)와 `~/.local/bin/shellcheck`가 **둘 다** 남고, 어느 쪽이 잡히는지는 그 순간의 PATH가 정한다.
+
+`~/.bashrc` 마커 블록을 읽지 않는 소비자는 여전히 옛 버전을 본다 — VS Code ShellCheck 확장이 `/usr/bin/shellcheck`를 해석하는 경우, 프로파일을 거치지 않은 셸에서 실행된 Makefile, PATH가 씻긴 `sudo` 등이다. 그쪽에서는 CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
+
+**업그레이드하는 머신에서 한 번 실행한다.**
+
+```bash
+# Ubuntu — apt가 깔아 둔 구버전 제거
+dpkg -s shellcheck >/dev/null 2>&1 && sudo apt-get remove -y shellcheck
+
+# macOS — brew formula 제거
+brew list --formula shellcheck >/dev/null 2>&1 && brew uninstall shellcheck
+
+# 확인: pin한 경로 하나만 남아야 한다
+command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
+```
+
+> receipt 쪽 마이그레이션은 따로 있다. 예전 설치본을 쓰던 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는데, manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 위 명령으로 이미 지웠거나 사용자가 직접 올린 패키지는 문제가 되지 않는다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
+
+버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
 
 `SKIP_SHELLCHECK=1`로 이 단계 전체를 건너뛸 수 있다. CI는 이 값을 쓰지 않는다 — pin된 artifact라 설치 경로를 그대로 검증한다.
 
