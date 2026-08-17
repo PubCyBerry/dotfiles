@@ -43,7 +43,7 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - 사용자 Codex 설정, shell profile, Claude statusLine sentinel 보존과 marker 멱등성을 확인
 - `tests/install/failure-contract.sh`로 failure ledger, plugin 전체 사전검증, skip guard, shellcheck manifest validator와 구 패키지 안내를 확인
 - `tests/ownership/install-receipt.sh`, `tests/ownership/direct-artifacts.sh`로 receipt 소유권과 direct artifact 버전 게이트를 확인. 실제 install 잡은 매번 새 HOME이라 `new` → `current` 전이만 지나므로, `upgrade`/`upgrade-blocked`/`modified`를 지나는 검사는 이 두 스크립트뿐이다
-- `direct-artifacts.sh`는 install 스크립트에 pin되지 않은 원격 실행(`curl \| sh`, `latest`/`HEAD` 경로)이 새로 들어오는지도 정적으로 막는다. 면제는 herdr와 Antigravity CLI 두 installer뿐이다
+- `direct-artifacts.sh`는 install 스크립트에 pin되지 않은 원격 실행(`curl \| sh`, `latest`/`HEAD` 경로)이 새로 들어오는지도 정적으로 막는다. 면제는 herdr와 Antigravity CLI 두 installer뿐이며, 그 두 줄 **전체**와 일치할 때만 성립한다 — 호스트 이름이 줄 어딘가에 있으면 통과시키는 부분 일치를 쓰면 같은 줄 주석 한 마디로 제3의 호스트를 들여올 수 있다. 스크립트가 그 우회를 직접 단언한다
 - `config/agents/roles/`의 실제 조립 결과를 `yq`로 검증한다
 
 **test-macos-install**

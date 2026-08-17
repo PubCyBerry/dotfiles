@@ -93,7 +93,9 @@ DOTFILES_UPGRADE_DIRECT=1 direct_anchor_state "$TMP/bin/tool" 2; [[ "$DIRECT_STA
 mkdir "$TMP/tree-src"; printf tree > "$TMP/tree-src/file"
 base_tree_hash="$(tree_hash "$TMP/tree-src")"
 if [[ "$(uname -s)" != MINGW* ]]; then
-  base_tree_mode="$(stat -c '%a' "$TMP/tree-src")"; chmod 711 "$TMP/tree-src"
+  # stat -c는 GNU 전용이다. install.sh가 이미 BSD fallback을 가진 file_mode를 쓴다 —
+  # 여기서 stat을 직접 부르면 macOS에서 이 줄이 죽고 아래 단언이 통째로 건너뛰어진다.
+  base_tree_mode="$(file_mode "$TMP/tree-src")"; chmod 711 "$TMP/tree-src"
   [[ "$(tree_hash "$TMP/tree-src")" != "$base_tree_hash" ]] || fail tree-root-mode-identity
   chmod "$base_tree_mode" "$TMP/tree-src"
 fi
@@ -139,11 +141,25 @@ mkdir "$TMP/tree-user"; printf user > "$TMP/tree-user/user"
 # 내려받은 문자열을 실행하는 우회 경로이기 때문이다 (bare Invoke-Expression은
 # `fnm env` 출력 평가 같은 로컬 용도라 여기서 다루지 않는다).
 #
-# 면제 패턴은 두 URL을 담은 변수명과 호스트로만 좁힌다. 단순히 "herdr"나 "agy"라는
-# 단어가 줄 어딘가에 있으면 통과시키면, 무관한 도구를 같은 줄 주석 한 마디로 들여올 수 있다.
+# 면제는 그 두 installer를 실제로 실행하는 **줄 전체**로만 성립한다. 변수명이나 호스트가
+# 줄 어딘가에 있으면 통과시키는 부분 일치를 쓰면, 무관한 도구를 같은 줄 주석 한 마디로
+# 들여올 수 있다 — `curl ... | bash  # same policy as antigravity.google`. 아래 두 패턴은
+# 파일·명령·인용부호까지 고정하고 줄 번호와 들여쓰기만 자유롭게 둔다. 그 줄이 조금이라도
+# 달라지면 면제가 풀리고 게이트가 다시 닫힌다.
+# rg는 넘겨받은 경로를 그대로 앞에 붙이므로(여기서는 절대 경로) 파일 이름은 `(^|/)`로 문다.
+exempt_herdr='(^|/)install\.sh:[0-9]+:[[:space:]]*if ! curl -fsSL "\$HERDR_INSTALL_URL" \| sh; then$'
+exempt_agy='(^|/)install\.sh:[0-9]+:[[:space:]]*if ! curl -fsSL "\$AGY_INSTALL_URL" \| bash; then$'
 remote_hits="$(rg -n 'curl.*\|.*(sh|bash)|/latest/|/HEAD/|/main/|Invoke-RestMethod.*Invoke-Expression|scriptblock\]::Create' \
     "$ROOT/install.sh" "$ROOT/install.ps1" "$ROOT/manifests/direct-artifacts.tsv" || true)"
-remote_hits="$(printf '%s' "$remote_hits" | rg -v 'HERDR_INSTALL_URL|HerdrInstallUrl|herdr\.dev|AGY_INSTALL_URL|AgyInstallUrl|antigravity\.google' || true)"
+# 두 면제가 각각 정확히 한 줄을 맞히는지 먼저 확인한다. 이 단언이 없으면 패턴이 아무것도
+# 맞히지 못하게 된 뒤에도(줄이 바뀌었거나 installer가 사라졌거나) 아래 검사가 공허하게 통과한다.
+for exempt in "$exempt_herdr" "$exempt_agy"; do
+  [[ "$(printf '%s\n' "$remote_hits" | rg -c "$exempt" || true)" == 1 ]] || fail static-remote-exempt-stale
+done
+# 반대 방향도 단언한다. 면제 토큰을 주석으로 얹은 제3의 호스트는 통과하면 안 된다.
+printf '%s\n' 'install.sh:1:    if ! curl -fsSL "https://cdn.example/x.sh" | bash; then  # same policy as antigravity.google' \
+  | rg -v "$exempt_herdr|$exempt_agy" >/dev/null || fail static-remote-exempt-too-loose
+remote_hits="$(printf '%s' "$remote_hits" | rg -v "$exempt_herdr|$exempt_agy" || true)"
 [[ -z "$remote_hits" ]] || { printf '%s\n' "$remote_hits" >&2; fail static-remote-path; }
 ! rg -n '(install|cp|mv|ln).*/usr/local/(bin|share|lib)' "$ROOT/install.sh" || fail static-privileged-direct
 grep -Fq 'Begin-ManagedPackage "winget:$claudePackage"' "$ROOT/install.ps1" || fail windows-claude-receipt
