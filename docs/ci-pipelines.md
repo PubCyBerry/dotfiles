@@ -158,7 +158,7 @@ Actions 탭 → **Uninstall Validation** → **Run workflow**로 실행한다.
 | `SKIP_SKILLS=1` | Claude Code skills 설치 | Claude Code 의존 |
 | `SKIP_PLUGINS=1` | Claude Code plugins 설치 | 외부 marketplace 의존 |
 | `SKIP_HERDR=1` | herdr 설치 + 설정 배포 | pin되지 않은 원격 installer(`curl \| sh`, `irm`) |
-| `SKIP_AGY_CLI=1` | Antigravity CLI(`agy`) 설치 | pin되지 않은 원격 installer(`curl \| bash`, `irm`) |
+| `SKIP_AGY_CLI=1` | Antigravity CLI(`agy`) 설치 | pin되지 않은 원격 installer(`curl \| bash`, `irm`). 이 값만으로는 Gemini MCP 등록이 꺼지지 않는다 — 3-3의 조건은 `~/.gemini` 존재 **또는** `agy` PATH이고, 설정 배포가 그 디렉터리를 먼저 만든다 |
 | `SKIP_AGY=1` | Antigravity 설정 배포 (`config/agy/` → `~/.gemini/`) | CLI와 소유자가 달라 플래그도 별개 |
 | `SKIP_SHELLCHECK=1` | pinned shellcheck 설치 | 로컬에서 다른 버전을 쓰려는 경우. **CI는 쓰지 않는다** — pin된 artifact라 설치 경로를 그대로 검증한다 |
 | `SKIP_RHWP=1` | rhwp 설치 + MCP 등록 | pinned artifact 다운로드를 제외할 때 |

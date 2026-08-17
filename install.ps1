@@ -2121,8 +2121,10 @@ if (Test-Path $rolesSrc) {
 # =============================================
 # 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
 #
-# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)이 `Get-Command agy`로 Gemini MCP 등록 여부를
-# 판단하므로, 순서가 뒤집히면 첫 설치에서 MCP 등록이 조용히 건너뛰어진다.
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때
+# Gemini MCP를 등록하는데, 설정 배포(SKIP_AGY 미설정)가 그 디렉터리를 먼저 만들므로
+# 보통은 디렉터리 쪽에서 먼저 걸린다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는
+# `SKIP_AGY=1`(설정 생략)로 디렉터리가 없을 때다 — 그때도 MCP 등록이 이뤄진다.
 # 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
 # =============================================
 Invoke-OptionalInstallStage 'SKIP_AGY_CLI' "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" {

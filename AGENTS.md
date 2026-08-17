@@ -409,7 +409,7 @@ winget에 `Google.AntigravityCLI`가 있지만 쓰지 않는다. Google이 올�
 
 부트스트랩 실패는 경고로 끝난다 — `record_install_failure`/`Add-InstallFailure`를 타지 않는다. herdr와 같은 이유이며, 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로 만들지 않는다.
 
-순서는 3-2에 둔다. 뒤따르는 3-3(rhwp)이 `command -v agy` / `Get-Command agy`로 Gemini MCP 등록 여부를 판단하므로, CLI가 먼저 서야 첫 설치에서 `~/.gemini/config/mcp_config.json` 등록이 함께 이뤄진다.
+순서는 3-2에 둔다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때 Gemini MCP를 등록한다. 3-2의 설정 배포가 그 디렉터리를 먼저 만들므로 `SKIP_AGY`를 걸지 않은 실행에서는 디렉터리 조건이 먼저 성립하고, `agy` 조회는 그때 판정에 관여하지 않는다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는 `SKIP_AGY=1`로 설정 배포를 건너뛰어 디렉터리가 없는 실행이다 — 그때도 MCP 등록이 이뤄진다. 뒤집어 말하면 `SKIP_AGY_CLI=1`만으로는 Gemini MCP 등록이 꺼지지 않는다(CI가 세 OS 모두 그 상태로 돌고 등록은 그대로 이뤄진다).
 
 Unix 쪽은 `sh`가 아니라 **`bash`로 파이프한다**. installer가 `set -euo pipefail`을 쓰는데 우분투의 `/bin/sh`(dash)에는 `pipefail`이 없어 첫 줄에서 죽는다. Windows 쪽은 herdr와 같이 자식 프로세스(`pwsh -NoProfile -NonInteractive -File <임시파일>`)로 격리한다 — 이 installer도 sourcing이 아닐 때 최상위에서 `exit $exitCode`를 호출하므로, 같은 프로세스에서 돌리면 그 `exit`가 `try/catch`를 무시하고 install 전체를 끝낸다.
 
