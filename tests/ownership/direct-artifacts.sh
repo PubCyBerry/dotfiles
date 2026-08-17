@@ -3,7 +3,10 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TMP="$(mktemp -d)"; SOCKET_PID=""; trap '[[ -z "$SOCKET_PID" ]] || kill "$SOCKET_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+# 물리 경로로 풀어서 받는다. macOS의 `mktemp -d`는 `/var/folders/...`를 주는데 `/var`가
+# symlink라 `managed_parent_is_safe`가 상위 경로를 거부한다 — 실제 설치 대상은 `$HOME`
+# 아래라 그 walk가 boundary에서 멈추므로 제품 동작이 아니라 fixture 위치의 문제다.
+TMP="$(cd -P "$(mktemp -d)" && pwd -P)"; SOCKET_PID=""; trap '[[ -z "$SOCKET_PID" ]] || kill "$SOCKET_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
 export HOME="$TMP/home" DOTFILES_RECEIPT_PATH="$TMP/state/install-receipt.json" DOTFILES_FUNCTIONS_ONLY=1
 mkdir -p "$HOME" "$TMP/bin"; export PATH="$TMP/bin:$PATH"
 source "$ROOT/install.sh"
