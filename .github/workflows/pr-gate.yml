@@ -207,6 +207,19 @@ jobs:
       - name: Failure contract
         run: bash tests/install/failure-contract.sh
 
+      # receipt 소유권과 direct artifact 버전 게이트의 단위 계약. 네트워크를 타지 않고
+      # (curl은 스크립트 안에서 stub된다) 격리된 HOME에서만 돈다.
+      #
+      # 이 잡 뒤에 두는 이유는 두 가지가 실제 설치본을 요구하기 때문이다. jq/rg는
+      # manifests/apt.txt가 주고, direct-artifacts.sh의 정적 검사는 그중 rg를 쓴다.
+      # 그 검사는 install 스크립트에 pin되지 않은 원격 실행(`curl | sh`, latest/HEAD
+      # 경로)이 새로 들어오는 것을 막는다 — herdr와 agy 두 예외만 면제된다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
   test-macos-install:
     name: macOS install + verify
     runs-on: macos-latest
@@ -333,10 +346,27 @@ jobs:
         run: pwsh -NoProfile -File tests/install/failure-contract.ps1
 
       # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
-      # TOML 편집을 하므로 여기서만 따로 확보한다.
-      - name: Ensure yq
+      # TOML 편집을 하고, tests/ownership/install-receipt.ps1이 receipt를 jq로 읽으므로
+      # 여기서만 따로 확보한다.
+      - name: Ensure yq and jq
         shell: pwsh
-        run: if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { choco install yq -y --no-progress }
+        run: |
+          foreach ($tool in 'yq', 'jq') {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { choco install $tool -y --no-progress }
+          }
+
+      # receipt 소유권과 direct file 버전 게이트의 단위 계약. 네트워크 없이 격리된
+      # USERPROFILE에서만 돌아 설치 전에 세울 수 있다. Get-DirectFileState /
+      # Set-DirectFileVersion의 upgrade / upgrade-blocked / modified 상태를 단언하는
+      # 유일한 검사라, 여기 없으면 shellcheck의 pin 계약이 회귀해도 보드가 초록으로 남는다
+      # (아래 install 잡은 fresh HOME이라 new -> current 전이만 지난다).
+      - name: Receipt ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/install-receipt.ps1
+
+      - name: Direct artifact ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/direct-artifacts.ps1
 
       - name: Run isolated config install twice
         shell: pwsh

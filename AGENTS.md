@@ -75,6 +75,8 @@ dotfiles/
 │   ├── agent_validator.py         # Claude agent frontmatter 검증 engine
 │   └── validate-agent-roles.py    # config/agents/roles/ 검증 (CI + 로컬 공용)
 ├── tests/
+│   ├── install/                   # failure ledger + manifest validator 계약 (네트워크 없음)
+│   ├── ownership/                 # receipt 소유권 + direct artifact 버전 게이트 계약 (네트워크 없음)
 │   ├── rhwp/                      # rhwp tree + MCP entry 소유권 계약 (네트워크 없음)
 │   └── uninstall/                 # receipt 소유권 판정 계약 (구 로컬 skill legacy 경로 포함)
 └── docs/
@@ -317,6 +319,13 @@ command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
 > receipt 쪽 마이그레이션은 따로 있다. 예전 설치본을 쓰던 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는데, manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 위 명령으로 이미 지웠거나 사용자가 직접 올린 패키지는 문제가 되지 않는다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
 
 버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
+
+이 게이트는 `tests/ownership/direct-artifacts.{sh,ps1}`가 단언한다. CI의 실제 install 잡은 매번 새 HOME에서 도는 탓에 `new` → `current` 전이만 지나므로, `upgrade` / `upgrade-blocked` / `modified`를 지나는 검사는 이 두 스크립트뿐이다. `pr-gate.yml`의 Ubuntu·Windows 잡이 둘 다 돌린다.
+
+```bash
+bash tests/ownership/direct-artifacts.sh
+pwsh -NoProfile -File tests/ownership/direct-artifacts.ps1
+```
 
 manifest validator는 두 벌(awk / PowerShell)이라 판정이 어긋날 수 있다. awk 정규식은 대소문자를 가리고 PowerShell의 `-in`/`-match`/`-eq`는 기본이 그렇지 않으므로, `Test-ShellCheckManifestRows`는 비교를 전부 `-c*`로 쓴다. 그러지 않으면 `Windows-x86_64` 같은 행이 PowerShell validator만 통과하고, 뒤의 case-sensitive 행 선택이 `$null`을 집어 terminating error로 install 전체를 끊는다. 같은 이유로 archive 안 바이너리의 `--version` 호출도 `try/catch`로 감싼다 — `$ErrorActionPreference = 'Stop'` 아래에서 실행 자체가 실패하면(`%TEMP%` 실행을 막는 AppLocker/WDAC, 파일을 잡고 있는 AV, x64 에뮬레이션 없는 ARM64) 그 예외가 `Add-InstallFailure` 계약을 우회한다. `tests/install/failure-contract.{sh,ps1}`가 두 경로를 모두 단언한다.
 

@@ -16,7 +16,7 @@
 
 ## 파이프라인 1: PR Gate
 
-`install.sh`, `config/`, `manifests/`, `scripts/` 변경 시 자동 실행되는 게이트 파이프라인이다.
+`install.sh`, `install.ps1`, `uninstall.sh`, `uninstall.ps1`, `config/`, `manifests/`, `scripts/`, `tests/` 변경 시 자동 실행되는 게이트 파이프라인이다. `tests/**`가 통째로 들어 있으므로 계약 스크립트를 새로 붙일 때 트리거를 따로 넓힐 필요가 없다 — 그 스크립트를 실행하는 단계만 잡에 추가하면 된다.
 
 ### 실행 흐름
 
@@ -41,7 +41,9 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - Claude Code, skills는 CI 모드로 skip ([CI 모드 참고](#installsh-ci-모드))
 - 완료 후 주요 도구 `--version` 확인: `git`, `tmux`, `jq`, `gh`, `rg`, `bat`, `fd`, `nvim`, `lazygit`, `delta`, `fzf`, `yazi`, `zoxide`, `starship`, `fnm`, `bun`
 - 사용자 Codex 설정, shell profile, Claude statusLine sentinel 보존과 marker 멱등성을 확인
-- `tests/install/failure-contract.sh`로 failure ledger, plugin 전체 사전검증, skip guard를 확인
+- `tests/install/failure-contract.sh`로 failure ledger, plugin 전체 사전검증, skip guard, shellcheck manifest validator와 구 패키지 안내를 확인
+- `tests/ownership/install-receipt.sh`, `tests/ownership/direct-artifacts.sh`로 receipt 소유권과 direct artifact 버전 게이트를 확인. 실제 install 잡은 매번 새 HOME이라 `new` → `current` 전이만 지나므로, `upgrade`/`upgrade-blocked`/`modified`를 지나는 검사는 이 두 스크립트뿐이다
+- `direct-artifacts.sh`는 install 스크립트에 pin되지 않은 원격 실행(`curl \| sh`, `latest`/`HEAD` 경로)이 새로 들어오는지도 정적으로 막는다. 면제는 herdr와 Antigravity CLI 두 installer뿐이다
 - `config/agents/roles/`의 실제 조립 결과를 `yq`로 검증한다
 
 **test-macos-install**
@@ -52,7 +54,9 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 **test-windows-install**
 - fake `USERPROFILE`/`HOME`/`GIT_CONFIG_GLOBAL`에서 `install.ps1`을 두 번 실행
 - 사용자 Codex config/hook, PowerShell profile, Git 설정, 환경변수와 기존 PATH entry 보존 확인
-- `tests/install/failure-contract.ps1`로 failure ledger와 plugin 사전검증을 확인
+- `tests/install/failure-contract.ps1`로 failure ledger, plugin 사전검증, shellcheck manifest validator의 case-sensitivity, 실행되지 않는 shellcheck 바이너리가 install을 끊지 않는지를 확인
+- `tests/ownership/install-receipt.ps1`, `tests/ownership/direct-artifacts.ps1`로 receipt 소유권과 `Get-DirectFileState`/`Set-DirectFileVersion`의 버전 게이트를 확인. Ubuntu 잡의 같은 이름 스크립트와 짝을 이루는 계약이다
+- 이 두 스크립트는 receipt를 `jq`로 읽으므로 `Ensure yq and jq` 단계가 `yq`와 함께 확보한다 (`SKIP_PACKAGES=1`이라 winget 단계가 깔지 않는다)
 
 **test-configs**
 - `git config --file config/git/gitconfig --list`: gitconfig 문법 검증
