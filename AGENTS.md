@@ -320,7 +320,7 @@ command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
 
 버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
 
-이 게이트는 `tests/ownership/direct-artifacts.{sh,ps1}`가 단언한다. CI의 실제 install 잡은 매번 새 HOME에서 도는 탓에 `new` → `current` 전이만 지나므로, `upgrade` / `upgrade-blocked` / `modified`를 지나는 검사는 이 두 스크립트뿐이다. `pr-gate.yml`의 Ubuntu·Windows 잡이 둘 다 돌린다.
+이 게이트는 `tests/ownership/direct-artifacts.{sh,ps1}`가 단언한다. CI의 실제 install 잡은 매번 새 HOME에서 도는 탓에 `new` → `current` 전이만 지나므로, `upgrade` / `upgrade-blocked` / `modified`를 지나는 검사는 이 두 스크립트뿐이다. `pr-gate.yml`의 **세 install 잡 모두**가 돌린다 — bash 쪽은 `file_mode`/`tree_hash`의 BSD 경로(`stat -f`, `find -printf` 없음)를 지나므로 macOS에서 돌지 않으면 그쪽 회귀를 잡는 검사가 없다.
 
 ```bash
 bash tests/ownership/direct-artifacts.sh

@@ -50,6 +50,7 @@ job이 병렬로 실행되어 전체 소요 시간을 줄인다.
 - `/bin/bash install.sh --with-defaults`와 `/bin/bash install.sh`를 이어서 실행해 fresh 및 update 경로를 검증
 - Homebrew Neovim, Git editor, Yazi opener가 실제 `nvim` executable을 가리키는지 확인
 - 기존 Codex TOML과 `.zshrc` sentinel이 보존되고 profile marker가 중복되지 않는지 확인
+- `tests/ownership/install-receipt.sh`, `tests/ownership/direct-artifacts.sh`를 Ubuntu 잡과 같이 돌린다. 두 스크립트는 `file_mode`/`tree_hash`의 BSD 경로(`stat -f`, `find -printf` 없음, `tar --sort` 없음)를 지나므로, 여기서 돌지 않으면 macOS 전용 회귀를 잡는 검사가 하나도 없다. `jq`/`rg`를 Brewfile이 주므로 install 뒤에 둔다
 
 **test-windows-install**
 - fake `USERPROFILE`/`HOME`/`GIT_CONFIG_GLOBAL`에서 `install.ps1`을 두 번 실행

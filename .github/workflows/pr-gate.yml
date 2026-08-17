@@ -322,6 +322,16 @@ jobs:
       - name: rhwp ownership contract
         run: bash tests/rhwp/mcp-ownership.sh
 
+      # Ubuntu·Windows 잡과 같은 단위 계약을 macOS에서도 돌린다. 두 스크립트는 BSD
+      # 계열 도구(stat, find, tar)에서 갈라지는 경로를 그대로 지나므로, 여기서 돌지
+      # 않으면 file_mode / tree_hash의 macOS 전용 회귀를 잡는 검사가 하나도 없다.
+      # Ubuntu 잡과 같은 이유로 install 뒤에 둔다 — jq/rg를 Brewfile이 준다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
   test-windows-install:
     name: Windows install + verify
     runs-on: windows-latest
