@@ -259,6 +259,13 @@ git ls-files -z '*.sh' | xargs -0 -r shellcheck -x   # CI(lint 잡)와 같은 �
 >
 > Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
 
+> **손으로 둔 `~/.local/bin/shellcheck`가 있으면 먼저 지운다.** 이 저장소가 만들지 않은 파일이 그 자리에 있으면 install이 덮지 않고 `shellcheck not installed: ... exists but is not managed by dotfiles`로 실패한다. 남의 파일을 덮지 않는 계약(Safe-Clean-Install)이고, 다른 direct artifact처럼 PATH의 기존 설치본에 양보할 수도 없다 — 양보하면 apt의 0.9.0이 pin을 이겨 버전을 모으려던 목적이 사라진다. 한 번 지우고 다시 돌리면 그 뒤로는 이 저장소가 관리한다(Windows는 `%USERPROFILE%\.local\bin\shellcheck.exe`).
+>
+> ```bash
+> rm -f ~/.local/bin/shellcheck   # 내용이 아깝다면 옮겨 두고 지운다
+> bash ~/dotfiles/install.sh
+> ```
+
 버전을 올릴 때는 `manifests/shellcheck.tsv`의 다섯 행을 함께 올린다. 이미 설치된 머신은 세 OS 모두 `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 없으면 install이 실패로 멈추고 바이너리를 바꾸지 않는다.
 
 ### ruff — Python 린터/포매터 (선택적 설치)

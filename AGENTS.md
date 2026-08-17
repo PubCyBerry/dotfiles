@@ -318,6 +318,8 @@ command -v shellcheck && shellcheck --version | awk -F': *' '$1=="version"'
 
 > receipt 쪽 마이그레이션은 따로 있다. 예전 설치본을 쓰던 머신의 receipt에는 `apt:shellcheck` / `brew:shellcheck`가 남는데, manifest에서 빠졌으므로 `package_key_allowed`의 조회로는 잡히지 않고, 그대로 두면 uninstall preflight가 **전체를 중단**시킨다(무관한 항목까지 하나도 정리되지 않는다). 그래서 `uninstall.sh`가 이 두 key를 고정 목록으로 인정한다 — 구 로컬 skill 배포분과 같은 처리다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 위 명령으로 이미 지웠거나 사용자가 직접 올린 패키지는 문제가 되지 않는다. Windows는 `winget.txt`에 shellcheck가 있던 적이 없어 해당 없다.
 
+**손으로 둔 `~/.local/bin/shellcheck`는 install을 매 실행 실패시킨다.** receipt에 없는 파일이 그 자리에 있으면 `install_managed_file … skip`이 보존을 택하고 `install_shellcheck`가 그것을 실패로 기록한다 — 남의 파일을 덮지 않기 때문이다(Safe-Clean-Install). 다른 direct artifact는 `new` 상태에서 `command -v <name>`으로 기존 설치본에 양보하지만 shellcheck는 그럴 수 없다. 양보하면 `/usr/bin/shellcheck` 0.9.0이 pin을 이겨 이 절의 목적이 사라진다. 그래서 그 상태를 실패 메시지가 직접 구분해 대응 방법까지 적는다(`… exists but is not managed by dotfiles. Remove it and re-run`). rhwp의 unowned tree 충돌도 같은 모양이며, 안내는 `docs/tools.md`에 있다.
+
 버전을 올릴 때는 다섯 행을 함께 올린다. 이미 설치된 머신은 **세 OS 모두** `DOTFILES_UPGRADE_DIRECT=1`을 요구한다 — 다른 direct artifact와 같은 규칙이며, lint 규칙 집합이 조용히 바뀌지 않게 하려는 것이다. 근거는 receipt에 기록한 `directVersion`이다. Unix는 `direct_anchor_state`가, Windows는 같은 계약을 파일 단위로 옮긴 `Get-DirectFileState`가 판정하며, 둘 다 manifest 버전과 다르면 플래그 없이는 `upgrade-blocked`로 멈춘다(설치 실패로 기록되고 바이너리는 그대로 둔다).
 
 이 게이트는 `tests/ownership/direct-artifacts.{sh,ps1}`가 단언한다. CI의 실제 install 잡은 매번 새 HOME에서 도는 탓에 `new` → `current` 전이만 지나므로, `upgrade` / `upgrade-blocked` / `modified`를 지나는 검사는 이 두 스크립트뿐이다. `pr-gate.yml`의 **세 install 잡 모두**가 돌린다 — bash 쪽은 `file_mode`/`tree_hash`의 BSD 경로(`stat -f`, `find -printf` 없음)를 지나므로 macOS에서 돌지 않으면 그쪽 회귀를 잡는 검사가 없다.

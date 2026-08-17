@@ -1148,7 +1148,16 @@ install_shellcheck() {
         record_install_failure "shellcheck binary reports '${reported:-unknown}', expected '$version'"; return 1
     }
     install_direct_file shellcheck "$version" "$binary" "$anchor" || {
-        record_install_failure "shellcheck not installed: $anchor"; return 1
+        # 가장 흔한 원인은 사용자가 손으로 둔 파일이다. skip 계약상 이 저장소는 남의 파일을
+        # 덮지 않고, 다른 direct artifact처럼 PATH의 기존 설치본에 양보할 수도 없다
+        # (양보하면 apt의 0.9.0이 pin을 이긴다). 그래서 안내가 없으면 그 머신의 install이
+        # 매 실행 같은 자리에서 실패한다 — 대응 방법을 실패 메시지에 함께 적는다.
+        if [[ "$DIRECT_STATE" == new ]] && [[ -e "$anchor" || -L "$anchor" ]]; then
+            record_install_failure "shellcheck not installed: $anchor exists but is not managed by dotfiles. Remove it and re-run (see docs/tools.md)."
+        else
+            record_install_failure "shellcheck not installed: $anchor"
+        fi
+        return 1
     }
     warn_legacy_shellcheck_package
 }

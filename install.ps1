@@ -1252,8 +1252,17 @@ function Install-ShellCheck {
         if ($reported -cne $version) {
             Add-InstallFailure "shellcheck binary reports '$reported', expected '$version'"; return $false
         }
-        # Skip: 사용자가 직접 둔 shellcheck.exe가 있으면 보존한다.
-        if (-not (Install-ManagedFile $binary $dest Skip)) { Add-InstallFailure "shellcheck not installed: $dest"; return $false }
+        # Skip: 사용자가 직접 둔 shellcheck.exe가 있으면 보존한다. 다만 그 상태로는 이후
+        # 모든 실행이 같은 자리에서 실패하므로(다른 direct artifact와 달리 PATH의 기존
+        # 설치본에 양보할 수 없다 — 양보하면 pin이 무력해진다) 대응 방법을 메시지에 적는다.
+        if (-not (Install-ManagedFile $binary $dest Skip)) {
+            if ($anchor.State -ceq 'new' -and $null -ne (Get-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue)) {
+                Add-InstallFailure "shellcheck not installed: $dest exists but is not managed by dotfiles. Remove it and re-run (see docs/tools.md)."
+            } else {
+                Add-InstallFailure "shellcheck not installed: $dest"
+            }
+            return $false
+        }
         # 다음 실행이 버전을 대조할 근거. 기록에 실패하면 그때 upgrade 게이트가 무력해지므로
         # 성공으로 넘기지 않는다.
         if (-not (Set-DirectFileVersion $dest $version)) { Add-InstallFailure "shellcheck version not recorded: $dest"; return $false }
