@@ -525,6 +525,47 @@ function Install-ManagedDirectTree([string]$SourceDir, [string]$DestDir, [string
     return $true
 }
 
+function Get-DirectFileState([string]$Path, [string]$Version) {
+    # Unix install.sh의 direct_anchor_state와 같은 계약을 파일 단위로 준다.
+    # Install-ManagedFile은 소유권(installedHash)만 보므로 manifest 버전이 올라가면
+    # 조용히 새 바이너리로 갈아탄다 — lint 도구처럼 버전이 곧 규칙 집합인 artifact는
+    # 그 교체가 눈에 보여야 하므로 directVersion을 따로 들고 비교한다.
+    #
+    # 반환 State: new | recover | current | modified | upgrade | upgrade-blocked
+    $result = @{ State = 'new'; InstalledVersion = '' }
+    if (-not $script:ReceiptReady) { return $result }
+    $entry = $script:Receipt.artifacts[(Get-ManagedPath $Path)]
+    if (-not $entry) { return $result }
+    # pending이거나 directVersion이 없으면(구 설치본) 판정할 근거가 없다.
+    # recover로 두어 아래에서 정상 설치 경로를 다시 태운다.
+    if ($entry.pending) { $result.State = 'recover'; return $result }
+    $installed = if ($entry.Contains('directVersion')) { [string]$entry.directVersion } else { '' }
+    $result.InstalledVersion = $installed
+    if (-not $installed) { $result.State = 'recover'; return $result }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        -not $entry.installedHash -or
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.installedHash) {
+        $result.State = 'modified'; return $result
+    }
+    if ($installed -cne $Version) {
+        $result.State = if ($env:DOTFILES_UPGRADE_DIRECT -eq '1') { 'upgrade' } else { 'upgrade-blocked' }
+        return $result
+    }
+    $result.State = 'current'
+    return $result
+}
+
+function Set-DirectFileVersion([string]$Path, [string]$Version) {
+    if (-not $script:ReceiptReady) { return $false }
+    $entry = $script:Receipt.artifacts[(Get-ManagedPath $Path)]
+    if (-not $entry -or $entry.pending -or $entry.Contains('installedTreeHash')) { return $false }
+    if ($entry.directVersion -ceq $Version) { return $true }
+    $entry.directVersion = $Version
+    Save-InstallReceipt
+    return $true
+}
+
 function Sync-ManagedFileHash([string]$Path) {
     # `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
     # receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
@@ -1115,9 +1156,13 @@ function Install-ShellCheck {
         Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } |
         ForEach-Object { , @($_ -split "`t") })
     if (-not (Test-ShellCheckManifestRows $rows)) { Add-InstallFailure 'Invalid manifests\shellcheck.tsv'; return $false }
-    if (-not [Environment]::Is64BitOperatingSystem -or
-        $env:PROCESSOR_ARCHITECTURE -notin @('AMD64','x86')) {
-        Write-Host "    [!] Unsupported shellcheck platform: $env:PROCESSOR_ARCHITECTURE; skipping."
+    # 판정 기준은 OS 비트수 하나다. PROCESSOR_ARCHITECTURE로 가르면 ARM64 머신에서
+    # 스크립트를 네이티브 pwsh로 띄웠는지 x64 에뮬레이션으로 띄웠는지에 따라
+    # 설치 여부가 갈린다(ARM64 / AMD64). Windows 11 ARM64는 x86_64 PE를 그대로
+    # 실행하므로 같은 manifest 행을 쓰고, 정말 못 도는 바이너리는 아래 --version
+    # 대조가 실패로 잡는다.
+    if (-not [Environment]::Is64BitOperatingSystem) {
+        Write-Host "    [!] Unsupported shellcheck platform: 32-bit Windows; skipping."
         return $true
     }
     $row = $rows | Where-Object { $_[0] -ceq 'windows-x86_64' } | Select-Object -First 1
@@ -1127,15 +1172,25 @@ function Install-ShellCheck {
     # ~\.local\bin은 config\powershell\profile.ps1과 config\bash\bashrc가 세션 PATH 앞에
     # 두므로 pwsh와 Git Bash 양쪽에서 잡힌다. User PATH(레지스트리)는 건드리지 않는다.
     $dest = Join-Path $LocalBin 'shellcheck.exe'
-    if ($script:ReceiptReady) {
-        $entry = $script:Receipt.artifacts[(Get-ManagedPath $dest)]
-        # 소유권(installedHash)과 identity(--version)가 둘 다 맞을 때만 내려받기를 건너뛴다.
-        if ($entry -and -not $entry.pending -and $entry.installedHash -and (Test-Path -LiteralPath $dest -PathType Leaf) -and
-            (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $entry.installedHash -and
-            (Get-ShellCheckReportedVersion $dest) -ceq $version) {
+    # Unix install.sh의 direct_anchor_state와 같은 계약이다. 소유권(installedHash)과
+    # 버전(directVersion)이 둘 다 맞을 때만 내려받기를 건너뛰고, manifest 버전이
+    # 올라갔으면 DOTFILES_UPGRADE_DIRECT=1 없이는 바꾸지 않는다 — lint 규칙 집합이
+    # 조용히 바뀌지 않게 하려는 것이다.
+    $anchor = Get-DirectFileState $dest $version
+    switch ($anchor.State) {
+        'current' {
             Write-Host "    shellcheck $version already installed: $dest"
             return $true
         }
+        'modified' {
+            Add-InstallFailure "Managed shellcheck changed; preserving: $dest"
+            return $false
+        }
+        'upgrade-blocked' {
+            Add-InstallFailure "shellcheck $($anchor.InstalledVersion) -> $version requires DOTFILES_UPGRADE_DIRECT=1"
+            return $false
+        }
+        'upgrade' { Write-Host "    Upgrading shellcheck: $($anchor.InstalledVersion) -> $version" }
     }
 
     $work = Join-Path ([IO.Path]::GetTempPath()) "dotfiles-shellcheck.$([guid]::NewGuid())"
@@ -1160,6 +1215,9 @@ function Install-ShellCheck {
         }
         # Skip: 사용자가 직접 둔 shellcheck.exe가 있으면 보존한다.
         if (-not (Install-ManagedFile $binary $dest Skip)) { Add-InstallFailure "shellcheck not installed: $dest"; return $false }
+        # 다음 실행이 버전을 대조할 근거. 기록에 실패하면 그때 upgrade 게이트가 무력해지므로
+        # 성공으로 넘기지 않는다.
+        if (-not (Set-DirectFileVersion $dest $version)) { Add-InstallFailure "shellcheck version not recorded: $dest"; return $false }
         Write-Host "    shellcheck $version -> $dest"
     } finally {
         Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
