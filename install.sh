@@ -1079,6 +1079,29 @@ validate_shellcheck_manifest() {
     ' "$1"
 }
 
+# manifest에서 shellcheck를 뺐다고 이미 깔린 패키지가 사라지지는 않는다 — install은 남의
+# 소유 패키지를 제거하지 않는다(Safe-Clean-Install). 그래서 이 PR 이전에 프로비저닝한
+# 머신에는 apt/brew 설치분이 pin한 쪽과 그대로 공존하고, 어느 쪽이 잡히는지는 그 순간의
+# PATH가 정한다. ~/.bashrc 마커 블록을 읽지 않는 소비자 — VS Code ShellCheck 확장,
+# 프로파일을 거치지 않은 셸의 Makefile, PATH가 씻긴 sudo — 는 계속 구버전을 보고,
+# CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
+#
+# 정리 명령은 docs/tools.md에 있지만 문서만으로는 알아차릴 계기가 없다. 설치가 끝난
+# 자리에서 한 줄로 알린다. 알림에 그치고 실패로 기록하지 않는다 — 남의 소유 패키지라
+# 이 스크립트가 지울 대상이 아니다.
+warn_legacy_shellcheck_package() {
+    local owner=""
+    if command -v dpkg >/dev/null 2>&1 && dpkg -s shellcheck >/dev/null 2>&1; then
+        owner=apt
+    elif command -v brew >/dev/null 2>&1 && brew list --formula shellcheck >/dev/null 2>&1; then
+        owner=brew
+    fi
+    [[ -n "$owner" ]] || return 0
+    echo "    [!] An older $owner-managed shellcheck is still installed alongside the pinned one."
+    echo "        Remove it so every consumer sees one version (see docs/tools.md)."
+    return 0
+}
+
 install_shellcheck() {
     local manifest="$ROOT/manifests/shellcheck.tsv" platform row version format url checksum
     local work archive extract binary reported anchor
@@ -1097,7 +1120,7 @@ install_shellcheck() {
     anchor="$LOCAL_BIN/shellcheck"
     direct_anchor_state "$anchor" "$version"
     case "$DIRECT_STATE" in
-        current) echo "    shellcheck $version already installed: $anchor"; return 0 ;;
+        current) echo "    shellcheck $version already installed: $anchor"; warn_legacy_shellcheck_package; return 0 ;;
         modified) record_install_failure "Managed shellcheck changed; preserving: $anchor"; return 1 ;;
         upgrade-blocked)
             record_install_failure "shellcheck $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1"
@@ -1127,6 +1150,7 @@ install_shellcheck() {
     install_direct_file shellcheck "$version" "$binary" "$anchor" || {
         record_install_failure "shellcheck not installed: $anchor"; return 1
     }
+    warn_legacy_shellcheck_package
 }
 
 # ---------------------------------------------

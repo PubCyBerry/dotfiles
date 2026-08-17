@@ -299,6 +299,8 @@ manifest에서 빼는 것은 **앞으로 설치하지 않는다**는 뜻일 뿐,
 
 `~/.bashrc` 마커 블록을 읽지 않는 소비자는 여전히 옛 버전을 본다 — VS Code ShellCheck 확장이 `/usr/bin/shellcheck`를 해석하는 경우, 프로파일을 거치지 않은 셸에서 실행된 Makefile, PATH가 씻긴 `sudo` 등이다. 그쪽에서는 CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
 
+문서만으로는 알아차릴 계기가 없으므로 install이 직접 알린다. `install_shellcheck`가 성공한 자리에서 `dpkg -s shellcheck` / `brew list --formula shellcheck`로 구 패키지가 남아 있는지 보고, 남아 있으면 두 줄짜리 안내를 출력한다. 알림에 그치고 `record_install_failure`를 타지 않는다 — 남의 소유 패키지라 이 스크립트가 지울 대상이 아니다(Safe-Clean-Install). `dpkg`/`brew`가 없는 환경에서는 `command -v`에서 바로 빠져 비용이 없다.
+
 **업그레이드하는 머신에서 한 번 실행한다.**
 
 ```bash

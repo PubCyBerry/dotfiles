@@ -120,4 +120,31 @@ for field in 1 5; do
     fi
 done
 
+# manifest에서 빠진 구 apt/brew 설치분은 install이 지우지 않는다(남의 소유 패키지다).
+# 대신 남아 있다는 사실을 설치 직후 한 줄로 알린다. 알림에 그쳐야 하므로 실패를
+# 기록하지 않고, set -e 아래에서 설치를 끊지도 않아야 한다.
+cat > "$work/bin/dpkg" <<'SH'
+#!/usr/bin/env bash
+[[ "$*" == "-s shellcheck" && -n "${LEGACY_APT_SHELLCHECK:-}" ]]
+SH
+cat > "$work/bin/brew" <<'SH'
+#!/usr/bin/env bash
+[[ "$*" == "list --formula shellcheck" && -n "${LEGACY_BREW_SHELLCHECK:-}" ]]
+SH
+chmod +x "$work/bin/dpkg" "$work/bin/brew"
+export LEGACY_APT_SHELLCHECK=1 LEGACY_BREW_SHELLCHECK=""
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ "$notice" == *'apt-managed shellcheck'* && "$notice" == *'docs/tools.md'* ]] || {
+    echo 'apt legacy notice missing' >&2; exit 1
+}
+export LEGACY_APT_SHELLCHECK="" LEGACY_BREW_SHELLCHECK=1
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ "$notice" == *'brew-managed shellcheck'* ]] || { echo 'brew legacy notice missing' >&2; exit 1; }
+INSTALL_FAILURES=""
+warn_legacy_shellcheck_package >/dev/null
+[[ -z "$INSTALL_FAILURES" ]] || { echo 'legacy notice was recorded as an install failure' >&2; exit 1; }
+export LEGACY_APT_SHELLCHECK="" LEGACY_BREW_SHELLCHECK=""
+notice="$(warn_legacy_shellcheck_package)" || { echo 'legacy notice returned failure' >&2; exit 1; }
+[[ -z "$notice" ]] || { echo 'legacy notice fired without a legacy package' >&2; exit 1; }
+
 echo 'install failure contract checks passed'
