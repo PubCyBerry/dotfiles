@@ -90,6 +90,10 @@ try {
     # Gemini MCP entry: ~/.gemini/config/mcp_config.json 등록 및 멱등성
     # -----------------------------------------
     $geminiJson = Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+    # 0바이트 registry에서 시작한다. 존재한다는 이유만으로 그대로 파서에 넘기면 jq가 빈
+    # 출력을 내 등록이 통째로 실패했다("Failed to write MCP entry") — 실제로 겪은 회귀다.
+    New-Item -ItemType Directory -Force -Path (Split-Path $geminiJson) | Out-Null
+    [IO.File]::WriteAllText($geminiJson, '', [Text.UTF8Encoding]::new($false))
     Assert (Install-ManagedMcpServer gemini 'rhwp' $geminiJson $desired) 'gemini-register'
     Assert (Get-McpEntry gemini 'rhwp' $geminiJson) 'gemini-read'
     Assert ($script:McpValue -ceq $canonical) 'gemini-entry'
@@ -98,6 +102,22 @@ try {
     Assert (Install-ManagedMcpServer gemini 'rhwp' $geminiJson $desired) 'gemini-idempotent'
     & jq -e '.customSetting == 123' $geminiJson | Out-Null
     Assert ($LASTEXITCODE -eq 0) 'gemini-user-key-lost'
+
+    # -----------------------------------------
+    # 공백뿐인 registry도 seed 대상이다. 반면 내용이 있는데 깨진 파일은 아니다 — 빈
+    # 파일과 달리 사용자 데이터가 들어 있을 수 있어 보존해야 한다.
+    # receipt에 낯선 key를 남기지 않도록 Set/Get-McpEntry를 직접 부른다.
+    # -----------------------------------------
+    $wsJson = Join-Path $env:USERPROFILE '.gemini\config\whitespace-registry.json'
+    [IO.File]::WriteAllText($wsJson, "`n  `n", [Text.UTF8Encoding]::new($false))
+    Assert (Set-McpEntry gemini 'probe' $wsJson $canonical) 'whitespace-registry-write'
+    Assert (Get-McpEntry gemini 'probe' $wsJson) 'whitespace-registry-read'
+    Assert ($script:McpValue -ceq $canonical) 'whitespace-registry-entry'
+
+    $brokenJson = Join-Path $env:USERPROFILE '.gemini\config\broken-registry.json'
+    [IO.File]::WriteAllText($brokenJson, '{', [Text.UTF8Encoding]::new($false))
+    Assert (-not (Set-McpEntry gemini 'probe' $brokenJson $canonical)) 'broken-registry-written'
+    Assert ([IO.File]::ReadAllText($brokenJson) -ceq '{') 'broken-registry-clobbered'
 
     # -----------------------------------------
     # tree artifact: 정확한 tree 해시일 때만 배치/제거한다.

@@ -81,12 +81,34 @@ jq -e '.hasCompletedOnboarding == true' "$CLAUDE_JSON" >/dev/null || fail claude
 # Gemini MCP entry: ~/.gemini/config/mcp_config.json 등록 및 멱등성
 # ---------------------------------------------
 GEMINI_JSON="$HOME/.gemini/config/mcp_config.json"
+# 0바이트 registry에서 시작한다. 존재한다는 이유만으로 그대로 파서에 넘기면 read는
+# jq -e '.'의 exit 4를 판독 실패로 오인하고 write는 빈 출력을 낸다 — 실제로 겪은 회귀다.
+mkdir -p "$(dirname "$GEMINI_JSON")"; : > "$GEMINI_JSON"
 install_managed_mcp_server gemini rhwp "$GEMINI_JSON" "$DESIRED" || fail gemini-register
 [[ "$(jq -cS '.mcpServers.rhwp' "$GEMINI_JSON")" == "$CANONICAL" ]] || fail gemini-entry
 jq -n '{"customSetting":123}' > "$TMP/gemini_seed.json"
 jq -s '.[0] * .[1]' "$TMP/gemini_seed.json" "$GEMINI_JSON" > "$TMP/gemini_merged.json" && mv "$TMP/gemini_merged.json" "$GEMINI_JSON"
 install_managed_mcp_server gemini rhwp "$GEMINI_JSON" "$DESIRED" || fail gemini-idempotent
 jq -e '.customSetting == 123' "$GEMINI_JSON" >/dev/null || fail gemini-user-key-lost
+
+# ---------------------------------------------
+# 공백뿐인 registry도 seed 대상이다. 반면 내용이 있는데 깨진 파일은 아니다 — 빈 파일과
+# 달리 사용자 데이터가 들어 있을 수 있어 보존해야 한다.
+# receipt에 낯선 key를 남기지 않도록 read/write 함수를 직접 부른다.
+# ---------------------------------------------
+WS_JSON="$HOME/.gemini/config/whitespace-registry.json"
+printf '\n  \n' > "$WS_JSON"
+write_gemini_mcp_entry probe "$WS_JSON" "$CANONICAL" || fail whitespace-registry-write
+read_gemini_mcp_entry probe "$WS_JSON" || fail whitespace-registry-read
+[[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$CANONICAL" ]] || fail whitespace-registry-entry
+
+BROKEN_JSON="$HOME/.gemini/config/broken-registry.json"
+printf '{' > "$BROKEN_JSON"
+! read_gemini_mcp_entry probe "$BROKEN_JSON" || fail broken-registry-read-ok
+# jq의 parse error는 실제 설치에서는 원인을 알려 주는 유용한 출력이라 함수 안에서
+# 지우지 않는다. 테스트 로그에서만 가린다.
+! write_gemini_mcp_entry probe "$BROKEN_JSON" "$CANONICAL" 2>/dev/null || fail broken-registry-written
+[[ "$(cat "$BROKEN_JSON")" == '{' ]] || fail broken-registry-clobbered
 
 # ---------------------------------------------
 # direct tree: 신규 배치 → 멱등 → 사용자 수정 보존

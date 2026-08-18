@@ -867,6 +867,9 @@ read_claude_mcp_entry() {
     local name="$1" dst="$2"
     MCP_PRESENT=false; MCP_VALUE=""
     [[ -f "$dst" ]] || return 0
+    # 0바이트/공백뿐인 registry는 entry가 없는 것과 같다. jq -e '.'는 이 입력에 4로
+    # 끝나므로, 걸러내지 않으면 registry를 읽을 수 없는 것으로 오인해 등록을 포기한다.
+    [[ -n "$(tr -d '[:space:]' < "$dst" 2>/dev/null)" ]] || return 0
     jq -e '.' "$dst" >/dev/null 2>&1 || return 1
     jq -e --arg n "$name" '.mcpServers | objects | has($n)' "$dst" >/dev/null 2>&1 || return 0
     MCP_VALUE="$(jq -cS --arg n "$name" '.mcpServers[$n]' "$dst")" || return 1
@@ -877,7 +880,12 @@ read_claude_mcp_entry() {
 write_claude_mcp_entry() {
     local name="$1" dst="$2" value="$3" tmp
     mkdir -p "$(dirname "$dst")" || return 1
-    [[ -f "$dst" ]] || printf '%s\n' '{}' > "$dst"
+    # 파일이 없거나 0바이트/공백뿐이면 seed한다. 존재한다는 이유만으로 그대로 jq에 넘기면
+    # 빈 출력이 나와 등록이 실패한다. 내용이 있는데 깨진 파일은 손대지 않는다 — jq가
+    # 실패하고 그대로 보존된다.
+    if [[ ! -f "$dst" || -z "$(tr -d '[:space:]' < "$dst" 2>/dev/null)" ]]; then
+        printf '%s\n' '{}' > "$dst"
+    fi
     tmp="$(mktemp "$(dirname "$dst")/.claude.json.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
     if [[ -n "$value" ]]; then
         jq --arg n "$name" --argjson v "$value" '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' "$dst" > "$tmp" || return 1
@@ -2040,10 +2048,18 @@ if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
             record_install_failure "npm receipt journal failed; skipping package: $pkg"
             continue
         fi
-        if npm install -g "$pkg" >/dev/null 2>&1; then
+        # 종료 코드와 출력을 남긴다. 둘 다 버리면 EBUSY(실행 중인 바이너리 교체 실패)
+        # 같은 원인을 로그만 보고는 알 수 없어, 손으로 재현해야만 진단이 된다.
+        npm_log="$(mktemp)"; _TMPFILES+=("$npm_log")
+        npm_status=0
+        npm install -g "$pkg" >"$npm_log" 2>&1 || npm_status=$?
+        if (( npm_status == 0 )); then
             echo "    Installed $pkg"
         else
-            echo "    [!] Failed: $pkg"
+            echo "    [!] Failed: $pkg (exit: $npm_status)"
+            npm_diag="$(grep -m 4 -E '^npm (error|ERR!)' "$npm_log" 2>/dev/null || true)"
+            [[ -n "$npm_diag" ]] || npm_diag="$(tail -n 4 "$npm_log" 2>/dev/null || true)"
+            [[ -z "$npm_diag" ]] || while IFS= read -r npm_diag_line; do echo "        $npm_diag_line"; done <<<"$npm_diag"
             npm_failed=1
         fi
         after="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
