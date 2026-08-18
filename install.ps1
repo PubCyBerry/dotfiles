@@ -941,7 +941,12 @@ function Get-McpEntry([string]$McpHost, [string]$Name, [string]$Path) {
 function Set-McpEntry([string]$McpHost, [string]$Name, [string]$Path, [AllowNull()][string]$Value) {
     $dir = Split-Path $Path -Parent
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    if (-not (Test-Path -LiteralPath $Path)) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item -isnot [IO.FileInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) { return $false }
+    # 0바이트/공백뿐인 registry는 아무 정보도 담지 않는다. 존재한다는 이유만으로 그대로
+    # 파서에 넘기면 jq가 빈 출력을 내고 등록이 실패한다 — 실제로 겪은 회귀다.
+    # 내용이 있는데 깨진 파일은 여기서 손대지 않는다. 파서가 실패해 그대로 보존된다.
+    if (-not $item -or [string]::IsNullOrWhiteSpace([IO.File]::ReadAllText($Path))) {
         $seed = if ($McpHost -eq 'codex') { '' } else { '{}' }
         [IO.File]::WriteAllText($Path, $seed, [Text.UTF8Encoding]::new($false))
     }
@@ -1981,14 +1986,21 @@ if ((Test-Path $npmFile) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
         $package = $_.Package
         $packageJson = Join-Path $using:npmRoot "$package\package.json"
         $beforeVersion = $_.BeforeVersion
-        npm install -g $package 2>&1 | Out-Null
-        $success = $LASTEXITCODE -eq 0
+        # 종료 코드와 출력을 여기서 붙잡는다. 아래 jq 호출이 $LASTEXITCODE를 덮어써서
+        # 실패 메시지가 늘 (exit: 0)으로 찍혔고, npm 출력까지 버려져 EBUSY 같은 실패는
+        # 손으로 재현하기 전에는 원인을 알 수 없었다.
+        $npmOutput = @(npm install -g $package 2>&1)
+        $npmExit = $LASTEXITCODE
+        $success = $npmExit -eq 0
         $afterVersion = if (Test-Path $packageJson) { (& $using:jqPath -r '.version // empty' $packageJson 2>$null) } else { '' }
         if ($success) {
             Write-Host "    Installed $package"
             [pscustomobject]@{ Package = $package; Success = $true; BeforeVersion = $beforeVersion; AfterVersion = $afterVersion }
         } else {
-            Write-Host "    [!] Failed: $package (exit: $LASTEXITCODE)"
+            Write-Host "    [!] Failed: $package (exit: $npmExit)"
+            $diagnostic = @($npmOutput | Where-Object { "$_" -match '^npm (error|ERR!)' } | Select-Object -First 4)
+            if (-not $diagnostic) { $diagnostic = @($npmOutput | Select-Object -Last 4) }
+            foreach ($line in $diagnostic) { Write-Host "        $line" }
             [pscustomobject]@{ Package = $package; Success = $false; BeforeVersion = $beforeVersion; AfterVersion = $afterVersion }
         }
         } -ThrottleLimit 4

@@ -242,6 +242,8 @@ MCP 등록은 호스트의 **공식 저장소**에만 한다.
 
 entry는 receipt `values`의 `mcp:<host>:<name>` 키로 소유권을 잡는다. 사용자가 만든 동명 entry는 receipt에 없으므로 손대지 않고, 우리가 심은 뒤 사용자가 고쳤으면 그 다음 실행부터 보존한다. Codex 쪽은 TOML 편집이라 `yq`가 필요하며, 없으면 `config.toml` 병합과 같은 정책으로 건너뛴다(설치 전체를 실패시키지 않는다).
 
+registry 파일이 **0바이트이거나 공백뿐이면 없는 것과 같이 취급해 seed한다.** 존재한다는 이유만으로 그대로 파서에 넘기면 `jq`가 빈 출력을 내거나(`Failed to write MCP entry`) `jq -e '.'`가 4로 끝나(`MCP registry unreadable`) 등록이 통째로 실패한다. 반대로 **내용이 있는데 깨진 파일은 seed하지 않는다** — 사용자 데이터가 들어 있을 수 있어 파서 실패로 남기고 보존하는 편이 맞다. 두 경우의 경계를 `tests/rhwp/mcp-ownership.{sh,ps1}`이 단언한다.
+
 `SKIP_RHWP=1`로 이 단계 전체를 건너뛸 수 있다.
 
 소유권 계약은 네트워크 없이 검증한다. CI(`pr-gate.yml`, `uninstall-validation.yml`)가 같은 스크립트를 돌린다.
