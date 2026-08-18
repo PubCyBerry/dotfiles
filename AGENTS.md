@@ -498,6 +498,40 @@ uv run --with pyyaml --python 3.11 ~/.claude/skills/subagent-creator/scripts/val
 
 > `scripts/agent_validator.py`는 `PubCyBerry/subagent-creator`의 `skills/subagent-creator/scripts/agent_validator.py`와 **동기화 대상**이다. 한쪽을 고치면 다른 쪽도 고친다. skill 사본을 없애지 못하는 이유는 CI(`test-agent-roles`)가 skill 설치 없이 돌아야 해서 저장소 안에 engine이 있어야 하기 때문이다. 이 저장소는 engine만 소유한다 — `validate_subagent.py` wrapper와 그 테스트는 upstream 저장소에 있다.
 
+### temporal context hook 관리
+
+세 에이전트 호스트 모두에 현재 시각을 주입하는 훅을 배포한다. 본문은 `date` 한 줄과 JSON 출력이 전부이고, 차이는 **언제 발동하느냐**와 **어떤 wire 형식으로 뱉느냐**뿐이다.
+
+| 호스트 | registry | event | 산출 |
+|---|---|---|---|
+| Claude Code | `config/claude/settings.json` → `.hooks` | `UserPromptSubmit` | `hookSpecificOutput.additionalContext` |
+| Codex | `config/codex/hooks.json` → `.hooks` | `UserPromptSubmit` | `hookSpecificOutput.additionalContext` |
+| Antigravity | `config/agy/hooks.json` | `PreInvocation` | `injectSteps[].ephemeralMessage` |
+
+**`SessionStart`가 아니라 `UserPromptSubmit`인 이유.** SessionStart는 세션당 한 번만 돈다. 주입된 시각이 그 순간에 얼어붙어 긴 세션에서는 몇 시간 밀린 값을 사실처럼 들고 있게 된다 — 시각을 주입하는 훅으로서는 목적이 사라지는 실패 모드다. `UserPromptSubmit`은 턴마다 발동하므로 매 요청이 그 시점의 시각을 본다. Antigravity의 `PreInvocation`은 처음부터 턴 단위였고, 이제 세 호스트가 같은 시점 계약을 쓴다.
+
+Claude Code와 Codex는 출력 계약이 같아 스크립트가 사실상 동일하다. Codex 0.147.0 바이너리의 `UserPromptSubmitHookSpecificOutputWire`가 `hookEventName`(필수) + `additionalContext`(선택)로 Claude Code와 같은 모양이다. **스크립트가 뱉는 `hookEventName`과 registry가 등록한 event key는 반드시 같아야 한다** — 어긋나면 host가 출력을 조용히 버리고, 훅은 도는데 아무것도 주입되지 않는 상태가 된다. `tests/claude/runtime-contract.sh`가 두 값을 직접 대조하는 이유다.
+
+타임존은 `%Z`가 아니라 **`%z`(숫자 오프셋)** 를 쓴다. Git Bash(MSYS)에서 한국어 타임존 이름이 깨져 `%Z`가 빈 문자열이 되고, 결과적으로 타임존 정보가 통째로 사라진다.
+
+#### 마이그레이션: event를 옮기면 옛 자리의 사본을 걷어내야 한다
+
+registry는 merge 방식이라 사용자 hook을 보존하는데, 그 대가로 `scripts/merge-json-registry.jq`의 `merge_hooks`는 **managed 쪽에 있는 event key만** 훑는다. 그래서 관리 hook을 다른 event로 옮기면 기존 설치의 옛 event에 남은 사본이 영원히 방치되고, 다음 install부터 옛 자리와 새 자리가 **함께** 발동한다.
+
+`purge_relocated_hooks`가 이를 처리한다. managed 문서에 등장하는 hook의 identity(`["command", <command>]`)를 모아, managed에 **없는** event key에서 같은 identity를 제거하고, 비게 된 matcher group과 event key를 지운다. 하드코딩한 명령 문자열이 없으므로 앞으로 다른 hook을 옮길 때도 그대로 동작한다. 사용자 hook은 identity가 다르므로 남는다.
+
+#### 훅 스크립트는 `takeover`로 배포한다
+
+`~/.claude/hooks/temporal-context.sh` 같은 경로는 이 저장소가 이름으로 소유한다. `skip`이면 receipt에 그 항목이 없는 순간(다른 도구가 디렉터리를 만들었거나 receipt가 초기화된 경우) 구버전 사본이 "사용자 파일"로 판정돼 영구히 보존되고, registry만 갱신되어 **훅이 조용히 낡는다**. 실제로 그 상태가 발생해 `hookEventName`이 맞지 않는 옛 스크립트가 남아 있었다. `takeover`는 덮어쓰기 전에 `.dotfiles-backup`을 남기므로 Safe-Clean-Install 기준을 지키면서 이 실패 모드를 없앤다.
+
+검증은 네트워크 없이 돌아간다.
+
+```bash
+bash tests/claude/runtime-contract.sh
+bash tests/install/config-merge.sh
+pwsh -NoProfile -File tests/install/config-merge.ps1
+```
+
 ## 설치/언인스톨 변경 지침
 
 설치 스크립트나 에이전트 설정을 변경할 때는 Safe-Clean-Install과 Safe-Clean-Uninstall 기준을 함께 검토한다.

@@ -2131,11 +2131,13 @@ else
     echo "    [!] config/codex/hooks.json not found"
 fi
 
+# takeover인 이유: 이 이름의 파일은 이 저장소가 소유한다. skip이면 receipt에 없는 구버전
+# 사본이 영구히 남아 hook이 조용히 낡는다. 기존 파일은 .dotfiles-backup으로 백업된다.
 # hooks/temporal-context.sh 배포
 CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
 TEMPORAL_SRC="$ROOT/config/codex/hooks/temporal-context.sh"
 if [[ -f "$TEMPORAL_SRC" ]]; then
-    if install_managed_file "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh" skip; then
+    if install_managed_file "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh" takeover; then
         echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
     fi
 else
@@ -2218,7 +2220,7 @@ install_claude_code_stage() {
         echo "    [!] config/agents/global.md not found"
     fi
 
-    # hooks/: 배포 (temporal-context.sh 등) + 실행 권한
+    # hooks/: 배포 (temporal-context.sh 등) + 실행 권한. takeover 근거는 Codex 쪽 주석 참고.
     HOOKS_SRC="$ROOT/config/claude/hooks"
     HOOKS_DST="$CLAUDE_DIR/hooks"
     if [[ -d "$HOOKS_SRC" ]]; then
@@ -2230,7 +2232,7 @@ install_claude_code_stage() {
                 managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
                 if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
             fi
-            if ! install_managed_file "$managed_hook" "$HOOKS_DST/$hook_rel" skip; then
+            if ! install_managed_file "$managed_hook" "$HOOKS_DST/$hook_rel" takeover; then
                 hook_status=1
             fi
         done < <(find "$HOOKS_SRC" -type f -print0)
@@ -2296,6 +2298,7 @@ deploy_agy_stage() {
         echo "    [!] config/agy/hooks.json not found"
     fi
 
+    # hooks/: 배포 + 실행 권한. takeover 근거는 Codex 쪽 주석 참고.
     AGY_HOOKS_SRC="$ROOT/config/agy/hooks"
     AGY_HOOKS_DST="$GEMINI_DIR/hooks"
     if [[ -d "$AGY_HOOKS_SRC" ]]; then
@@ -2307,7 +2310,7 @@ deploy_agy_stage() {
                 managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
                 if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
             fi
-            if ! install_managed_file "$managed_hook" "$AGY_HOOKS_DST/$hook_rel" skip; then
+            if ! install_managed_file "$managed_hook" "$AGY_HOOKS_DST/$hook_rel" takeover; then
                 hook_status=1
             fi
         done < <(find "$AGY_HOOKS_SRC" -type f -print0)
