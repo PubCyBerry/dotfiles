@@ -121,9 +121,11 @@ cat > "$claude_src" <<'JSON'
   "language": "한국어",
   "env": {"REPO_VALUE": "1", "SHARED": "repo"},
   "permissions": {"allow": ["Bash(repo:*)"]},
-  "hooks": {"SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}]}]}
+  "hooks": {"UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}]}]}
 }
 JSON
+# destination은 event 이동 전에 설치된 머신 상태다: 관리 hook이 SessionStart에 남아 있고
+# 사용자 hook이 같은 group에 섞여 있으며, 새 event 쪽에는 중복이 들어 있다.
 cat > "$claude_dst" <<'JSON'
 {
   "language": "English",
@@ -133,9 +135,12 @@ cat > "$claude_dst" <<'JSON'
   "hooks": {
     "SessionStart": [{"matcher": "", "hooks": [
       {"type": "command", "command": "user-session-sentinel"},
-      {"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"},
       {"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}
-    ]}, {"matcher": "duplicate", "hooks": [
+    ]}, {"matcher": "legacy-only", "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}
+    ]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [
+      {"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"},
       {"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}
     ]}],
     "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "user-event-sentinel"}]}]
@@ -149,15 +154,25 @@ jq -e '
   .env.USER_SENTINEL == "keep" and .env.REPO_VALUE == "1" and .env.SHARED == "user" and
   (.permissions.allow | index("Read(*)")) != null and
   (.permissions.allow | index("Bash(repo:*)")) != null and
+  ([.hooks.UserPromptSubmit[].hooks[] | select(.command == "bash ~/.claude/hooks/temporal-context.sh")] | length) == 1 and
+  ([.hooks.SessionStart[].hooks[] | select(.command == "bash ~/.claude/hooks/temporal-context.sh")] | length) == 0 and
   ([.hooks.SessionStart[].hooks[] | select(.command == "user-session-sentinel")] | length) == 1 and
-  ([.hooks.SessionStart[].hooks[] | select(.command == "bash ~/.claude/hooks/temporal-context.sh")] | length) == 1 and
-  all(.hooks.SessionStart[]; (.hooks | length) > 0) and
+  ([.hooks.SessionStart[] | select(.matcher == "legacy-only")] | length) == 0 and
+  all(.hooks[][]; (.hooks | length) > 0) and
   .hooks.PreToolUse[0].hooks[0].command == "user-event-sentinel"
 ' "$claude_dst" >/dev/null
 [[ "$LAST_JSON_REGISTRY_DEPLOYED" == true ]] || { echo "FAIL: 병합 성공인데 배포 플래그가 서지 않았습니다." >&2; exit 1; }
 cp "$claude_dst" "$work/claude-first"
 merge_json_registry "$claude_src" "$claude_dst"
 cmp -s "$work/claude-first" "$claude_dst"
+
+# 옛 event에 관리 hook만 있었다면 group과 event key가 통째로 사라져야 한다.
+legacy_only_dst="$work/legacy-only.json"
+cat > "$legacy_only_dst" <<'JSON'
+{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"bash ~/.claude/hooks/temporal-context.sh"}]}]}}
+JSON
+merge_json_registry "$claude_src" "$legacy_only_dst"
+jq -e '(.hooks | has("SessionStart")) | not' "$legacy_only_dst" >/dev/null
 
 invalid_json="$work/invalid.json"
 printf '{' > "$invalid_json"
@@ -169,21 +184,38 @@ cmp -s "$work/invalid-json-first" "$invalid_json"
 codex_src="$work/codex-source.json"
 codex_dst="$work/codex-destination.json"
 cat > "$codex_src" <<'JSON'
-{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"}]}]}}
+{"hooks":{"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"}]}]}}
 JSON
 cat > "$codex_dst" <<'JSON'
-{"user":{"sentinel":true},"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"user-codex-sentinel"},{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"},{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"}]}]}}
+{"user":{"sentinel":true},"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"user-codex-sentinel"},{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"},{"type":"command","command":"bash ~/.codex/hooks/temporal-context.sh"}]}]}}
 JSON
 
 merge_json_registry "$codex_src" "$codex_dst"
 jq -e '
   .user.sentinel == true and
   ([.hooks.SessionStart[].hooks[] | select(.command == "user-codex-sentinel")] | length) == 1 and
-  ([.hooks.SessionStart[].hooks[] | select(.command == "bash ~/.codex/hooks/temporal-context.sh")] | length) == 1
+  ([.hooks.SessionStart[].hooks[] | select(.command == "bash ~/.codex/hooks/temporal-context.sh")] | length) == 0 and
+  ([.hooks.UserPromptSubmit[].hooks[] | select(.command == "bash ~/.codex/hooks/temporal-context.sh")] | length) == 1
 ' "$codex_dst" >/dev/null
 cp "$codex_dst" "$work/codex-first"
 merge_json_registry "$codex_src" "$codex_dst"
 cmp -s "$work/codex-first" "$codex_dst"
 
-jq empty "$claude_dst" "$codex_dst"
+# agy hooks.json은 top-level hooks key가 없어 event 병합/정리 대상이 아니다.
+agy_src="$work/agy-source.json"
+agy_dst="$work/agy-destination.json"
+cat > "$agy_src" <<'JSON'
+{"temporal-context":{"PreInvocation":[{"type":"command","command":"bash ~/.gemini/hooks/temporal-context.sh"}]}}
+JSON
+cat > "$agy_dst" <<'JSON'
+{"user-hook":{"PreInvocation":[{"type":"command","command":"user-agy-sentinel"}]}}
+JSON
+merge_json_registry "$agy_src" "$agy_dst"
+jq -e '
+  ."user-hook".PreInvocation[0].command == "user-agy-sentinel" and
+  ."temporal-context".PreInvocation[0].command == "bash ~/.gemini/hooks/temporal-context.sh" and
+  (has("hooks") | not)
+' "$agy_dst" >/dev/null
+
+jq empty "$claude_dst" "$codex_dst" "$agy_dst" "$legacy_only_dst"
 echo "config merge regression checks passed"

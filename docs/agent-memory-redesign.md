@@ -104,7 +104,6 @@ PostToolUse(matcher `Write|Edit`) 훅. `agent-memory/*/handoff/` 100줄 초과 �
 ```json
 "SessionStart": [
   { "matcher": "", "hooks": [
-    { "type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh" },
     { "type": "command", "command": "bash ~/.claude/hooks/memory-inject.sh" }
   ]}
 ],

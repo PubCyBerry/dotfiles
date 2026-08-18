@@ -8,8 +8,9 @@ Claude Code, Codex와 관련 에이전트/스킬 설정 상세.
 |------|-----------|------|
 | `config/agents/global.md` | `~/.claude/CLAUDE.md` | 공통 전역 행동 설정 |
 | `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한, hook 설정 |
+| `config/claude/hooks/temporal-context.sh` | `~/.claude/hooks/temporal-context.sh` | UserPromptSubmit 시간 컨텍스트 주입 |
 
-모든 OS에서 settings.json은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합한다. dotfiles가 등록하는 env·hook 항목만 갱신하고 사용자 키와 사용자 registry 항목은 보존한다. `config/agents/global.md`는 Claude가 읽는 파일명에 맞춰 `~/.claude/CLAUDE.md`로 복사된다.
+모든 OS에서 settings.json은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합한다. dotfiles가 등록하는 env·hook 항목만 갱신하고 사용자 키와 사용자 registry 항목은 보존한다. `config/agents/global.md`는 Claude가 읽는 파일명에 맞춰 `~/.claude/CLAUDE.md`로 복사된다. 시간 컨텍스트 hook의 event 선택과 이전 설치 마이그레이션은 [AGENTS.md의 "temporal context hook 관리"](../AGENTS.md#temporal-context-hook-관리)에 있다.
 
 ## Codex 설정 파일
 
@@ -18,7 +19,7 @@ Claude Code, Codex와 관련 에이전트/스킬 설정 상세.
 | `config/agents/global.md` | `~/.codex/AGENTS.md` | 공통 전역 행동 설정 |
 | `config/codex/config.toml` | `~/.codex/config.toml` | 모델 기본값 |
 | `config/codex/hooks.json` | `~/.codex/hooks.json` | Codex hook 등록 |
-| `config/codex/hooks/temporal-context.sh` | `~/.codex/hooks/temporal-context.sh` | SessionStart 시간 컨텍스트 주입 |
+| `config/codex/hooks/temporal-context.sh` | `~/.codex/hooks/temporal-context.sh` | UserPromptSubmit 시간 컨텍스트 주입 |
 | `config/agents/roles/<name>/` | `~/.codex/agents/<name>.toml` | subagent 정의 (`spawn_agent` 대상) |
 
 설치 스크립트는 `config.toml` 전체를 덮어쓰지 않는다. 기존 Codex 파일에 `model`, `model_reasoning_effort`가 없을 때만 dotfiles 기본값을 추가해 프로젝트 trust, 플러그인, Desktop 상태, 머신별 경로를 보존한다. `config/codex/config.toml`에 `[mcp_servers.openaiDeveloperDocs]`를 추가하면 같은 병합 경로로 Docs MCP 설정도 배포할 수 있다. `config/agents/global.md`는 Codex가 읽는 파일명에 맞춰 `~/.codex/AGENTS.md`로 복사된다. Codex hook은 Claude Code hook과 출력 포맷이 달라 `config/codex/hooks/`에서 별도로 관리한다.

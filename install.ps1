@@ -2062,11 +2062,13 @@ if (Test-Path $codexHooksJsonSrc) {
     Write-Host "    [!] config\codex\hooks.json not found"
 }
 
+# takeover인 이유: 이 이름의 파일은 이 저장소가 소유한다. Skip이면 receipt에 없는 구버전
+# 사본이 영구히 남아 hook이 조용히 낡는다. 기존 파일은 .dotfiles-backup으로 백업된다.
 # hooks/temporal-context.sh 배포
 $codexHooksDir = Join-Path $CodexDir "hooks"
 $temporalSrc   = Join-Path $ROOT "config\codex\hooks\temporal-context.sh"
 if (Test-Path $temporalSrc) {
-    if (Install-ManagedFile $temporalSrc (Join-Path $codexHooksDir "temporal-context.sh") Skip) {
+    if (Install-ManagedFile $temporalSrc (Join-Path $codexHooksDir "temporal-context.sh") Takeover) {
         Write-Host "    Copied temporal-context.sh to ~/.codex/hooks/"
     }
 } else {
@@ -2132,11 +2134,11 @@ if (Test-Path $agentsGlobalSrc) {
     Write-Host "    [!] config\agents\global.md not found"
 }
 
-# hooks/: 배포 (temporal-context.sh 등)
+# hooks/: 배포 (temporal-context.sh 등). Takeover 근거는 Codex 쪽 주석 참고.
 $hooksSrc = Join-Path $ROOT "config\claude\hooks"
 $hooksDst = Join-Path $ClaudeDir "hooks"
 if (Test-Path $hooksSrc) {
-    if (Install-ManagedTree $hooksSrc $hooksDst Skip) { Write-Host "    Copied hooks/" }
+    if (Install-ManagedTree $hooksSrc $hooksDst Takeover) { Write-Host "    Copied hooks/" }
 } else {
     Write-Host "    [!] config\claude\hooks not found, skipping."
 }
@@ -2206,10 +2208,11 @@ Invoke-OptionalInstallStage 'SKIP_AGY' "==> [CI] Skipping Antigravity (AGY) conf
         Write-Host "    [!] config\agy\hooks.json not found"
     }
 
+    # hooks/: 배포. Takeover 근거는 Codex 쪽 주석 참고.
     $agyHooksSrc = Join-Path $ROOT "config\agy\hooks"
     $agyHooksDst = Join-Path $GeminiDir "hooks"
     if (Test-Path $agyHooksSrc) {
-        if (Install-ManagedTree $agyHooksSrc $agyHooksDst Skip) { Write-Host "    Copied hooks/ to ~/.gemini/hooks/" }
+        if (Install-ManagedTree $agyHooksSrc $agyHooksDst Takeover) { Write-Host "    Copied hooks/ to ~/.gemini/hooks/" }
     } else {
         Write-Host "    [!] config\agy\hooks not found, skipping."
     }

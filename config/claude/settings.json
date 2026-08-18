@@ -16,7 +16,7 @@
     "pr": ""
   },
   "hooks": {
-    "SessionStart": [
+    "UserPromptSubmit": [
       {
         "matcher": "",
         "hooks": [
