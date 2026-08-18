@@ -69,6 +69,7 @@ Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 
 | 패키지 | 설명 |
 |--------|------|
 | `@openai/codex` | OpenAI Codex CLI — 코드 생성/수정 에이전트 |
+| `ccusage` | 코딩 에이전트 CLI의 로컬 사용량 로그를 읽어 토큰·비용 리포트 생성 (Claude Code, Codex, Gemini CLI 등) — 사용법은 [docs/tools.md](tools.md) 참고 |
 
 ## skills (npx skills)
 

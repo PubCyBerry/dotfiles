@@ -3,3 +3,4 @@
 # @anthropic-ai/claude-code는 OS별 Claude stage(`SKIP_CLAUDE_CODE` guard)에서 별도 설치
 
 @openai/codex
+ccusage
