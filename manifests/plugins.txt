@@ -11,9 +11,6 @@
 #   claude plugin install <plugin>@<marketplace> --scope <scope>
 # 둘 다 멱등이며, 이미 등록/설치된 항목은 그대로 둔다.
 
-# HUD — statusline에 세션 정보 표시
-jarrodwatts/claude-hud   claude-hud@claude-hud   user
-
 # 응답 압축 모드
 JuliusBrussee/caveman    caveman@caveman         user
 

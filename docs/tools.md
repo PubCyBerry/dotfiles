@@ -330,7 +330,7 @@ ccusage daily --json | jq '.daily[-1]'    # JSON 출력
 
 npm 패키지지만 본체는 Rust 바이너리이고, 플랫폼별 산출물이 `optionalDependencies`로 붙어 설치 시 해당 OS/아키텍처 것만 내려온다.
 
-`ccusage statusline`(Beta)은 Claude Code statusline hook용 출력이다. 이 저장소는 statusline을 `claude-hud` 플러그인으로 설정하므로 둘을 동시에 걸지 않는다 — statusline은 하나만 등록된다.
+`ccusage statusline`(Beta)은 Claude Code statusline에 쓴다. 이 저장소는 그 명령을 `config/claude/settings.json`의 `statusLine` 키로 배포하므로 설치 후 별도 설정이 필요 없다 — 자세한 계약은 [AGENTS.md의 "statusline 관리"](../AGENTS.md#statusline-관리)에 있다.
 
 ## 셸 설정
 

@@ -134,6 +134,7 @@ features.hooks = false
     @'
 {
   "language": "한국어",
+  "statusLine": {"type": "command", "command": "ccusage statusline", "padding": 0},
   "env": {"REPO_VALUE": "1", "SHARED": "repo"},
   "permissions": {"allow": ["Bash(repo:*)"]},
   "hooks": {"UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}]}]}
@@ -191,6 +192,17 @@ features.hooks = false
     jq -e '(.hooks | has("SessionStart")) | not' $legacyOnlyDst | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "옛 event key가 비었는데도 남았습니다."
 
+    # claude-hud statusline이 남은 기존 설치는 managed 값(ccusage)으로 교체돼야 한다. 플러그인이
+    # 매니페스트에서 빠져 그 명령이 곧 없는 파일을 가리키기 때문이다. 사용자가 직접 넣은
+    # statusLine(위 user-sentinel)은 같은 merge에서 보존된다 — 둘을 구분하는 것이 이 검사다.
+    $legacyHudDst = Join-Path $work "legacy-hud.json"
+    @'
+{"statusLine":{"type":"command","command":"node C:/Users/test/.claude/plugins/claude-hud/dist/index.js"}}
+'@ | Set-Content $legacyHudDst -Encoding utf8 -NoNewline
+    Merge-JsonRegistry $claudeSrc $legacyHudDst
+    jq -e '.statusLine.command == "ccusage statusline" and .statusLine.padding == 0' $legacyHudDst | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) "claude-hud statusline이 ccusage로 교체되지 않았습니다."
+
     $invalidJson = Join-Path $work "invalid.json"
     '{' | Set-Content $invalidJson -Encoding utf8 -NoNewline
     $invalidJsonBefore = Get-FileHash $invalidJson
@@ -236,7 +248,7 @@ features.hooks = false
     ' $agyDst | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "agy hooks 병합 결과가 기대와 다릅니다."
 
-    jq empty $claudeDst $codexDst $agyDst $legacyOnlyDst
+    jq empty $claudeDst $codexDst $agyDst $legacyOnlyDst $legacyHudDst
     Assert-True ($LASTEXITCODE -eq 0) "JSON 결과가 유효하지 않습니다."
     Write-Host "config merge regression checks passed"
 } finally {

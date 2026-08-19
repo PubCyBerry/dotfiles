@@ -1,3 +1,15 @@
+# 마이그레이션: statusline을 claude-hud 플러그인에서 ccusage로 옮겼다. 이 파일은 destination
+# 우선 merge라 기존 설치에 남은 claude-hud 명령이 managed 값을 영구히 덮는데, 플러그인은
+# manifests/plugins.txt에서 빠졌으므로 그 명령이 가리키는 dist/index.js는 곧 사라진다 —
+# statusline이 조용히 죽고 사용자는 원인을 알 방법이 없다. claude-hud를 가리키는 statusLine만
+# 걷어내 managed 값이 들어가게 하고, 사용자가 직접 넣은 statusLine은 그대로 둔다.
+def purge_legacy_statusline:
+  if (.statusLine | type) == "object"
+     and ((.statusLine.command // "") | type) == "string"
+     and ((.statusLine.command // "") | test("claude-hud"))
+  then del(.statusLine)
+  else . end;
+
 def hook_id:
   if type == "object" and .type == "command" and (.command | type) == "string"
   then ["command", .command]
@@ -66,7 +78,7 @@ def merge_permissions($old; $managed):
           $managed[$key]
         end);
 
-.[0] as $old
+(.[0] | purge_legacy_statusline) as $old
 | .[1] as $managed
 | ($managed * $old)
 | if (($old | has("permissions")) or ($managed | has("permissions"))) then

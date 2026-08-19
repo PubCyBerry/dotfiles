@@ -119,6 +119,7 @@ claude_dst="$work/claude-destination.json"
 cat > "$claude_src" <<'JSON'
 {
   "language": "한국어",
+  "statusLine": {"type": "command", "command": "ccusage statusline", "padding": 0},
   "env": {"REPO_VALUE": "1", "SHARED": "repo"},
   "permissions": {"allow": ["Bash(repo:*)"]},
   "hooks": {"UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/temporal-context.sh"}]}]}
@@ -174,6 +175,17 @@ JSON
 merge_json_registry "$claude_src" "$legacy_only_dst"
 jq -e '(.hooks | has("SessionStart")) | not' "$legacy_only_dst" >/dev/null
 
+
+# claude-hud statusline이 남은 기존 설치는 managed 값(ccusage)으로 교체돼야 한다. 플러그인이
+# 매니페스트에서 빠져 그 명령이 곧 없는 파일을 가리키기 때문이다. 사용자가 직접 넣은
+# statusLine(위 user-sentinel)은 같은 merge에서 보존된다 — 둘을 구분하는 것이 이 검사다.
+legacy_hud_dst="$work/legacy-hud.json"
+cat > "$legacy_hud_dst" <<'JSON'
+{"statusLine":{"type":"command","command":"bash -c 'plugin_dir=$(ls -d \"$HOME/.claude\"/plugins/cache/claude-hud/claude-hud/*/); exec node \"${plugin_dir}dist/index.js\"'"}}
+JSON
+merge_json_registry "$claude_src" "$legacy_hud_dst"
+jq -e '.statusLine.command == "ccusage statusline" and .statusLine.padding == 0' "$legacy_hud_dst" >/dev/null
+
 invalid_json="$work/invalid.json"
 printf '{' > "$invalid_json"
 cp "$invalid_json" "$work/invalid-json-first"
@@ -217,5 +229,5 @@ jq -e '
   (has("hooks") | not)
 ' "$agy_dst" >/dev/null
 
-jq empty "$claude_dst" "$codex_dst" "$agy_dst" "$legacy_only_dst"
+jq empty "$claude_dst" "$codex_dst" "$agy_dst" "$legacy_only_dst" "$legacy_hud_dst"
 echo "config merge regression checks passed"

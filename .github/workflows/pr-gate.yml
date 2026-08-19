@@ -174,7 +174,7 @@ jobs:
           printf '%s\n' '# user-sentinel' > "$HOME/.bashrc"
           mkdir -p "$HOME/.claude"
           node_ver="$(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1)"
-          printf '{"statusLine":{"command":"%s/.local/share/fnm/node-versions/%s/installation/bin/node /mock/claude-hud"}}\n' "$HOME" "$node_ver" > "$HOME/.claude/settings.json"
+          printf '{"statusLine":{"command":"%s/.local/share/fnm/node-versions/%s/installation/bin/node /mock/user-statusline"}}\n' "$HOME" "$node_ver" > "$HOME/.claude/settings.json"
 
       - name: Second install and sentinel verification
         run: |
@@ -183,7 +183,7 @@ jobs:
           test "$(yq -p=toml -r '.user.sentinel' "$HOME/.codex/config.toml")" = keep
           test "$(grep -Fxc '# user-sentinel' "$HOME/.bashrc")" -eq 1
           test "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.bashrc")" -eq 1
-          jq -e '.statusLine.command | contains("/mock/claude-hud")' "$HOME/.claude/settings.json" > /dev/null
+          jq -e '.statusLine.command | contains("/mock/user-statusline")' "$HOME/.claude/settings.json" > /dev/null
           # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
           grep -Fq '$include /etc/inputrc' "$HOME/.inputrc"
           grep -Fq 'set input-meta on' "$HOME/.inputrc"
@@ -474,7 +474,6 @@ jobs:
       - name: JSON 문법
         run: |
           jq empty config/claude/settings.json
-          jq empty config/claude/claude-hud.json
 
       - name: TOML 문법
         run: yq -p=toml '.' config/codex/config.toml > /dev/null

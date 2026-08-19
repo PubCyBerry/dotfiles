@@ -48,7 +48,7 @@ dotfiles/
 │   │   ├── global.md    # Claude/Codex/Antigravity 공통 전역 지침
 │   │   └── roles/       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
 │   ├── agy/             # Antigravity (AGY) 설정 (hooks.json, hooks/)
-│   ├── claude/          # Claude Code 설정 (settings.json, hooks, claude-hud)
+│   ├── claude/          # Claude Code 설정 (settings.json, hooks)
 │   ├── codex/           # Codex 설정 (config.toml, hooks.json, hooks/)
 │   ├── git/
 │   │   └── gitconfig    # OS-중립. autocrlf/fileMode은 install 스크립트가 OS별 주입
@@ -82,7 +82,6 @@ dotfiles/
 └── docs/
     ├── tools.md                   # CLI 도구 사용법 cheatsheet
     ├── ai-agents.md               # Claude Code, 플러그인, skills 상세
-    ├── claude-hud.md              # Claude HUD 설정 가이드
     ├── uninstall.md               # 클린 언인스톨 가이드
     ├── git-commit-convention.md   # Conventional Commits 규칙
     ├── worktree-git-workflows.md  # Worktree 커밋 히스토리 관리 전략
@@ -195,7 +194,7 @@ claude plugin marketplace add <marketplace-source> --scope <scope>
 claude plugin install <plugin>@<marketplace> --scope <scope>
 ```
 
-현재 목록: `claude-hud`(statusline HUD), `caveman`(응답 압축 모드), `codex`(Claude Code 안에서 Codex 사용 — 마켓플레이스 소스 `openai/codex-plugin-cc`, 마켓플레이스 이름은 `openai-codex`로 다르다). 특정 프로젝트에만 쓰는 `project`/`local` scope 플러그인은 매니페스트에 넣지 않는다 — 머신 전역 설치가 아니라 프로젝트 소유이기 때문이다.
+현재 목록: `caveman`(응답 압축 모드), `codex`(Claude Code 안에서 Codex 사용 — 마켓플레이스 소스 `openai/codex-plugin-cc`, 마켓플레이스 이름은 `openai-codex`로 다르다). 특정 프로젝트에만 쓰는 `project`/`local` scope 플러그인은 매니페스트에 넣지 않는다 — 머신 전역 설치가 아니라 프로젝트 소유이기 때문이다.
 
 CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 자동으로도 skip).
 
@@ -208,6 +207,34 @@ CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 �
 | agent | `config/agents/roles/` | `~/.claude/agents/`, `~/.codex/agents/` | 메타+body 조립 |
 | hook | `config/claude/hooks/`, `config/codex/hooks/`, `config/agy/hooks/` | `~/.claude/hooks/`, `~/.codex/hooks/`, `~/.gemini/hooks/` | 파일 복사 + settings.json / hooks.json 병합 |
 | MCP | `manifests/rhwp.tsv` | `~/.codex/config.toml`, `~/.claude.json`, `~/.gemini/config/mcp_config.json` | install 스크립트 (receipt `values`) |
+
+### statusline 관리
+
+Claude Code statusline은 `config/claude/settings.json`의 `statusLine` 키로 관리한다. 명령은 `ccusage statusline` 하나이며, 실행 파일은 `manifests/npm-global.txt`의 npm 전역 패키지가 준다.
+
+```json
+{ "statusLine": { "type": "command", "command": "ccusage statusline", "padding": 0 } }
+```
+
+**플러그인이 아니라 설정으로 관리하는 이유.** 이전에는 `claude-hud` 플러그인이 이 자리를 채웠는데, 명령줄을 만드는 주체가 `/claude-hud:setup`이었다. 그 결과 statusLine 값에 fnm의 특정 Node 버전 경로와 플러그인 캐시 경로가 그대로 박혀, Node를 올리거나 플러그인 캐시가 바뀌면 statusline이 조용히 죽었다. 이 저장소는 그 값을 소유하지 않아 install이 고칠 수도 없었다. `ccusage statusline`은 PATH에서 이름 하나로 해석되므로 그 결합이 사라진다 — 세 OS가 같은 문자열을 쓴다.
+
+`ccusage statusline`은 기본이 offline 모드다(캐시된 가격표를 쓰고 네트워크를 타지 않는다). 최신 가격이 필요하면 `--no-offline`을 붙인다.
+
+**기존 설치 마이그레이션.** `settings.json`은 destination 우선 merge라 이미 깔린 claude-hud 명령이 managed 값을 영구히 덮는다. 플러그인이 매니페스트에서 빠지면 그 명령이 가리키는 `dist/index.js`는 사라지므로, 그대로 두면 statusline이 죽은 채 굳는다. 그래서 `scripts/merge-json-registry.jq`의 `purge_legacy_statusline`이 **claude-hud를 가리키는 statusLine만** 병합 전에 걷어낸다. 사용자가 직접 넣은 statusLine은 identity가 다르므로 보존된다 — hook의 `purge_relocated_hooks`와 같은 방식이다.
+
+플러그인 바이너리와 마켓플레이스 등록은 이 저장소가 소유하지 않으므로 install이 지우지 않는다. 업그레이드하는 머신에서 한 번 직접 정리한다.
+
+```bash
+claude plugin uninstall claude-hud@claude-hud
+claude plugin marketplace remove claude-hud
+```
+
+검증은 네트워크 없이 돌아간다(사용자 statusLine 보존 + claude-hud 값 교체를 한 실행에서 함께 단언한다).
+
+```bash
+bash tests/install/config-merge.sh
+pwsh -NoProfile -File tests/install/config-merge.ps1
+```
 
 ### rhwp와 MCP 관리
 
