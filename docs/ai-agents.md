@@ -7,7 +7,7 @@ Claude Code, Codex와 관련 에이전트/스킬 설정 상세.
 | 파일 | 설치 위치 | 내용 |
 |------|-----------|------|
 | `config/agents/global.md` | `~/.claude/CLAUDE.md` | 공통 전역 행동 설정 |
-| `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한, hook 설정 |
+| `config/claude/settings.json` | `~/.claude/settings.json` | 언어, 권한, hook, statusline 설정 |
 | `config/claude/hooks/temporal-context.sh` | `~/.claude/hooks/temporal-context.sh` | UserPromptSubmit 시간 컨텍스트 주입 |
 
 모든 OS에서 settings.json은 공용 `scripts/merge-json-registry.jq` 규칙으로 병합한다. dotfiles가 등록하는 env·hook 항목만 갱신하고 사용자 키와 사용자 registry 항목은 보존한다. `config/agents/global.md`는 Claude가 읽는 파일명에 맞춰 `~/.claude/CLAUDE.md`로 복사된다. 시간 컨텍스트 hook의 event 선택과 이전 설치 마이그레이션은 [AGENTS.md의 "temporal context hook 관리"](../AGENTS.md#temporal-context-hook-관리)에 있다.
@@ -51,16 +51,27 @@ Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 
 
 | 플러그인 | 마켓플레이스 | 설명 |
 |---|---|---|
-| `claude-hud` | `jarrodwatts/claude-hud` | statusline에 세션 정보(모델, 컨텍스트, 토큰, git 상태) 표시 |
 | `caveman` | `JuliusBrussee/caveman` | 응답 압축 모드 — 토큰 사용량 감소 |
 | `codex` | `openai/codex-plugin-cc` (마켓플레이스 이름 `openai-codex`) | Claude Code 세션 안에서 Codex 호출 |
 
 플러그인은 `~/.claude/plugins/`에 CLI가 직접 설치하므로, 저장소가 파일을 복사하지 않는다. 제거도 CLI로만 한다(`docs/uninstall.md` 7번 참고) — 디렉터리를 통째로 지우면 매니페스트 밖의 플러그인까지 사라진다.
 
-### claude-hud
+## statusline
 
-→ 상세 설치/설정 가이드: [docs/claude-hud.md](claude-hud.md)  
-→ 기본 설정 파일: `config/claude/claude-hud.json` (템플릿. install 스크립트가 배포하지 않으며 `~/.claude/plugins/claude-hud/config.json`로 수동 복사한다)
+Claude Code statusline은 플러그인이 아니라 `config/claude/settings.json`의 `statusLine` 키로 관리한다. 명령은 `ccusage statusline` 하나이며, 실행 파일은 `manifests/npm-global.txt`의 `ccusage`가 준다.
+
+```json
+{ "statusLine": { "type": "command", "command": "ccusage statusline", "padding": 0 } }
+```
+
+표시 내용: 활성 모델과 reasoning effort, 세션/오늘/현재 5시간 블록 비용, burn rate, 컨텍스트 사용량. 기본이 offline 모드라 네트워크를 타지 않는다(`--no-offline`으로 최신 가격표 조회).
+
+이전에는 `claude-hud` 플러그인이 이 자리를 채웠다. 제거 이유와 기존 설치 마이그레이션은 `AGENTS.md`의 "statusline 관리"에 있다. 업그레이드하는 머신에서는 플러그인을 한 번 직접 지운다 — install은 소유하지 않은 플러그인을 제거하지 않는다.
+
+```bash
+claude plugin uninstall claude-hud@claude-hud
+claude plugin marketplace remove claude-hud
+```
 
 ## npm 전역 패키지
 
@@ -69,6 +80,7 @@ Antigravity는 `~/.gemini/config/GEMINI.md` 및 `~/.gemini/GEMINI.md`를 전역 
 | 패키지 | 설명 |
 |--------|------|
 | `@openai/codex` | OpenAI Codex CLI — 코드 생성/수정 에이전트 |
+| `ccusage` | 코딩 에이전트 CLI의 로컬 사용량 로그를 읽어 토큰·비용 리포트 생성 (Claude Code, Codex, Gemini CLI 등) — 사용법은 [docs/tools.md](tools.md) 참고 |
 
 ## skills (npx skills)
 

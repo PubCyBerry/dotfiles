@@ -45,6 +45,14 @@ bash uninstall.sh
 - 구 apt/brew shellcheck 설치분(`apt:shellcheck`, `brew:shellcheck`)은 `manifests/apt.txt`·`manifests/Brewfile`에서 빠졌지만 그 시절 설치본을 쓰던 머신 receipt에는 남아 있다. 그래서 이 두 key만 고정 목록으로 소유권을 인정한다 — 인정하지 않으면 preflight가 uninstall 전체를 중단시켜 무관한 항목까지 하나도 정리되지 않는다. 제거 여부는 여전히 설치 당시 버전과의 대조가 정하므로, 사용자가 직접 올린 패키지는 보존된다.
   - install은 이 패키지를 지우지 않는다. manifest에서 뺐다는 것은 앞으로 설치하지 않는다는 뜻일 뿐이라, 업그레이드한 머신에는 구 `/usr/bin/shellcheck`가 그대로 남아 pin한 `~/.local/bin/shellcheck`와 공존한다. 직접 정리하는 명령은 [docs/tools.md의 shellcheck 절](tools.md#shellcheck--셸-스크립트-정적-분석)에 있다. 먼저 지우고 나서 uninstall을 돌려도 문제없다 — 패키지가 없으면 receipt entry만 조용히 걷힌다.
 
+
+- 구 `claude-hud` 플러그인은 `manifests/plugins.txt`에서 빠졌지만 install도 uninstall도 지우지 않는다 — 플러그인은 `claude plugin` CLI 소유라 애초에 receipt 범위 밖이다. statusline 자체는 `config/claude/settings.json`의 `statusLine` 키(`ccusage statusline`)로 옮겼고, 기존 설치에 남은 claude-hud 명령은 다음 install의 병합이 걷어낸다(`AGENTS.md`의 "statusline 관리"). 플러그인 파일과 마켓플레이스 등록은 직접 정리한다.
+
+  ```bash
+  claude plugin uninstall claude-hud@claude-hud
+  claude plugin marketplace remove claude-hud
+  ```
+
 - 구 로컬 skill 배포분(`~/.claude/skills/{subagent-creator,repo-scaffold}/`, `~/.gemini/config/skills/{subagent-creator,repo-scaffold}/`)은 소스가 저장소에서 사라졌지만 receipt entry는 남아 있다. 그래서 이 두 이름만 고정 목록으로 소유권을 인정하고, unchanged 파일에 한해 제거한다. `npx skills`가 새로 설치한 skill은 receipt에 없으므로 이 경로에 걸리지 않는다.
 
 자동 제거하지 않는 범위: receipt에 없는 Node 버전, `npx skills`가 설치한 skills(`npx skills remove`로 지운다), plugins/marketplaces, macOS defaults, legacy Codex skills, cache와 사용자 data.

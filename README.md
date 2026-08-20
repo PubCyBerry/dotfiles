@@ -103,7 +103,6 @@ dotfiles/
         <name>/claude.frontmatter  # Claude subagent 메타 (YAML)
         <name>/codex.toml          # Codex subagent 메타 (TOML)
     claude/
-      claude-hud.json              # claude-hud 설정
       settings.json                # Claude Code 설정 (hooks, env, permissions)
       hooks/
         temporal-context.sh        # Claude SessionStart 시간 컨텍스트 hook
@@ -145,7 +144,6 @@ dotfiles/
   docs/
     tools.md                       # CLI 도구 사용법 cheatsheet
     ai-agents.md                   # Claude Code, 플러그인, skills 상세
-    claude-hud.md                  # Claude HUD 설정 가이드
     uninstall.md                   # 클린 언인스톨 가이드
     TROUBLESHOOTING.md             # 트러블슈팅 가이드
     git-commit-convention.md       # Git Commit Convention (Conventional Commits)
@@ -220,7 +218,7 @@ dotfiles/
 
 | 저장소 | 설명 | Stars |
 |--------|------|-------|
-| [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | Claude HUD statusline | <img src="https://img.shields.io/github/stars/jarrodwatts/claude-hud?style=flat&label=%E2%AD%90" alt="stars"> |
+| [ccusage/ccusage](https://github.com/ccusage/ccusage) | 코딩 에이전트 CLI 토큰 사용량·비용 리포트 + Claude Code statusline | <img src="https://img.shields.io/github/stars/ccusage/ccusage?style=flat&label=%E2%AD%90" alt="stars"> |
 | [sirmalloc/ccstatusline](https://github.com/sirmalloc/ccstatusline) | Claude Code 상태줄 표시 도구 | <img src="https://img.shields.io/github/stars/sirmalloc/ccstatusline?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Vim

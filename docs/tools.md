@@ -308,6 +308,30 @@ bun install        # npm install 대체 (빠름)
 | Linux | `install.sh` (`manifests/direct-artifacts.tsv` pin·SHA-256 검증) |
 | Windows | `winget install Oven-sh.Bun` |
 
+## AI 에이전트
+
+### ccusage — 에이전트 토큰 사용량·비용 리포트
+
+코딩 에이전트 CLI가 로컬에 남기는 세션 로그를 읽어 일·주·월·세션 단위 토큰/비용 리포트를 만든다. 네트워크로 사용량을 조회하지 않고 로컬 파일만 본다(가격표만 원격이며 `--offline`로 캐시본을 쓴다). Claude Code, Codex, Gemini CLI, Copilot CLI 등 여러 소스를 한 리포트에 합친다.
+
+```bash
+ccusage                      # 감지된 모든 소스를 일 단위로
+ccusage daily --last 1       # 오늘
+ccusage monthly --breakdown  # 월 단위 + 모델별 분해
+ccusage blocks               # Claude Code 5시간 과금 창
+ccusage claude daily --instances          # Claude Code를 프로젝트별로
+ccusage codex daily --since 2026-08-01    # Codex만, 기간 필터
+ccusage daily --json | jq '.daily[-1]'    # JSON 출력
+```
+
+| OS | 설치 방법 |
+|----|-----------|
+| Windows / Linux / macOS | `install.ps1` / `install.sh` (`manifests/npm-global.txt`의 npm 전역 패키지) |
+
+npm 패키지지만 본체는 Rust 바이너리이고, 플랫폼별 산출물이 `optionalDependencies`로 붙어 설치 시 해당 OS/아키텍처 것만 내려온다.
+
+`ccusage statusline`(Beta)은 Claude Code statusline에 쓴다. 이 저장소는 그 명령을 `config/claude/settings.json`의 `statusLine` 키로 배포하므로 설치 후 별도 설정이 필요 없다 — 자세한 계약은 [AGENTS.md의 "statusline 관리"](../AGENTS.md#statusline-관리)에 있다.
+
 ## 셸 설정
 
 ### .inputrc — Readline 설정
