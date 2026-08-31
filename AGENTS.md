@@ -200,7 +200,7 @@ claude plugin marketplace add <marketplace-source> --scope <scope>
 claude plugin install <plugin>@<marketplace> --scope <scope>
 ```
 
-현재 목록: `caveman`(응답 압축 모드), `codex`(Claude Code 안에서 Codex 사용 — 마켓플레이스 소스 `openai/codex-plugin-cc`, 마켓플레이스 이름은 `openai-codex`로 다르다), `claude-hud`(statusline 좌측 — "statusline 관리" 참고). 특정 프로젝트에만 쓰는 `project`/`local` scope 플러그인은 매니페스트에 넣지 않는다 — 머신 전역 설치가 아니라 프로젝트 소유이기 때문이다.
+현재 목록: `caveman`(응답 압축 모드), `codex`(Claude Code 안에서 Codex 사용 — 마켓플레이스 소스 `openai/codex-plugin-cc`, 마켓플레이스 이름은 `openai-codex`로 다르다), `claude-hud`(statusline 좌측 — "statusline 관리" 참고), `fluent-korean`(유창한 한국어 출력 스타일), `ponytail`(YAGNI 모드 — 가장 단순한 해법을 강제하며 자체 hook을 함께 배포한다). 특정 프로젝트에만 쓰는 `project`/`local` scope 플러그인은 매니페스트에 넣지 않는다 — 머신 전역 설치가 아니라 프로젝트 소유이기 때문이다.
 
 CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 자동으로도 skip).
 
