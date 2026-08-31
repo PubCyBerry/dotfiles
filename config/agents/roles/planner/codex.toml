@@ -1,0 +1,5 @@
+# Codex subagent 메타. developer_instructions는 install 스크립트가 body.md로 채운다.
+name = "planner"
+description = '짧은 아이디어(1~4문장)를 완전한 프로젝트 스펙으로 확장하는 기획·아키텍처 전문가. "이런 걸 만들고 싶어", "스펙 짜줘", "설계해줘", "기획해줘", "이 아이디어 구체화해줘"처럼 요구사항이 한두 문장뿐일 때 위임한다. 야심찬 스코프로 목표·사용자·아키텍처·마일스톤을 정의한다. 이미 스펙이 확정된 작업의 코드 구현 계획에는 쓰지 않는다.'
+model_reasoning_effort = "xhigh"
+sandbox_mode = "workspace-write"

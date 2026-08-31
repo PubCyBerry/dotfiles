@@ -1,0 +1,38 @@
+# Windows winget 패키지 목록
+# install.ps1이 읽어서 설치
+
+# 개발 환경 기초
+Git.Git                         # Git for Windows (Git Bash 포함)
+GitHub.cli                      # Github CLI
+Neovim.Neovim                   # NeoVim
+
+# 자바스크립트 런타임
+Schniz.fnm                      # Node.js 버전관리
+Oven-sh.Bun                    
+
+# 터미널 멀티플렉서
+marlocarlo.psmux                # tmux on Windows Powershell
+
+# 현대적인 터미널 도구
+sharkdp.bat                     # 'cat' with syntax highlighting and Git intergration
+junegunn.fzf                    # command-line fuzzy finder
+eza-community.eza               # alternative to 'ls'
+sharkdp.fd                      # alternative to 'find'
+dandavison.delta                # A syntax-highlighting pager for git, diff, grep, rg --json, and blame output
+BurntSushi.ripgrep.MSVC         # ripgrep recursively searches directories for a regex pattern while respecting your gitignore
+jqlang.jq                       # Command-line JSON processor
+MikeFarah.yq                    # Command-line YAML, JSON, XML, CSV, TOML, HCL processor (ID 대소문자 주의 — --exact는 case-sensitive)
+ajeetdsouza.zoxide              # Smarter cd command
+Starship.Starship               # Customizable prompt for any shell
+sxyazi.yazi                     # Terminal file manager, based on async I/O
+JesseDuffield.lazygit           # Terminal UI for git commands
+
+# 동영상 / 미디어 / 문서
+Gyan.FFmpeg                     # 동영상
+oschwartz10612.Poppler          # PDF
+ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
+
+# 추가 CLI 도구
+astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
+# astral-sh.ruff
+

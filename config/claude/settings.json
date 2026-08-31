@@ -1,0 +1,40 @@
+{
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "MAX_THINKING_TOKENS": "10000",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "ENABLE_PROMPT_CACHING_1H": "1",
+    "FORCE_PROMPT_CACHING_5M": "0",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "CLAUDE_CODE_NO_FLICKER": "1"
+  },
+  "language": "한국어",
+  "remoteControlAtStartup": true,
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/temporal-context.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline.sh",
+    "padding": 0
+  }
+}

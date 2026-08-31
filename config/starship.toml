@@ -1,0 +1,24 @@
+# ~/.config/starship.toml — Starship prompt 기본 설정
+# 전체 옵션: https://starship.rs/config/
+# 프리셋 적용: starship preset pastel-powerline -o ~/.config/starship.toml
+
+command_timeout = 1000
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+[directory]
+truncation_length = 4
+truncate_to_repo = false
+
+[git_branch]
+symbol = "⎇ "
+
+[git_status]
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?"
+modified = "!"
+staged = "+"

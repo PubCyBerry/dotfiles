@@ -1,0 +1,58 @@
+# Ubuntu/Debian apt 패키지 목록
+# install.sh가 읽어서 설치
+# apt에 없는 도구는 manifests/direct-artifacts.tsv의 pinned release로 설치
+#   (fnm, bun, fzf, eza, delta, yq, starship, yazi, lazygit, neovim, atuin)
+
+# 빌드/기본
+build-essential
+ca-certificates
+curl
+wget
+git
+gpg
+# shellcheck # X, apt는 배포판마다 다른 버전을 준다(22.04=0.8.0, 24.04=0.9.0, 26.04=0.11.0).
+#              CI와 어긋나므로 manifests/shellcheck.tsv의 pinned release로 설치
+unzip
+
+# 개발 환경 기초
+gh                              # Github CLI
+vim
+# neovim # X, GitHub releases로 설치 (apt는 22.04/24.04에서 0.9.x 제공)
+
+# 자바스크립트 런타임
+# fnm  # X, apt로 설치 안됨                    # Node.js 버전관리
+# Bun  # X, apt로 설치 안됨 
+
+# 터미널 멀티플렉서
+tmux
+
+# 현대적인 터미널 도구
+bat                             # 'cat' with syntax highlighting and Git intergration
+# fzf                             # apt 0.29는 `fzf --bash` 미지원 → pinned release
+# eza # X, apt(22.04)에 없음 → GitHub releases 바이너리로 설치
+fd-find                         # alternative to 'find', `ln -s $(which fdfind) ~/.local/bin/fd` + `$HOME/.local/bin`를 `$PATH`에 등록 필요
+# delta # X, apt로 설치 안됨
+ripgrep                         # rg
+jq
+# yq # X, apt(22.04)에 없음 → GitHub releases 바이너리로 설치
+# starship # X, curl로 설치 필요
+# yazi # X, 바이너리 다운로드 필요(https://github.com/sxyazi/yazi/releases)
+# lazygit # X, PPA 추가 혹은 바이너리 다운로드 필요
+zoxide                          # 스마트 cd
+
+
+# 폰트
+fonts-firacode                  # Fira Code (ligature 지원 개발자 폰트)
+fonts-powerline                 # Powerline 심볼 폰트 (starship 등 프롬프트 의존성)
+
+# 동영상/미디어/문서 (yazi preview 의존성)
+ffmpeg                          # 비디오
+poppler-utils                   # PDF
+imagemagick                     # 폰트, HEIC, JPEG
+7zip                            # 압축 파일
+file                            # MIME type(파일 타입 탐지)
+
+
+# 미설치 패키지:
+# ruff # X, uv로 설치
+# atuin # X, ?

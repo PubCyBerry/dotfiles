@@ -1,0 +1,2425 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2317
+# Linux(Ubuntu) dotfiles 설치 진입점 (all-in-one)
+# 실행: bash install.sh
+# 지원: Ubuntu 22.04+ (apt 기반)
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OS="$(uname -s)"
+
+APPLY_DEFAULTS=false
+for arg in "$@"; do
+  [[ "$arg" == "--with-defaults" ]] && APPLY_DEFAULTS=true
+done
+
+# =============================================
+# 경로 상수
+# =============================================
+CLAUDE_DIR="$HOME/.claude"
+CODEX_DIR="$HOME/.codex"
+GEMINI_DIR="$HOME/.gemini"
+GEMINI_CONFIG_DIR="$GEMINI_DIR/config"
+LOCAL_BIN="$HOME/.local/bin"
+NVIM_CONFIG_DIR="$HOME/.config/nvim"
+YAZI_CONFIG_DIR="$HOME/.config/yazi"
+STARSHIP_CONFIG="$HOME/.config/starship.toml"
+ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"   # amd64, arm64, ...
+
+mkdir -p "$LOCAL_BIN" "$HOME/.config"
+
+# =============================================
+# 헬퍼 함수
+# =============================================
+_TMPFILES=()
+_cleanup() { if [[ ${#_TMPFILES[@]} -gt 0 ]]; then rm -rf "${_TMPFILES[@]}"; fi; }
+trap _cleanup EXIT
+
+manifest_lines() {
+    local path="$1"
+    [[ -f "$path" ]] || return 0
+    LC_ALL=C sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$path" | awk '{$1=$1; print}'
+}
+
+INSTALL_FAILURES=""
+record_install_failure() {
+    echo "    [!] $1" >&2
+    INSTALL_FAILURES="${INSTALL_FAILURES}${INSTALL_FAILURES:+
+}$1"
+}
+
+finish_install() {
+    if [[ -n "$INSTALL_FAILURES" ]]; then
+        echo
+        echo "==> Installation failed"
+        while IFS= read -r failure; do echo "    [!] $failure"; done <<< "$INSTALL_FAILURES"
+        return 1
+    fi
+    echo
+    echo "==> Done! Restart your terminal, Codex, and Claude Code to apply all changes."
+}
+
+validate_plugin_manifest() {
+    local path="$1" content line market plugin scope extra count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        count=$((count + 1))
+        read -r market plugin scope extra <<< "$line"
+        [[ -n "$market" && -n "$plugin" && -z "$extra" ]] || {
+            echo "Invalid plugins manifest field count: $line" >&2; return 1;
+        }
+        scope="${scope:-user}"
+        [[ "$scope" =~ ^(user|project|local)$ ]] || {
+            echo "Invalid plugin scope: $line" >&2; return 1;
+        }
+        [[ "$plugin" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || {
+            echo "Invalid plugin ID: $line" >&2; return 1;
+        }
+    done <<< "$content"
+    (( count > 0 )) || { echo "plugins manifest has no entries: $path" >&2; return 1; }
+}
+
+restore_claude_plugins() {
+    local path="$1" content line market plugin scope extra failed=0 count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        count=$((count + 1))
+        read -r market plugin scope extra <<< "$line"
+        [[ -n "$market" && -n "$plugin" && -z "$extra" ]] || return 1
+        scope="${scope:-user}"
+        [[ "$scope" =~ ^(user|project|local)$ && "$plugin" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || return 1
+    done <<< "$content"
+    (( count > 0 )) || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r market plugin scope <<< "$line"
+        scope="${scope:-user}"
+        echo "    Adding marketplace: $market (scope: $scope)..."
+        if ! claude plugin marketplace add "$market" --scope "$scope" </dev/null >/dev/null 2>&1; then
+            echo "    [!] Failed to add marketplace: $market"
+            failed=1
+            continue
+        fi
+        echo "    Installing plugin: $plugin (scope: $scope)..."
+        if ! claude plugin install "$plugin" --scope "$scope" </dev/null >/dev/null 2>&1; then
+            echo "    [!] Failed to install plugin: $plugin"
+            failed=1
+        fi
+    done <<< "$content"
+    (( failed == 0 ))
+}
+
+# npx skills는 설치한 skill을 ~/.agents/.skill-lock.json에 source와 함께 기록한다.
+# jq가 없으면 추적 여부를 판단할 수 없으므로 add로 처리한다(add는 언제나 안전하다).
+npx_skill_is_tracked() {
+    local name="$1" repo="$2" lock="$HOME/.agents/.skill-lock.json"
+    [[ -f "$lock" ]] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    jq -e --arg n "$name" --arg r "$repo" '(.skills // {})[$n].source == $r' "$lock" >/dev/null 2>&1
+}
+
+restore_claude_skills() {
+    local path="$1" content row repo skill failed=0 count=0
+    content="$(manifest_lines "$path")" || return 1
+    while IFS= read -r row; do
+        [[ -n "$row" ]] || continue
+        count=$((count + 1))
+        [[ "$row" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || {
+            echo "Invalid skills manifest row: $row" >&2; return 1;
+        }
+    done <<< "$content"
+    (( count > 0 )) || { echo "skills manifest has no entries: $path" >&2; return 1; }
+    # npx가 같은 source로 이미 추적 중인 skill만 update로 갱신한다.
+    # 추적되지 않는 이름(구 로컬 skill 배포분, 다른 source의 동명 skill)은 add로 manifest source에 맞춘다.
+    # update가 실패하면 add로 내려간다 — upstream이 skill을 옮기거나 이름을 바꾸면 lock에는
+    # 옛 이름이 남아 update 분기만 타게 되고, fallback이 없으면 install이 영구히 실패한다.
+    while IFS= read -r row; do
+        repo="${row%@*}"; skill="${row##*@}"
+        if npx_skill_is_tracked "$skill" "$repo"; then
+            if npx -y skills update "$skill" --global --yes </dev/null >/dev/null 2>&1; then
+                echo "    Updated skill: $skill"; continue
+            fi
+            echo "    Update failed, falling back to add: $skill"
+        fi
+        if npx -y skills add "$repo" --skill "$skill" --global --yes --agent claude-code </dev/null >/dev/null 2>&1; then
+            echo "    Added skill: $skill from $repo"
+        else
+            echo "    [!] Failed: $row"
+            failed=1
+        fi
+    done <<< "$content"
+    (( failed == 0 ))
+}
+
+stage_is_skipped() { [[ "${!1:-0}" == 1 ]]; }
+
+run_optional_stage() {
+    local flag="$1" message="$2" action="$3"
+    if stage_is_skipped "$flag"; then echo "$message"; return; fi
+    "$action"
+}
+
+run_skills_stage() {
+    local path="$1"
+    if stage_is_skipped SKIP_SKILLS; then echo "==> [CI] Skipping Claude Code skills (SKIP_SKILLS=1)"; return; fi
+    echo "==> Restoring Claude Code skills..."
+    if [[ ! -f "$path" ]]; then record_install_failure "Required manifest missing: manifests/skills.txt"
+    elif ! command -v npx >/dev/null 2>&1; then record_install_failure "npx is required for manifests/skills.txt."
+    elif restore_claude_skills "$path"; then echo "    Skills restored."
+    else record_install_failure "One or more Claude skills failed."
+    fi
+}
+
+run_plugins_stage() {
+    local path="$1"
+    if stage_is_skipped SKIP_PLUGINS; then echo "==> [CI] Skipping Claude Code plugins (SKIP_PLUGINS=1)"; return; fi
+    echo "==> Restoring Claude Code plugins..."
+    if [[ ! -f "$path" ]]; then record_install_failure "Required manifest missing: manifests/plugins.txt"
+    elif ! validate_plugin_manifest "$path"; then record_install_failure "Invalid manifests/plugins.txt."
+    elif ! command -v claude >/dev/null 2>&1; then record_install_failure "claude is required for manifests/plugins.txt."
+    elif restore_claude_plugins "$path"; then echo "    Plugins restored."
+    else record_install_failure "One or more Claude plugins failed."
+    fi
+}
+
+RECEIPT_PATH="${DOTFILES_RECEIPT_PATH:-${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/install-receipt.json}"
+RECEIPT_READY=false
+FUNCTIONS_ONLY_MODE="${DOTFILES_FUNCTIONS_ONLY:-0}"
+
+receipt_path_is_safe() {
+    [[ ! -L "$RECEIPT_PATH" && ( ! -e "$RECEIPT_PATH" || -f "$RECEIPT_PATH" ) ]]
+}
+
+receipt_init() {
+    if ! receipt_path_is_safe; then
+        echo "    [!] Invalid install receipt path type; preserving it: $RECEIPT_PATH" >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "    [!] jq unavailable; skipping receipt-managed writes." >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    if [[ -f "$RECEIPT_PATH" ]]; then
+        if jq -e '.schemaVersion == 1 and (.artifacts|type)=="object" and (.packages|type)=="object" and (.values|type)=="object"' "$RECEIPT_PATH" >/dev/null 2>&1; then
+            RECEIPT_READY=true
+            return 0
+        fi
+        echo "    [!] Invalid install receipt; preserving it and skipping managed writes: $RECEIPT_PATH" >&2
+        RECEIPT_READY=false
+        return 1
+    fi
+    local dir tmp
+    dir="$(dirname "$RECEIPT_PATH")"
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir" || return 1
+    tmp="$(mktemp "$dir/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    printf '%s\n' '{"schemaVersion":1,"artifacts":{},"packages":{},"values":{}}' > "$tmp" || return 1
+    jq -e '.schemaVersion == 1 and (.artifacts|type)=="object" and (.packages|type)=="object" and (.values|type)=="object"' "$tmp" >/dev/null || return 1
+    chmod 600 "$tmp" || return 1
+    mv "$tmp" "$RECEIPT_PATH" || return 1
+    RECEIPT_READY=true
+}
+
+receipt_preflight() {
+    if ! receipt_path_is_safe; then
+        return 1
+    elif [[ -f "$RECEIPT_PATH" ]] && ! command -v jq >/dev/null 2>&1; then
+        receipt_is_jq_bootstrap
+    elif [[ -f "$RECEIPT_PATH" ]]; then receipt_init
+    elif command -v jq >/dev/null 2>&1; then receipt_init
+    fi
+}
+
+receipt_is_jq_bootstrap() {
+    local actual apt_expected brew_expected
+    actual="$(cat "$RECEIPT_PATH" 2>/dev/null)" || return 1
+    apt_expected='{"schemaVersion":1,"bootstrap":"dotfiles-apt-jq-v1","artifacts":{},"packages":{"apt:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}'
+    brew_expected='{"schemaVersion":1,"bootstrap":"dotfiles-brew-jq-v1","artifacts":{},"packages":{"brew:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}'
+    [[ "$actual" == "$apt_expected" || "$actual" == "$brew_expected" ]]
+}
+
+receipt_bootstrap_jq() {
+    local manager="$1" before_present="${2:-false}" dir tmp marker
+    [[ "$manager" == apt || "$manager" == brew ]] || return 1
+    if [[ "$before_present" == true ]]; then
+        echo "    [!] jq package exists but its executable is unavailable; preserving package ownership." >&2
+        return 1
+    fi
+    receipt_path_is_safe || return 1
+    if [[ -e "$RECEIPT_PATH" ]]; then receipt_is_jq_bootstrap; return; fi
+    dir="$(dirname "$RECEIPT_PATH")"
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir" || return 1
+    tmp="$(mktemp "$dir/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    marker="dotfiles-$manager-jq-v1"
+    printf '{"schemaVersion":1,"bootstrap":"%s","artifacts":{},"packages":{"%s:jq":{"before":{"present":false,"value":null},"installed":null,"pending":{"previousPresent":false,"previousValue":null,"newEntry":true}}},"values":{}}\n' \
+        "$marker" "$manager" > "$tmp" || return 1
+    chmod 600 "$tmp" || return 1
+    mv "$tmp" "$RECEIPT_PATH" || return 1
+}
+
+receipt_commit() {
+    local tmp
+    tmp="$(mktemp "$(dirname "$RECEIPT_PATH")/.install-receipt.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    if jq "$@" "$RECEIPT_PATH" > "$tmp" && jq empty "$tmp"; then
+        chmod 600 "$tmp" || return 1
+        mv "$tmp" "$RECEIPT_PATH" || return 1
+    else
+        rm -f "$tmp"
+        return 1
+    fi
+}
+
+file_hash() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    else shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
+# symlink 체인을 끝까지 풀어 실경로를 얻는다.
+# fnm은 셸마다 `<tmp>/fnm_multishells/<pid>_<timestamp>` 링크를 새로 만들기 때문에
+# `npm prefix -g` 결과를 그대로 쓰면 실행마다 값이 달라진다. `cd -P`는 POSIX라 macOS에서도 동작한다.
+resolve_link_path() {
+    local path="$1"
+    # 빈 입력은 빈 값으로 통과시킨다. `set -e` 아래에서 실패로 끝나면 호출부 대입이 설치를 중단시킨다.
+    [[ -n "$path" ]] || return 0
+    if [[ -d "$path" ]]; then (cd -P -- "$path" 2>/dev/null && pwd -P) && return 0; fi
+    printf '%s\n' "${path%/}"
+}
+
+# fnm multishell 경로는 셸 수명 동안만 유효하다. receipt에 남아 있으면 링크를 풀지 않고 기록한 잔재다.
+is_ephemeral_npm_prefix() {
+    local path="${1:-}" tmp="${TMPDIR:-/tmp}"
+    [[ -n "$path" ]] || return 1
+    case "${path%/}/" in "${tmp%/}/fnm_multishells/"*|/tmp/fnm_multishells/*) return 0 ;; esac
+    return 1
+}
+
+managed_parent_is_safe() {
+    local path="$1" parent next boundary=""
+    case "$path" in "$HOME"/*) boundary="${HOME%/}"; [[ -n "$boundary" ]] || boundary=/ ;; esac
+    parent="$(dirname "$path")"
+    while [[ -n "$parent" && "$parent" != "$boundary" && "$parent" != / && "$parent" != . ]]; do
+        if [[ -L "$parent" || ( -e "$parent" && ! -d "$parent" ) ]]; then return 1; fi
+        next="$(dirname "$parent")"
+        [[ "$next" != "$parent" ]] || break
+        parent="$next"
+    done
+    return 0
+}
+
+# collision 의미
+#   takeover : 파일 전체를 이 저장소가 소유한다. 사용자가 고쳤으면 보존한다.
+#   skip     : 남의 파일이면 손대지 않는다.
+#   merge    : $src가 이미 $dst의 현재 내용을 흡수한 병합 산출물이다. 앱이 자기 설정
+#              파일을 스스로 고치는 경우(Claude Code의 settings.json, Codex의
+#              config.toml, Antigravity의 hooks.json)가 정상이라, 해시 대조로 막으면
+#              그 파일에는 다시는 관리 값이 들어가지 않는다. 병합은 destination
+#              우선이라 덮어써도 사용자 값이 사라지지 않으므로 그 게이트만 건너뛴다.
+install_managed_file() {
+    local src="$1" dst="$2" collision="${3:-takeover}"
+    local entry_hash="" before_hash="" source_hash backup="" n=0 tmp pending expected_hash expected_exists current_exists=false
+    local before_exists installed_hash backup_tmp before_mode="" current_mode="" expected_mode="" source_mode
+    $RECEIPT_READY && [[ -f "$src" ]] || return 1
+    if ! managed_parent_is_safe "$dst"; then
+        echo "    [!] Unsupported destination parent path; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]] && { [[ ! -f "$dst" ]] || [[ -L "$dst" ]]; }; then
+        echo "    [!] Unsupported destination type; preserving: $dst" >&2
+        return 1
+    fi
+    source_hash="$(file_hash "$src")"
+    source_mode="$(file_mode "$src")"
+    if [[ -f "$dst" ]]; then before_hash="$(file_hash "$dst")"; before_mode="$(file_mode "$dst")"; fi
+    entry_hash="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+
+    if jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        if [[ "$pending" == true && -f "$dst" && "$before_hash" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" ]]; then
+            [[ "$(file_mode "$dst")" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetMode // empty' "$RECEIPT_PATH")" ]] || { echo "    [!] Pending managed file mode changed; preserving: $dst" >&2; return 1; }
+            receipt_commit --arg path "$dst" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash=.artifacts[$path].targetHash | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending=false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
+            pending=false
+            entry_hash="$before_hash"
+            [[ "$before_hash" != "$source_hash" ]] || return 0
+        fi
+        expected_hash="$entry_hash"; expected_exists=true
+        if [[ "$pending" == "true" ]]; then
+            expected_hash="$(jq -r --arg path "$dst" '.artifacts[$path] | if has("previousHash") then .previousHash // "" else .before.hash // "" end' "$RECEIPT_PATH")"
+            expected_exists="$(jq -r --arg path "$dst" '.artifacts[$path] | if has("previousExists") then .previousExists else .before.exists end' "$RECEIPT_PATH")"
+        fi
+        if [[ -f "$dst" ]]; then current_exists=true; fi
+        if [[ -f "$dst" ]]; then current_mode="$(file_mode "$dst")"; fi
+        expected_mode="$(jq -r --arg path "$dst" '.artifacts[$path] | if .pending then (.previousMode // .before.mode // "") else (.installedMode // "") end' "$RECEIPT_PATH")"
+        if [[ "$current_exists" != "$expected_exists" || ( -f "$dst" && ( "$before_hash" != "$expected_hash" || ( -n "$expected_mode" && "$current_mode" != "$expected_mode" ) ) ) ]]; then
+            if [[ "$collision" != "merge" ]]; then
+                echo "    [!] Managed file changed or missing; preserving: $dst" >&2
+                return 1
+            fi
+            # 소유권 기준만 지금 상태로 다시 잡는다. before 스냅샷은 uninstall의 복원
+            # 대상이라 건드리지 않는다.
+            receipt_commit --arg path "$dst" --arg hash "$before_hash" --arg mode "$current_mode"                 '.artifacts[$path].installedHash=$hash | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending=false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
+            pending=false
+            entry_hash="$before_hash"
+        fi
+        [[ "$pending" == true || "$before_hash" != "$source_hash" || "$current_mode" != "$source_mode" ]] || return 0
+    elif [[ -f "$dst" && "$collision" == "skip" ]]; then
+        echo "    [!] Unowned file collision; preserving: $dst" >&2
+        return 1
+    elif [[ -f "$dst" && "$before_hash" == "$source_hash" ]]; then
+        return 0
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
+    else
+        if [[ -f "$dst" ]]; then
+            backup="$dst.dotfiles-backup"
+            while [[ -e "$backup" || -L "$backup" ]]; do n=$((n + 1)); backup="$dst.dotfiles-backup.$n"; done
+        fi
+        receipt_commit --arg path "$dst" --arg hash "$before_hash" --arg mode "$before_mode" --arg backup "$backup" --arg installed "$source_hash" \
+            --arg source_mode "$source_mode" '.artifacts[$path] = {before:{exists:($hash != ""),hash:(if $hash=="" then null else $hash end),mode:(if $mode=="" then null else $mode end),backup:(if $backup=="" then null else $backup end)},installedHash:null,pending:true,targetHash:$installed,targetMode:$source_mode,previousHash:(if $hash=="" then null else $hash end),previousMode:(if $mode=="" then null else $mode end),previousExists:($hash != "")}' || return 1
+        pending=true
+    fi
+
+    if [[ "$pending" != true ]]; then
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --arg previous_mode "$before_mode" --argjson previous_exists "$current_exists" \
+            --arg source_mode "$source_mode" '.artifacts[$path].pending=true | .artifacts[$path].targetHash=$installed | .artifacts[$path].targetMode=$source_mode | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousMode=(if $previous_mode=="" then null else $previous_mode end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+    elif [[ "$(jq -r --arg path "$dst" '.artifacts[$path].targetHash // empty' "$RECEIPT_PATH")" != "$source_hash" || "$(jq -r --arg path "$dst" '.artifacts[$path].targetMode // empty' "$RECEIPT_PATH")" != "$source_mode" ]]; then
+        receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg previous_hash "$before_hash" --arg previous_mode "$before_mode" --argjson previous_exists "$current_exists" \
+            --arg source_mode "$source_mode" '.artifacts[$path].targetHash=$installed | .artifacts[$path].targetMode=$source_mode | .artifacts[$path].previousHash=(if $previous_hash=="" then null else $previous_hash end) | .artifacts[$path].previousMode=(if $previous_mode=="" then null else $previous_mode end) | .artifacts[$path].previousExists=$previous_exists' || return 1
+    fi
+
+    before_exists="$(jq -r --arg path "$dst" '.artifacts[$path].before.exists' "$RECEIPT_PATH")"
+    installed_hash="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    backup="$(jq -r --arg path "$dst" '.artifacts[$path].before.backup // empty' "$RECEIPT_PATH")"
+    if [[ "$before_exists" == true && -z "$installed_hash" && -n "$backup" ]]; then
+        if [[ -e "$backup" || -L "$backup" ]]; then
+            if [[ ! -f "$backup" || -L "$backup" || "$(file_hash "$backup")" != "$(jq -r --arg path "$dst" '.artifacts[$path].before.hash' "$RECEIPT_PATH")" ]]; then
+                echo "    [!] Managed backup collision; preserving destination: $dst" >&2
+                return 1
+            fi
+        else
+            backup_tmp="$(mktemp "$(dirname "$backup")/.dotfiles-backup.XXXXXX")" || return 1; _TMPFILES+=("$backup_tmp")
+            cp -p "$dst" "$backup_tmp" || return 1
+            if [[ "$(file_hash "$backup_tmp")" != "$(jq -r --arg path "$dst" '.artifacts[$path].before.hash' "$RECEIPT_PATH")" ]]; then
+                rm -f "$backup_tmp"
+                echo "    [!] Destination changed before backup; preserving: $dst" >&2
+                return 1
+            fi
+            chmod "$before_mode" "$backup_tmp" || return 1
+            mv "$backup_tmp" "$backup" || return 1
+        fi
+    fi
+
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.$(basename "$dst").XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    cp -p "$src" "$tmp" || return 1
+    mv "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg installed "$source_hash" --arg mode "$(file_mode "$dst")" '.artifacts[$path].installedHash = $installed | .artifacts[$path].installedMode=$mode | .artifacts[$path].pending = false | del(.artifacts[$path].targetHash,.artifacts[$path].targetMode,.artifacts[$path].previousHash,.artifacts[$path].previousMode,.artifacts[$path].previousExists)' || return 1
+}
+
+# `claude plugin`처럼 설치 스크립트가 직접 호출한 도구가 관리 파일을 뒤이어 다시 쓰면
+# receipt의 installedHash가 그 자리에서 낡아 다음 실행이 파일을 보존해 버린다.
+# 설치가 끝난 시점의 내용으로 도장을 다시 찍어 소유권을 유지한다.
+sync_managed_file_hash() {
+    local dst="$1" current installed
+    $RECEIPT_READY || return 1
+    jq -e --arg path "$dst" '.artifacts[$path] != null and (.artifacts[$path].pending | not)' "$RECEIPT_PATH" >/dev/null || return 1
+    [[ -f "$dst" && ! -L "$dst" ]] || return 1
+    current="$(file_hash "$dst")"
+    installed="$(jq -r --arg path "$dst" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")"
+    [[ "$current" != "$installed" ]] || return 1
+    receipt_commit --arg path "$dst" --arg hash "$current" --arg mode "$(file_mode "$dst")" \
+        '.artifacts[$path].installedHash=$hash | .artifacts[$path].installedMode=$mode'
+}
+
+install_managed_symlink() {
+    local dst="$1" target="$2" legacy_target="${3:-}" current_target="" installed="" pending=false
+    local previous_exists=false previous_type=missing previous_target="" tmp
+    $RECEIPT_READY || return 1
+    if ! managed_parent_is_safe "$dst"; then
+        echo "    [!] Unsupported symlink parent path; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ -L "$dst" ]]; then
+        previous_exists=true; previous_type=symlink; current_target="$(readlink "$dst")"; previous_target="$current_target"
+    elif [[ -e "$dst" ]]; then
+        echo "    [!] Unowned file collision; preserving: $dst" >&2
+        return 1
+    fi
+
+    if jq -e --arg path "$dst" '.artifacts[$path] | has("installedTarget")' "$RECEIPT_PATH" >/dev/null; then
+        installed="$(jq -r --arg path "$dst" '.artifacts[$path].installedTarget' "$RECEIPT_PATH")"
+        pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+        if [[ "$pending" == true && -L "$dst" && "$current_target" == "$(jq -r --arg path "$dst" '.artifacts[$path].targetTarget' "$RECEIPT_PATH")" ]]; then
+            receipt_commit --arg path "$dst" '.artifacts[$path].installedTarget=.artifacts[$path].targetTarget | .artifacts[$path].pending=false | del(.artifacts[$path].targetTarget,.artifacts[$path].previousExists,.artifacts[$path].previousType,.artifacts[$path].previousTarget)' || return 1
+            installed="$current_target"; pending=false
+        fi
+        if [[ "$pending" == true ]]; then
+            previous_exists="$(jq -r --arg path "$dst" '.artifacts[$path].previousExists' "$RECEIPT_PATH")"
+            previous_type="$(jq -r --arg path "$dst" '.artifacts[$path].previousType' "$RECEIPT_PATH")"
+            previous_target="$(jq -r --arg path "$dst" '.artifacts[$path].previousTarget // empty' "$RECEIPT_PATH")"
+            if [[ "$previous_exists" != true && ( -e "$dst" || -L "$dst" ) ]] ||
+               [[ "$previous_exists" == true && ( ! -L "$dst" || "$current_target" != "$previous_target" ) ]]; then
+                echo "    [!] Pending managed symlink changed; preserving: $dst" >&2
+                return 1
+            fi
+        elif [[ ! -L "$dst" || "$current_target" != "$installed" ]]; then
+            echo "    [!] Managed symlink changed or missing; preserving: $dst" >&2
+            return 1
+        elif [[ "$installed" == "$target" ]]; then
+            return 0
+        fi
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
+    else
+        if [[ -L "$dst" ]]; then
+            if [[ -n "$legacy_target" && ! -e "$dst" && "$current_target" == "$legacy_target" ]]; then
+                echo "    Migrating exact legacy dangling link: $dst"
+            else
+                echo "    [!] Unowned symlink collision; preserving: $dst" >&2
+                return 1
+            fi
+        fi
+        receipt_commit --arg path "$dst" --argjson exists "$previous_exists" --arg type "$previous_type" --arg previous "$previous_target" --arg target "$target" '
+          .artifacts[$path]={before:{exists:$exists,type:$type,target:(if $type=="symlink" then $previous else null end)},installedTarget:null,pending:true,targetTarget:$target,previousExists:$exists,previousType:$type,previousTarget:(if $type=="symlink" then $previous else null end)}' || return 1
+        pending=true
+    fi
+    if [[ "$pending" != true ]]; then
+        receipt_commit --arg path "$dst" --arg target "$target" --argjson exists "$previous_exists" --arg type "$previous_type" --arg previous "$previous_target" '
+          .artifacts[$path].pending=true | .artifacts[$path].targetTarget=$target | .artifacts[$path].previousExists=$exists | .artifacts[$path].previousType=$type | .artifacts[$path].previousTarget=(if $type=="symlink" then $previous else null end)' || return 1
+    fi
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.dotfiles-link.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    rm -f "$tmp" || return 1
+    ln -s "$target" "$tmp" || return 1
+    [[ -L "$tmp" && "$(readlink "$tmp")" == "$target" ]] || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg target "$target" '.artifacts[$path].installedTarget=$target | .artifacts[$path].pending=false | del(.artifacts[$path].targetTarget,.artifacts[$path].previousExists,.artifacts[$path].previousType,.artifacts[$path].previousTarget)' || return 1
+}
+
+ensure_managed_symlink() {
+    local dst="$1" target="$2" legacy_target="${3:-}"
+    if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+        if [[ -L "$dst" && "$(readlink "$dst")" == "$target" ]]; then return 0; fi
+        if [[ -L "$dst" && ! -e "$dst" && -n "$legacy_target" && "$(readlink "$dst")" == "$legacy_target" ]]; then
+            ln -sfn "$target" "$dst"
+            return
+        fi
+        if [[ ! -e "$dst" && ! -L "$dst" ]]; then mkdir -p "$(dirname "$dst")"; ln -s "$target" "$dst"; return; fi
+        return 1
+    fi
+    if [[ -L "$dst" && "$(readlink "$dst")" == "$target" ]] && ! jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    Exact external symlink preserved: $dst -> $target"
+        return 0
+    fi
+    install_managed_symlink "$dst" "$target" "$legacy_target"
+}
+
+download_verified() {
+    local url="$1" expected="$2" dst="$3" tmp actual
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp "$(dirname "$dst")/.download.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    curl --retry 3 --retry-delay 2 -fsSL -o "$tmp" "$url" || return 1
+    actual="$(file_hash "$tmp")"
+    if [[ "$actual" != "$expected" ]]; then
+        echo "    [!] SHA-256 mismatch: $url" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    mv "$tmp" "$dst"
+}
+
+record_direct_version() {
+    local path="$1" version="$2"
+    receipt_commit --arg path "$path" --arg version "$version" '.artifacts[$path].directVersion=$version'
+}
+
+direct_anchor_state() {
+    local path="$1" version="$2" installed current
+    DIRECT_STATE=new; DIRECT_INSTALLED_VERSION=""
+    jq -e --arg path "$path" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null || return 0
+    if jq -e --arg path "$path" '.artifacts[$path].pending == true' "$RECEIPT_PATH" >/dev/null; then
+        DIRECT_STATE=recover
+        return 0
+    fi
+    installed="$(jq -r --arg path "$path" '.artifacts[$path].directVersion // empty' "$RECEIPT_PATH")"
+    DIRECT_INSTALLED_VERSION="$installed"
+    [[ -n "$installed" ]] || { DIRECT_STATE=recover; return 0; }
+    if jq -e --arg path "$path" '.artifacts[$path] | has("installedTarget")' "$RECEIPT_PATH" >/dev/null; then
+        current="$(readlink "$path" 2>/dev/null || true)"
+        [[ -L "$path" && "$current" == "$(jq -r --arg path "$path" '.artifacts[$path].installedTarget' "$RECEIPT_PATH")" ]] || DIRECT_STATE=modified
+    else
+        [[ -f "$path" && "$(file_hash "$path")" == "$(jq -r --arg path "$path" '.artifacts[$path].installedHash // empty' "$RECEIPT_PATH")" ]] || DIRECT_STATE=modified
+    fi
+    [[ "$DIRECT_STATE" == modified ]] && return 0
+    if [[ "$installed" != "$version" ]]; then
+        if [[ "${DOTFILES_UPGRADE_DIRECT:-0}" != 1 ]]; then DIRECT_STATE=upgrade-blocked; else DIRECT_STATE=upgrade; fi
+        return 0
+    fi
+    [[ "$DIRECT_STATE" == new ]] && DIRECT_STATE=current
+}
+
+receipt_owns_prefix() {
+    local prefix="${1%/}/"
+    jq -e --arg prefix "$prefix" '.artifacts | keys | any(startswith($prefix))' "$RECEIPT_PATH" >/dev/null
+}
+
+install_managed_tree() {
+    local src="${1%/}" dst="${2%/}" collision="${3:-takeover}" skip_root="${4:-false}" file relative status=0
+    $RECEIPT_READY && [[ -d "$src" ]] || return 1
+    if [[ -e "$dst" || -L "$dst" ]] && { [[ ! -d "$dst" ]] || [[ -L "$dst" ]]; }; then
+        echo "    [!] Unsupported destination tree root; preserving: $dst" >&2
+        return 1
+    fi
+    if [[ "$skip_root" == "true" && -d "$dst" ]] && ! receipt_owns_prefix "$dst"; then
+        echo "    [!] Unowned directory collision; preserving: $dst" >&2
+        return 1
+    fi
+    while IFS= read -r -d '' file; do
+        relative="${file#"$src"/}"
+        install_managed_file "$file" "$dst/$relative" "$collision" || status=1
+    done < <(find "$src" -type d \( -name "__pycache__" -o -name ".git" \) -prune -o -type f -print0)
+    return "$status"
+}
+
+# GNU find -printf와 tar --sort는 BSD(macOS)에 없다. 두 경로의 출력 형식은 서로 다르며,
+# 그래도 되는 이유는 tree 해시가 같은 머신 안에서 install↔uninstall 사이에서만 비교되기 때문이다.
+# GNU 쪽 형식은 기존 receipt와 계속 일치해야 하므로 바꾸지 않는다.
+# uninstall.sh에도 같은 구현이 있다 — 한쪽만 고치면 소유권 판정이 어긋난다.
+tree_hash_supports_gnu_find() { find "$1" -mindepth 1 -printf '' >/dev/null 2>&1; }
+
+# BSD 경로는 개행이 든 경로명을 구분하지 못한다. 그런 tree는 해시하지 않고 실패시킨다.
+tree_hash_paths_are_line_safe() {
+    local lines nulls
+    lines="$(find "$1" -mindepth 1 | wc -l)"
+    nulls="$(find "$1" -mindepth 1 -print0 | tr -cd '\0' | wc -c)"
+    [[ "${lines// /}" == "${nulls// /}" ]]
+}
+
+tree_hash() {
+    local root="$1" entry rel
+    if ! tree_hash_supports_gnu_find "$root" && ! tree_hash_paths_are_line_safe "$root"; then
+        echo "    [!] Tree path contains a newline; refusing to hash: $root" >&2
+        return 1
+    fi
+    {
+        printf 'root\0%s\0' "$(file_mode "$root")"
+        if tree_hash_supports_gnu_find "$root"; then
+            find "$root" -mindepth 1 -printf '%P\t%y\t%m\t%l\t%s\0' | LC_ALL=C sort -z
+            printf 'content\0'
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C "$root" . 2>/dev/null
+        else
+            find "$root" -mindepth 1 | LC_ALL=C sort | while IFS= read -r entry; do
+                rel="${entry#"$root"/}"
+                if [[ -L "$entry" ]]; then printf '%s\tl\t\t%s\t\0' "$rel" "$(readlink "$entry")"
+                elif [[ -d "$entry" ]]; then printf '%s\td\t%s\t\t\0' "$rel" "$(file_mode "$entry")"
+                elif [[ -f "$entry" ]]; then printf '%s\tf\t%s\t\t%s\0' "$rel" "$(file_mode "$entry")" "$(wc -c < "$entry" | tr -d ' ')"
+                else printf '%s\t?\t\t\t\0' "$rel"
+                fi
+            done
+            printf 'content\0'
+            find "$root" -type f | LC_ALL=C sort | while IFS= read -r entry; do
+                printf '%s\0%s\0' "${entry#"$root"/}" "$(file_hash "$entry")"
+            done
+        fi
+    } | {
+        if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+        else shasum -a 256 | awk '{print $1}'
+        fi
+    }
+}
+
+install_managed_direct_tree() {
+    local src="$1" dst="$2" version="$3" source_hash current_hash="" pending target_hash previous_exists tmp
+    $RECEIPT_READY && [[ -d "$src" ]] || return 1
+    managed_parent_is_safe "$dst" || { echo "    [!] Unsafe direct tree parent; preserving: $dst" >&2; return 1; }
+    source_hash="$(tree_hash "$src")" || return 1
+    if jq -e --arg path "$dst" '.artifacts[$path] | has("installedTreeHash")' "$RECEIPT_PATH" >/dev/null; then
+        [[ -d "$dst" && ! -L "$dst" ]] && current_hash="$(tree_hash "$dst")"
+        pending="$(jq -r --arg path "$dst" '.artifacts[$path].pending // false' "$RECEIPT_PATH")"
+        target_hash="$(jq -r --arg path "$dst" '.artifacts[$path].targetTreeHash // empty' "$RECEIPT_PATH")"
+        if [[ "$pending" == true && ( -z "$target_hash" || "$source_hash" != "$target_hash" ) ]]; then
+            echo "    [!] Pending direct tree target changed; preserving: $dst" >&2
+            return 1
+        fi
+        if [[ "$pending" == true && -n "$current_hash" && "$current_hash" == "$target_hash" ]]; then
+            receipt_commit --arg path "$dst" '.artifacts[$path].installedTreeHash=.artifacts[$path].targetTreeHash | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
+            record_direct_version "$dst" "$version"
+            return
+        fi
+        if [[ "$pending" == true ]]; then
+            previous_exists="$(jq -r --arg path "$dst" '.artifacts[$path].previousExists // .artifacts[$path].before.exists' "$RECEIPT_PATH")"
+            if [[ "$previous_exists" != false || -e "$dst" || -L "$dst" ]]; then
+                echo "    [!] Pending direct tree is not a recoverable fresh versioned target; preserving: $dst" >&2
+                return 1
+            fi
+        elif [[ "$current_hash" != "$(jq -r --arg path "$dst" '.artifacts[$path].installedTreeHash' "$RECEIPT_PATH")" ]]; then
+            echo "    [!] Managed direct tree changed; preserving: $dst" >&2
+            return 1
+        fi
+        if [[ "$pending" != true ]]; then
+            if [[ "$current_hash" == "$source_hash" ]]; then record_direct_version "$dst" "$version"; return; fi
+            echo "    [!] Versioned direct tree content differs; preserving: $dst" >&2
+            return 1
+        fi
+    elif jq -e --arg path "$dst" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+        echo "    [!] Receipt kind collision; preserving: $dst" >&2
+        return 1
+    elif [[ -e "$dst" || -L "$dst" ]]; then
+        echo "    [!] Unowned direct tree collision; preserving: $dst" >&2
+        return 1
+    else
+        receipt_commit --arg path "$dst" --arg hash "$source_hash" '.artifacts[$path]={before:{exists:false,type:"missing"},installedTreeHash:null,pending:true,targetTreeHash:$hash,previousExists:false}' || return 1
+        pending=true
+    fi
+    [[ "$pending" == true ]] || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    tmp="$(mktemp -d "$(dirname "$dst")/.dotfiles-tree.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    cp -a "$src/." "$tmp/" || return 1
+    # chmod --reference와 mv -T는 GNU 전용이라 BSD(macOS)에 없다.
+    chmod "$(file_mode "$src")" "$tmp" || return 1
+    [[ "$(tree_hash "$tmp")" == "$source_hash" ]] || return 1
+    # mv -T 없이 옮기므로, dst가 디렉터리로 존재하면 그 안으로 들어가 버린다.
+    # 여기까지는 dst가 없다는 것이 확인된 경로지만 이동 직전에 한 번 더 막는다.
+    [[ ! -e "$dst" && ! -L "$dst" ]] || return 1
+    mv "$tmp" "$dst" || return 1
+    receipt_commit --arg path "$dst" --arg hash "$source_hash" --arg version "$version" '.artifacts[$path].installedTreeHash=$hash | .artifacts[$path].directVersion=$version | .artifacts[$path].pending=false | del(.artifacts[$path].targetTreeHash,.artifacts[$path].previousExists)' || return 1
+}
+
+record_managed_package() {
+    local name="$1" before_present="$2" before_value="$3" installed="$4" prefix="${5:-}"
+    $RECEIPT_READY || return 0
+    [[ "$before_present" != "true" || "$before_value" != "$installed" ]] || return 0
+    [[ "$before_present" == "true" || -n "$installed" ]] || return 0
+    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" --arg prefix "$prefix" '
+        (if .packages[$name] then .packages[$name].installed=$installed | del(.packages[$name].pending)
+        else .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:$installed} end) |
+        (if $prefix != "" then .packages[$name].prefix=$prefix else . end) | del(.bootstrap)'
+}
+
+begin_managed_package() {
+    local name="$1" present="$2" before="$3" prefix="${4:-}" current_previous current_present original_present original_before
+    $RECEIPT_READY || return 1
+    if [[ -n "$prefix" ]] && jq -e --arg name "$name" '.packages|has($name)' "$RECEIPT_PATH" >/dev/null; then
+        current_prefix="$(jq -r --arg name "$name" '.packages[$name].prefix // empty' "$RECEIPT_PATH")"
+        if [[ -z "$current_prefix" || "$current_prefix" != "$prefix" ]]; then
+            # prefix가 바뀌는 경우는 둘이다.
+            #   1) 예전 버전이 링크를 풀지 않은 fnm multishell 경로를 기록한 잔재
+            #   2) Node LTS 업그레이드 — prefix가 <fnm_root>/node-versions/<version>/installation
+            #      이라 버전이 오르면 값이 바뀐다. 이 스크립트가 매번 LTS를 설치하므로 정상이다.
+            # 새 prefix가 안정 경로이기만 하면 두 경우 모두 교정하고 진행한다. 여기서 막으면
+            # Node를 한 번 올린 뒤부터 그 패키지가 영영 설치되지 않는다.
+            if is_ephemeral_npm_prefix "$prefix"; then
+                echo "    [!] npm prefix is not a stable path; preserving package ownership: $name" >&2
+                return 1
+            fi
+            echo "    [!] npm prefix changed in receipt; re-baselining ownership: $name" >&2
+            # 낡은 prefix가 어느 위치를 가리켰는지 알 수 없으므로 before 스냅샷도 지금 측정값으로 다시 잡는다.
+            # 그대로 두면 다른 위치에서 잰 "설치 전 없음"이 남아 uninstall이 사용자 설치를 지운다.
+            receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" \
+                '.packages[$name].before={present:$present,value:(if $present then $before else null end)}' || return 1
+        fi
+    fi
+    if jq -e --arg name "$name" '.packages[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        current_previous="$(jq -r --arg name "$name" '.packages[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+        current_present="$(jq -r --arg name "$name" '.packages[$name].pending.previousPresent' "$RECEIPT_PATH")"
+        if [[ "$present" != "$current_present" || ( "$present" == true && "$before" != "$current_previous" ) ]]; then
+            original_present="$(jq -r --arg name "$name" '.packages[$name].before.present' "$RECEIPT_PATH")"
+            original_before="$(jq -r --arg name "$name" '.packages[$name].before.value // empty' "$RECEIPT_PATH")"
+            record_managed_package "$name" "$original_present" "$original_before" "$before" || return 1
+        fi
+    fi
+    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" --arg prefix "$prefix" '
+        (.packages|has($name)|not) as $new |
+        if $new then .packages[$name]={before:{present:$present,value:(if $present then $before else null end)},installed:null} else . end |
+        .packages[$name].pending={previousPresent:$present,previousValue:(if $present then $before else null end),newEntry:$new} |
+        (if $prefix != "" then .packages[$name].prefix=$prefix else . end)'
+}
+
+cancel_managed_package() {
+    local name="$1"
+    $RECEIPT_READY || return 0
+    receipt_commit --arg name "$name" '
+        (if .packages[$name].pending.newEntry and .packages[$name].installed == null then del(.packages[$name])
+        else del(.packages[$name].pending) end) | del(.bootstrap)'
+}
+
+query_claude_npm_package() {
+    local npm_root package_json prefix="${CLAUDE_NPM_PREFIX:-}"
+    CLAUDE_QUERY_STATE=error; CLAUDE_QUERY_VERSION=""
+    [[ -n "$prefix" ]] || prefix="$(npm prefix -g 2>/dev/null)" || return 1
+    npm_root="$(npm root -g --prefix "$prefix" 2>/dev/null)" || return 1
+    [[ -n "$npm_root" ]] || return 1
+    package_json="$npm_root/@anthropic-ai/claude-code/package.json"
+    if [[ ! -e "$package_json" && ! -L "$package_json" ]]; then CLAUDE_QUERY_STATE=absent; return 0; fi
+    [[ -f "$package_json" ]] || return 1
+    CLAUDE_QUERY_VERSION="$(jq -er '.version | strings | select(length > 0)' "$package_json" 2>/dev/null)" || return 1
+    CLAUDE_QUERY_STATE=present
+}
+
+query_claude_cask() {
+    local output installed
+    CLAUDE_QUERY_STATE=error; CLAUDE_QUERY_VERSION=""
+    if output="$(brew list --cask --versions claude-code 2>&1)"; then
+        CLAUDE_QUERY_VERSION="$(awk '$1 == "claude-code" && NF >= 2 { print $2; exit }' <<< "$output")"
+        [[ -n "$CLAUDE_QUERY_VERSION" ]] || return 1
+        CLAUDE_QUERY_STATE=present
+        return 0
+    fi
+    installed="$(brew list --cask 2>/dev/null)" || return 1
+    grep -Fxq claude-code <<< "$installed" && return 1
+    CLAUDE_QUERY_STATE=absent
+}
+
+reconcile_pending_claude_package() {
+    local name="$1" query="$2" command_present="$3" previous_present previous_value before_present before_value
+    "$query" || return 1
+    previous_present="$(jq -r --arg name "$name" '.packages[$name].pending.previousPresent' "$RECEIPT_PATH")"
+    previous_value="$(jq -r --arg name "$name" '.packages[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+    if [[ "$CLAUDE_QUERY_STATE" == present ]]; then
+        if [[ "$previous_present" == true && "$CLAUDE_QUERY_VERSION" == "$previous_value" ]]; then
+            cancel_managed_package "$name"
+        else
+            before_present="$(jq -r --arg name "$name" '.packages[$name].before.present' "$RECEIPT_PATH")"
+            before_value="$(jq -r --arg name "$name" '.packages[$name].before.value // empty' "$RECEIPT_PATH")"
+            record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION"
+        fi
+    elif [[ "$CLAUDE_QUERY_STATE" == absent && "$previous_present" == false && "$command_present" == false ]]; then
+        cancel_managed_package "$name"
+    else
+        return 1
+    fi
+}
+
+complete_managed_claude_package() {
+    local name="$1" query="$2" before_present="$3" before_value="$4" manager_status="$5" command_present="$6" prefix="${7:-}"
+    if "$query"; then
+        if [[ "$CLAUDE_QUERY_STATE" == present ]]; then
+            if [[ "$before_present" != true || "$CLAUDE_QUERY_VERSION" != "$before_value" ]]; then
+                record_managed_package "$name" "$before_present" "$before_value" "$CLAUDE_QUERY_VERSION" "$prefix" || return 1
+            else
+                cancel_managed_package "$name" || return 1
+            fi
+            (( manager_status == 0 )) && return 0
+            return "$manager_status"
+        fi
+        if [[ "$CLAUDE_QUERY_STATE" == absent && "$before_present" == false && "$command_present" == false ]]; then
+            cancel_managed_package "$name" || return 1
+        fi
+    fi
+    (( manager_status != 0 )) && return "$manager_status"
+    return 1
+}
+
+managed_value_is_sensitive() {
+    [[ "$1" != 'git:credential.credentialStore' && "$1" =~ [Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll] ]]
+}
+
+record_managed_value() {
+    local name="$1" before_present="$2" before_value="$3" installed="$4" store_before="${5:-true}"
+    $RECEIPT_READY || return 0
+    ! managed_value_is_sensitive "$name" || return 0
+    receipt_commit --arg name "$name" --argjson present "$before_present" --arg before "$before_value" --arg installed "$installed" --argjson store "$store_before" '
+        if .values[$name] then .values[$name].installed=$installed | del(.values[$name].pending)
+        else .values[$name]={before:({present:$present} + if $store then {value:(if $present then $before else null end)} else {} end),installed:$installed} end'
+}
+
+begin_managed_value() {
+    local name="$1" present="$2" before="$3" target="$4" store="${5:-true}"
+    $RECEIPT_READY || return 1
+    ! managed_value_is_sensitive "$name" || return 1
+    receipt_commit --arg name "$name" --argjson present "$present" --arg before "$before" --arg target "$target" --argjson store "$store" '
+        if (.values|has($name)|not) then .values[$name]={before:({present:$present} + if $store then {value:(if $present then $before else null end)} else {} end),installed:null} else . end |
+        .values[$name].pending=({previousPresent:$present,target:$target} + if $store then {previousValue:(if $present then $before else null end)} else {} end)'
+}
+
+# ---------------------------------------------
+# MCP server 등록 (receipt values로 소유권 관리)
+#
+# Codex는 ~/.codex/config.toml의 [mcp_servers.<name>], Claude Code는 공식 저장소인
+# ~/.claude.json의 .mcpServers.<name>에 둔다. ~/.claude/settings.json은 MCP 정의 파일이
+# 아니므로 건드리지 않는다. 두 경우 모두 "우리가 심은 것과 정확히 같은 값"일 때만 갱신하고,
+# 사용자가 만든 동명 entry는 보존한다.
+# ---------------------------------------------
+
+# 비교는 항상 정규화된 JSON 문자열로 한다. TOML/JSON 왕복에서 키 순서가 바뀌어도
+# 같은 entry를 "변경됨"으로 오판하지 않기 위해서다.
+canonical_json() { jq -cS '.' 2>/dev/null; }
+
+read_codex_mcp_entry() {
+    local name="$1" dst="$2"
+    MCP_PRESENT=false; MCP_VALUE=""
+    [[ -f "$dst" ]] || return 0
+    command -v yq >/dev/null 2>&1 || return 1
+    yq -p=toml -o=json '.' "$dst" >/dev/null 2>&1 || return 1
+    yq -p=toml -o=json -e ".mcp_servers.\"$name\"" "$dst" >/dev/null 2>&1 || return 0
+    MCP_VALUE="$(yq -p=toml -o=json ".mcp_servers.\"$name\"" "$dst" | canonical_json)" || return 1
+    [[ -n "$MCP_VALUE" ]] || return 1
+    MCP_PRESENT=true
+}
+
+write_codex_mcp_entry() {
+    local name="$1" dst="$2" value="$3" tmp
+    command -v yq >/dev/null 2>&1 || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    [[ -f "$dst" ]] || : > "$dst"
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if [[ -n "$value" ]]; then
+        yq -p=toml -o=toml ".mcp_servers.\"$name\" = $value" "$dst" > "$tmp" 2>/dev/null || return 1
+    else
+        # 마지막 entry였다면 빈 [mcp_servers] 테이블까지 걷어낸다.
+        yq -p=toml -o=toml "del(.mcp_servers.\"$name\") | del(.mcp_servers | select(length == 0))" "$dst" > "$tmp" 2>/dev/null || return 1
+    fi
+    yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1 || return 1
+    cat "$tmp" > "$dst"
+}
+
+read_claude_mcp_entry() {
+    local name="$1" dst="$2"
+    MCP_PRESENT=false; MCP_VALUE=""
+    [[ -f "$dst" ]] || return 0
+    # 0바이트/공백뿐인 registry는 entry가 없는 것과 같다. jq -e '.'는 이 입력에 4로
+    # 끝나므로, 걸러내지 않으면 registry를 읽을 수 없는 것으로 오인해 등록을 포기한다.
+    [[ -n "$(tr -d '[:space:]' < "$dst" 2>/dev/null)" ]] || return 0
+    jq -e '.' "$dst" >/dev/null 2>&1 || return 1
+    jq -e --arg n "$name" '.mcpServers | objects | has($n)' "$dst" >/dev/null 2>&1 || return 0
+    MCP_VALUE="$(jq -cS --arg n "$name" '.mcpServers[$n]' "$dst")" || return 1
+    [[ -n "$MCP_VALUE" ]] || return 1
+    MCP_PRESENT=true
+}
+
+write_claude_mcp_entry() {
+    local name="$1" dst="$2" value="$3" tmp
+    mkdir -p "$(dirname "$dst")" || return 1
+    # 파일이 없거나 0바이트/공백뿐이면 seed한다. 존재한다는 이유만으로 그대로 jq에 넘기면
+    # 빈 출력이 나와 등록이 실패한다. 내용이 있는데 깨진 파일은 손대지 않는다 — jq가
+    # 실패하고 그대로 보존된다.
+    if [[ ! -f "$dst" || -z "$(tr -d '[:space:]' < "$dst" 2>/dev/null)" ]]; then
+        printf '%s\n' '{}' > "$dst"
+    fi
+    tmp="$(mktemp "$(dirname "$dst")/.claude.json.XXXXXX")" || return 1; _TMPFILES+=("$tmp")
+    if [[ -n "$value" ]]; then
+        jq --arg n "$name" --argjson v "$value" '.mcpServers = ((.mcpServers // {}) | .[$n] = $v)' "$dst" > "$tmp" || return 1
+    else
+        jq --arg n "$name" 'if (.mcpServers|type)=="object" then .mcpServers |= del(.[$n]) else . end' "$dst" > "$tmp" || return 1
+    fi
+    jq empty "$tmp" || return 1
+    # mktemp의 0600을 그대로 옮기지 않도록 내용만 덮어써 원래 mode를 유지한다.
+    cat "$tmp" > "$dst"
+}
+
+read_gemini_mcp_entry() { read_claude_mcp_entry "$@"; }
+write_gemini_mcp_entry() { write_claude_mcp_entry "$@"; }
+
+# host = codex | claude | gemini. 파일이 receipt 소유 파일이면 기록한 해시가 낡지 않도록 다시 도장을 찍는다.
+install_managed_mcp_server() {
+    local host="$1" name="$2" dst="$3" desired="$4" key installed=""
+    key="mcp:$host:$name"
+    $RECEIPT_READY || return 1
+    desired="$(printf '%s' "$desired" | canonical_json)" || return 1
+    [[ -n "$desired" ]] || return 1
+    if ! "read_${host}_mcp_entry" "$name" "$dst"; then
+        echo "    [!] MCP registry unreadable; preserving: $dst" >&2
+        return 1
+    fi
+    if jq -e --arg k "$key" '.values | has($k)' "$RECEIPT_PATH" >/dev/null; then
+        installed="$(jq -r --arg k "$key" '.values[$k].installed // empty' "$RECEIPT_PATH")"
+        if jq -e --arg k "$key" '.values[$k].pending != null' "$RECEIPT_PATH" >/dev/null; then
+            local pending_target pending_present pending_previous
+            pending_target="$(jq -r --arg k "$key" '.values[$k].pending.target' "$RECEIPT_PATH")"
+            pending_present="$(jq -r --arg k "$key" '.values[$k].pending.previousPresent' "$RECEIPT_PATH")"
+            pending_previous="$(jq -r --arg k "$key" '.values[$k].pending.previousValue // empty' "$RECEIPT_PATH")"
+            if [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$pending_target" ]]; then
+                record_managed_value "$key" "$pending_present" "$pending_previous" "$pending_target" || return 1
+                installed="$pending_target"
+            elif [[ "$MCP_PRESENT" != "$pending_present" || ( "$MCP_PRESENT" == true && "$MCP_VALUE" != "$pending_previous" ) ]]; then
+                echo "    [!] Pending MCP entry changed; preserving: $key" >&2
+                return 1
+            fi
+        fi
+        if [[ -n "$installed" && ( "$MCP_PRESENT" != true || "$MCP_VALUE" != "$installed" ) ]]; then
+            echo "    [!] Managed MCP entry changed; preserving: $key" >&2
+            return 1
+        fi
+        [[ "$MCP_VALUE" != "$desired" ]] || { echo "    MCP already registered: $key"; return 0; }
+    elif [[ "$MCP_PRESENT" == true ]]; then
+        echo "    [!] Unowned MCP entry collision; preserving: $key" >&2
+        return 1
+    fi
+    begin_managed_value "$key" "$MCP_PRESENT" "$MCP_VALUE" "$desired" || return 1
+    "write_${host}_mcp_entry" "$name" "$dst" "$desired" || {
+        echo "    [!] Failed to write MCP entry: $key" >&2
+        return 1
+    }
+    "read_${host}_mcp_entry" "$name" "$dst" || return 1
+    [[ "$MCP_PRESENT" == true && "$MCP_VALUE" == "$desired" ]] || {
+        echo "    [!] MCP entry verification failed: $key" >&2
+        return 1
+    }
+    record_managed_value "$key" "$(jq -r --arg k "$key" '.values[$k].pending.previousPresent' "$RECEIPT_PATH")" \
+        "$(jq -r --arg k "$key" '.values[$k].pending.previousValue // empty' "$RECEIPT_PATH")" "$desired" || return 1
+    sync_managed_file_hash "$dst" >/dev/null 2>&1 || true
+    echo "    Registered MCP server: $key"
+}
+
+# ---------------------------------------------
+# rhwp: 공식 archive 전체를 ~/rhwp tree에 두고 MCP를 등록한다.
+# ---------------------------------------------
+RHWP_DIR="$HOME/rhwp"
+
+rhwp_platform() {
+    local machine
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+    case "$OS:$machine" in
+        Linux:x86_64|Linux:amd64) echo linux-x86_64 ;;
+        Darwin:x86_64) echo macos-x86_64 ;;
+        Darwin:arm64|Darwin:aarch64) echo macos-aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+validate_rhwp_manifest() {
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 5 || $1 !~ /^(windows-x86_64|linux-x86_64|macos-x86_64|macos-aarch64)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(tgz|zip)$/ || $4 !~ /^https:\/\/github\.com\/edwardkim\/rhwp\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/[^[:space:]]+$/ || $4 ~ /\/(latest|HEAD|main)\// || $5 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1]++ { bad=1; exit }
+      { count++ }
+      END { exit (bad || count != 4) }
+    ' "$1"
+}
+
+install_rhwp() {
+    local manifest="$ROOT/manifests/rhwp.tsv" platform row version format url checksum
+    local work archive extract tree binary reported desired
+    [[ -f "$manifest" ]] || { record_install_failure "Required manifest missing: manifests/rhwp.tsv"; return 1; }
+    validate_rhwp_manifest "$manifest" || { record_install_failure "Invalid manifests/rhwp.tsv"; return 1; }
+    if ! platform="$(rhwp_platform)"; then
+        echo "    [!] Unsupported rhwp platform: $OS $(uname -m 2>/dev/null); skipping."
+        return 0
+    fi
+    row="$(awk -F '\t' -v p="$platform" '$1 == p { print; exit }' "$manifest")"
+    [[ -n "$row" ]] || { record_install_failure "No rhwp manifest row for platform: $platform"; return 1; }
+    IFS=$'\t' read -r _ version format url checksum <<< "$row"
+
+    desired="$(jq -cn --arg cmd "$RHWP_DIR/rhwp" '{command:$cmd,args:["mcp-serve"]}')" || return 1
+
+    if [[ -d "$RHWP_DIR" && ! -L "$RHWP_DIR" ]] &&
+       [[ "$(jq -r --arg p "$RHWP_DIR" '.artifacts[$p].directVersion // empty' "$RECEIPT_PATH")" == "$version" ]] &&
+       [[ "$(tree_hash "$RHWP_DIR")" == "$(jq -r --arg p "$RHWP_DIR" '.artifacts[$p].installedTreeHash // empty' "$RECEIPT_PATH")" ]]; then
+        echo "    rhwp $version already installed: $RHWP_DIR"
+    else
+        work="$(mktemp -d)"; _TMPFILES+=("$work")
+        archive="$work/archive"; extract="$work/extract"; mkdir -p "$extract"
+        download_verified "$url" "$checksum" "$archive" || { record_install_failure "rhwp archive verification failed: $url"; return 1; }
+        case "$format" in
+            tgz) tar -xzf "$archive" -C "$extract" ;;
+            zip) unzip -q "$archive" -d "$extract" ;;
+            *)   record_install_failure "Unsupported rhwp archive format: $format"; return 1 ;;
+        esac || { record_install_failure "rhwp archive extraction failed: $url"; return 1; }
+
+        # 공식 archive는 rhwp/ 한 겹 아래에 binary와 문서를 담는다. 그 구조를 확인하고
+        # archive 전체를 그대로 배치한다 — binary만 뽑아 쓰지 않는다.
+        tree="$extract/rhwp"
+        if [[ ! -d "$tree" || -L "$tree" ]] || (( $(find "$extract" -mindepth 1 -maxdepth 1 | wc -l) != 1 )); then
+            record_install_failure "Unexpected rhwp archive layout: $url"; return 1
+        fi
+        if [[ -n "$(find "$tree" -mindepth 1 ! -type f ! -type d | head -1)" ]]; then
+            record_install_failure "Unsupported member type in rhwp archive: $url"; return 1
+        fi
+        binary="$tree/rhwp"
+        [[ -f "$binary" && ! -L "$binary" ]] || { record_install_failure "rhwp binary missing in archive: $url"; return 1; }
+        chmod 755 "$binary" || return 1
+        reported="$("$binary" --version 2>/dev/null | head -1 || true)"
+        [[ "$reported" == "rhwp v$version" ]] || {
+            record_install_failure "rhwp binary reports '${reported:-unknown}', expected 'rhwp v$version'"; return 1
+        }
+        install_managed_direct_tree "$tree" "$RHWP_DIR" "$version" || {
+            record_install_failure "rhwp tree not installed: $RHWP_DIR"; return 1
+        }
+        echo "    rhwp $version -> $RHWP_DIR"
+    fi
+
+    local failed=0
+    # Codex 쪽은 TOML 편집이라 yq가 필요하다. 없으면 config.toml 병합과 같은 정책으로
+    # 파일을 건드리지 않고 넘어간다 — 도구 부재로 설치 전체를 실패시키지 않는다.
+    if command -v yq >/dev/null 2>&1; then
+        install_managed_mcp_server codex rhwp "$CODEX_DIR/config.toml" "$desired" || failed=1
+    else
+        echo "    [!] yq not found; skipping Codex MCP registration."
+    fi
+    if [[ -f "$HOME/.claude.json" ]] || command -v claude >/dev/null 2>&1; then
+        install_managed_mcp_server claude rhwp "$HOME/.claude.json" "$desired" || failed=1
+    else
+        echo "    Claude Code not present; skipping ~/.claude.json MCP registration."
+    fi
+    if [[ -d "$GEMINI_DIR" ]] || command -v agy >/dev/null 2>&1; then
+        install_managed_mcp_server gemini rhwp "$GEMINI_CONFIG_DIR/mcp_config.json" "$desired" || failed=1
+    else
+        echo "    Antigravity not present; skipping ~/.gemini/config/mcp_config.json MCP registration."
+    fi
+    (( failed == 0 )) || { record_install_failure "rhwp MCP registration incomplete."; return 1; }
+}
+
+# ---------------------------------------------
+# ShellCheck: pinned release 하나를 CI와 세 OS가 함께 쓴다.
+# (이 줄을 `# shellcheck`로 시작하면 ShellCheck가 directive로 읽어 SC1073으로 죽는다)
+#
+# 패키지 매니저를 쓰지 않는 이유는 어느 것도 한 버전으로 모이지 않기 때문이다.
+# apt는 배포판에 묶여 22.04=0.8.0 / 24.04=0.9.0 / 26.04=0.11.0을 주고, brew에는
+# versioned formula가 없어 늘 최신으로 흐르며, GitHub Actions ubuntu-24.04 러너의
+# 사전 설치본은 러너 이미지를 따라 움직인다(현재 0.9.0).
+#
+# 버전 차이는 그대로 오탐·미탐이 된다. 0.11.0에서 SC2002(useless use of cat)가
+# 기본 비활성으로 바뀌고 SC2236/SC2237이 optional로 내려갔으며 SC2327~SC2332,
+# SC3062가 새로 생겼다 — 같은 스크립트가 로컬에서는 통과하고 CI에서는 실패한다
+# (반대도 마찬가지다). 그래서 rhwp와 같은 pinned artifact 계약으로 관리한다.
+# ---------------------------------------------
+shellcheck_platform() {
+    local machine
+    machine="$(uname -m 2>/dev/null || echo unknown)"
+    case "$OS:$machine" in
+        Linux:x86_64|Linux:amd64) echo linux-x86_64 ;;
+        Linux:aarch64|Linux:arm64) echo linux-aarch64 ;;
+        Darwin:x86_64) echo macos-x86_64 ;;
+        Darwin:arm64|Darwin:aarch64) echo macos-aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 다섯 플랫폼 행이 모두 있고 전부 같은 버전을 가리켜야 한 릴리즈를 pin한 것이 된다.
+# 한 행만 올라가면 그 플랫폼만 다른 버전을 받게 되어 pin의 의미가 사라진다.
+validate_shellcheck_manifest() {
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 5 || $1 !~ /^(windows-x86_64|linux-x86_64|linux-aarch64|macos-x86_64|macos-aarch64)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(tgz|zip)$/ || $4 !~ /^https:\/\/github\.com\/koalaman\/shellcheck\/releases\/download\/v[0-9]+\.[0-9]+\.[0-9]+\/[^[:space:]]+$/ || $4 ~ /\/(latest|HEAD|main)\// || $5 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1]++ { bad=1; exit }
+      { count++; if (pinned == "") pinned = $2; else if ($2 != pinned) bad=1 }
+      END { exit (bad || count != 5) }
+    ' "$1"
+}
+
+# manifest에서 shellcheck를 뺐다고 이미 깔린 패키지가 사라지지는 않는다 — install은 남의
+# 소유 패키지를 제거하지 않는다(Safe-Clean-Install). 그래서 이 PR 이전에 프로비저닝한
+# 머신에는 apt/brew 설치분이 pin한 쪽과 그대로 공존하고, 어느 쪽이 잡히는지는 그 순간의
+# PATH가 정한다. ~/.bashrc 마커 블록을 읽지 않는 소비자 — VS Code ShellCheck 확장,
+# 프로파일을 거치지 않은 셸의 Makefile, PATH가 씻긴 sudo — 는 계속 구버전을 보고,
+# CI가 통과시킨 코드에 0.8.0이 SC2002를 다시 붙인다.
+#
+# 정리 명령은 docs/tools.md에 있지만 문서만으로는 알아차릴 계기가 없다. 설치가 끝난
+# 자리에서 한 줄로 알린다. 알림에 그치고 실패로 기록하지 않는다 — 남의 소유 패키지라
+# 이 스크립트가 지울 대상이 아니다.
+warn_legacy_shellcheck_package() {
+    local owner=""
+    if command -v dpkg >/dev/null 2>&1 && dpkg -s shellcheck >/dev/null 2>&1; then
+        owner=apt
+    elif command -v brew >/dev/null 2>&1 && brew list --formula shellcheck >/dev/null 2>&1; then
+        owner=brew
+    fi
+    [[ -n "$owner" ]] || return 0
+    echo "    [!] An older $owner-managed shellcheck is still installed alongside the pinned one."
+    echo "        Remove it so every consumer sees one version (see docs/tools.md)."
+    return 0
+}
+
+install_shellcheck() {
+    local manifest="$ROOT/manifests/shellcheck.tsv" platform row version format url checksum
+    local work archive extract binary reported anchor
+    [[ -f "$manifest" ]] || { record_install_failure "Required manifest missing: manifests/shellcheck.tsv"; return 1; }
+    validate_shellcheck_manifest "$manifest" || { record_install_failure "Invalid manifests/shellcheck.tsv"; return 1; }
+    if ! platform="$(shellcheck_platform)"; then
+        echo "    [!] Unsupported shellcheck platform: $OS $(uname -m 2>/dev/null); skipping."
+        return 0
+    fi
+    row="$(awk -F '\t' -v p="$platform" '$1 == p { print; exit }' "$manifest")"
+    [[ -n "$row" ]] || { record_install_failure "No shellcheck manifest row for platform: $platform"; return 1; }
+    IFS=$'\t' read -r _ version format url checksum <<< "$row"
+
+    # ~/.local/bin은 bashrc 마커 블록이 PATH 맨 앞에 두므로, 배포판이 apt로 깐
+    # /usr/bin/shellcheck가 남아 있어도 pin한 쪽이 먼저 잡힌다.
+    anchor="$LOCAL_BIN/shellcheck"
+    direct_anchor_state "$anchor" "$version"
+    case "$DIRECT_STATE" in
+        current) echo "    shellcheck $version already installed: $anchor"; warn_legacy_shellcheck_package; return 0 ;;
+        modified) record_install_failure "Managed shellcheck changed; preserving: $anchor"; return 1 ;;
+        upgrade-blocked)
+            record_install_failure "shellcheck $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1"
+            return 1 ;;
+        upgrade) echo "    Upgrading shellcheck: $DIRECT_INSTALLED_VERSION -> $version" ;;
+    esac
+
+    work="$(mktemp -d)"; _TMPFILES+=("$work")
+    archive="$work/archive"; extract="$work/extract"; mkdir -p "$extract"
+    download_verified "$url" "$checksum" "$archive" || { record_install_failure "shellcheck archive verification failed: $url"; return 1; }
+    case "$format" in
+        tgz) tar -xzf "$archive" -C "$extract" ;;
+        zip) unzip -q "$archive" -d "$extract" ;;
+        *)   record_install_failure "Unsupported shellcheck archive format: $format"; return 1 ;;
+    esac || { record_install_failure "shellcheck archive extraction failed: $url"; return 1; }
+
+    # 공식 tarball은 shellcheck-v<version>/ 한 겹 아래에 binary와 문서를 담는다.
+    # 경로에 버전이 박혀 있어, 엉뚱한 릴리즈를 받았다면 여기서 걸린다.
+    binary="$extract/shellcheck-v$version/shellcheck"
+    [[ -f "$binary" && ! -L "$binary" ]] || { record_install_failure "shellcheck binary missing in archive: $url"; return 1; }
+    chmod 755 "$binary" || return 1
+    # `shellcheck --version`은 여러 줄을 뱉고 그중 `version: <ver>` 줄만 버전이다.
+    reported="$("$binary" --version 2>/dev/null | awk -F': *' '$1 == "version" { print $2; exit }' || true)"
+    [[ "$reported" == "$version" ]] || {
+        record_install_failure "shellcheck binary reports '${reported:-unknown}', expected '$version'"; return 1
+    }
+    install_direct_file shellcheck "$version" "$binary" "$anchor" || {
+        # 가장 흔한 원인은 사용자가 손으로 둔 파일이다. skip 계약상 이 저장소는 남의 파일을
+        # 덮지 않고, 다른 direct artifact처럼 PATH의 기존 설치본에 양보할 수도 없다
+        # (양보하면 apt의 0.9.0이 pin을 이긴다). 그래서 안내가 없으면 그 머신의 install이
+        # 매 실행 같은 자리에서 실패한다 — 대응 방법을 실패 메시지에 함께 적는다.
+        if [[ "$DIRECT_STATE" == new ]] && [[ -e "$anchor" || -L "$anchor" ]]; then
+            record_install_failure "shellcheck not installed: $anchor exists but is not managed by dotfiles. Remove it and re-run (see docs/tools.md)."
+        else
+            record_install_failure "shellcheck not installed: $anchor"
+        fi
+        return 1
+    }
+    warn_legacy_shellcheck_package
+}
+
+# ---------------------------------------------
+# herdr: 공식 installer(macOS는 Brewfile)에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# rhwp와 달리 pinned artifact로 관리하지 않는다. herdr는 자체 업데이터를 갖기 때문에
+# (`herdr update`, `herdr channel set`) receipt로 바이너리 해시를 잡으면 사용자가
+# 업데이트하는 순간 "changed; preserving"으로 굳어 버린다. Windows 쪽은 그에 더해
+# stable 릴리즈에 Windows asset이 아예 없어 pin할 semver가 존재하지 않는다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다.
+# ---------------------------------------------
+HERDR_INSTALL_URL="https://herdr.dev/install.sh"
+
+install_herdr() {
+    if command -v herdr >/dev/null 2>&1; then
+        echo "    herdr already installed: $(command -v herdr)"
+        echo "    herdr manages its own updates (herdr update / herdr channel set)."
+        return 0
+    fi
+    # macOS는 manifests/Brewfile의 `brew "herdr"`가 담당한다. 여기까지 왔는데 없다는
+    # 것은 Brewfile 단계가 건너뛰였거나 실패했다는 뜻이라, curl로 우회 설치하지 않고
+    # 그 사실만 알린다 — Homebrew가 소유한 것을 두 경로로 관리하지 않는다. 아래
+    # installer 실패와 마찬가지로 경고에 그친다(설정 배포만 건너뛴다).
+    if [[ "$OS" == "Darwin" ]]; then
+        echo "    [!] herdr not found. It is provided by manifests/Brewfile (brew \"herdr\") (config deployment skipped)."
+        return 1
+    fi
+    # 공식 installer는 실행 시점에 최신 빌드를 해석한다. manifests/*.tsv의 pinned
+    # SHA-256 계약에서 herdr만 예외라는 뜻이라 AGENTS.md에 근거를 남겨 둔다.
+    #
+    # 실패는 경고로만 남긴다(record_install_failure 아님). rhwp는 SHA-256으로 pin한
+    # artifact를 이 저장소가 소유하므로 실패가 곧 계약 위반이지만, herdr 바이너리는
+    # 소유하지 않기로 한 서드파티 CDN이다. 일시적 장애가 dotfiles 설치 전체를 실패로
+    # 만드는 것은 그 결정과 어긋난다 — 다음 실행이나 `herdr update`로 복구된다.
+    echo "    Running the official herdr installer: $HERDR_INSTALL_URL"
+    if ! curl -fsSL "$HERDR_INSTALL_URL" | sh; then
+        echo "    [!] herdr installer failed: $HERDR_INSTALL_URL (config deployment skipped)"
+        return 1
+    fi
+    # upstream installer는 프로파일을 건드리지 않는다 — 설치 디렉터리가 PATH에 없으면
+    # 경고만 낸다. 뒤따르는 설정 배포와 검증이 herdr를 찾을 수 있도록 기본 설치 경로
+    # ($HERDR_INSTALL_DIR 미설정 시 ~/.local/bin)를 이번 셸 PATH에만 얹는다.
+    add_to_path_runtime "${HERDR_INSTALL_DIR:-$HOME/.local/bin}"
+    if ! command -v herdr >/dev/null 2>&1; then
+        echo "    [!] herdr installer finished but herdr was not found (config deployment skipped)."
+        return 1
+    fi
+    echo "    herdr installed: $(command -v herdr)"
+}
+
+deploy_herdr_config() {
+    local src="$ROOT/config/herdr/config.toml" dst="$HOME/.config/herdr/config.toml"
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] config/herdr/config.toml not found, skipping."
+        return 0
+    fi
+    mkdir -p "$(dirname "$dst")"
+    # merge_codex_config는 Codex 전용이 아니라 TOML default merge 그 자체다.
+    # destination에 이미 있는 키는 건드리지 않으므로 herdr UI가 기록한 값이 보존된다.
+    #
+    # .terminal.shell_mode만 예외로 넘긴다. install.ps1이 Windows에서 default_shell에
+    # 두는 예외와 같은 이유다 — herdr가 config를 다시 쓰면서 남기는 빈 값이 우리
+    # 기본값을 덮으면, 이 파일의 존재 이유인 macOS login 셸 동작이 조용히 죽는다.
+    merge_codex_config "$src" "$dst" .terminal.shell_mode
+}
+
+# ---------------------------------------------
+# Antigravity CLI(agy): 공식 installer에 맡기고, 설정만 이 저장소가 소유한다.
+#
+# herdr와 같은 예외이며 근거도 같은 모양이다.
+#  1. CLI가 스스로 업데이트한다. 공식 installer가 "The Antigravity CLI automatically
+#     self-updates in the background during regular runs"라고 직접 밝힌다. receipt로
+#     바이너리를 잡으면 첫 실행 직후 해시가 어긋나 "changed; preserving"으로 굳는다.
+#  2. pin할 대상이 없다. 배포가 버전 없는 auto-updater manifest 엔드포인트를 거치고,
+#     GitHub 릴리즈는 2~3일에 하나씩 나온다. 그 속도로 SHA-256을 옮기는 것은
+#     manifests/*.tsv가 지키려는 "검토한 바이너리만 들어온다"와 실질이 다르다.
+# 그래서 바이너리는 소유하지 않고, 이미 있으면 건드리지 않는다. 설정(config/agy/)만
+# 이 저장소가 소유하며 그쪽은 SKIP_AGY가 따로 관리한다.
+# ---------------------------------------------
+AGY_INSTALL_URL="https://antigravity.google/cli/install.sh"
+
+install_agy_cli() {
+    if command -v agy >/dev/null 2>&1; then
+        echo "    Antigravity CLI already installed: $(command -v agy)"
+        echo "    agy manages its own updates (background self-update on regular runs)."
+        return 0
+    fi
+    # 실패는 경고로만 남긴다(record_install_failure 아님) — herdr와 같은 이유다.
+    # 소유하지 않기로 한 서드파티 CDN의 일시적 장애가 dotfiles 설치 전체를 실패로
+    # 만들지 않는다. 다음 실행이나 agy 자체 업데이트로 복구된다.
+    echo "    Running the official Antigravity CLI installer: $AGY_INSTALL_URL"
+    # sh가 아니라 bash로 파이프한다 — installer가 `set -euo pipefail`을 쓰는데
+    # dash(우분투의 /bin/sh)에는 pipefail이 없어 첫 줄에서 죽는다.
+    if ! curl -fsSL "$AGY_INSTALL_URL" | bash; then
+        echo "    [!] Antigravity CLI installer failed: $AGY_INSTALL_URL"
+        return 1
+    fi
+    # installer는 프로파일을 건드리지 않는다. 뒤따르는 단계(rhwp의 Gemini MCP 등록)가
+    # agy를 찾을 수 있도록 기본 설치 경로를 이번 셸 PATH에만 얹는다.
+    add_to_path_runtime "$LOCAL_BIN"
+    if ! command -v agy >/dev/null 2>&1; then
+        echo "    [!] Antigravity CLI installer finished but agy was not found."
+        return 1
+    fi
+    echo "    Antigravity CLI installed: $(command -v agy)"
+}
+
+set_managed_git_value() {
+    local name="$1" value="$2" before="" present=false entry="" pending_target="" pending_previous="" pending_present=false
+    $RECEIPT_READY || return 0
+    if before="$(git config --global --get "$name" 2>/dev/null)"; then present=true; fi
+    entry="$(jq -r --arg name "git:$name" '.values[$name].installed // empty' "$RECEIPT_PATH")"
+    if jq -e --arg name "git:$name" '.values[$name].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        pending_target="$(jq -r --arg name "git:$name" '.values[$name].pending.target' "$RECEIPT_PATH")"
+        pending_previous="$(jq -r --arg name "git:$name" '.values[$name].pending.previousValue // empty' "$RECEIPT_PATH")"
+        pending_present="$(jq -r --arg name "git:$name" '.values[$name].pending.previousPresent' "$RECEIPT_PATH")"
+        if [[ "$present" == true && "$before" == "$pending_target" ]]; then
+            record_managed_value "git:$name" "$present" "$before" "$pending_target"
+            return 0
+        fi
+        if [[ "$present" != "$pending_present" || ( "$present" == true && "$before" != "$pending_previous" ) ]]; then
+            echo "    [!] Managed value changed; preserving: $name" >&2
+            return 0
+        fi
+    elif jq -e --arg name "git:$name" '.values | has($name)' "$RECEIPT_PATH" >/dev/null && [[ "$before" != "$entry" ]]; then
+        echo "    [!] Managed value changed; preserving: $name" >&2
+        return 0
+    fi
+    if [[ "$present" != "true" || "$before" != "$value" ]]; then
+        begin_managed_value "git:$name" "$present" "$before" "$value" || return 1
+        git config --global "$name" "$value" || return 1
+        record_managed_value "git:$name" "$present" "$before" "$value" || return 1
+    fi
+}
+
+set_profile_block() {
+    local file="$1" content="$2"
+    local begin="# ===== dotfiles-begin ====="
+    local end="# ===== dotfiles-end ====="
+    local block_file tmp begin_exact end_exact begin_any end_any begin_line end_line
+    block_file="$(mktemp)"; _TMPFILES+=("$block_file")
+    printf '%s\n%s\n%s\n' "$begin" "$content" "$end" > "$block_file"
+
+    mkdir -p "$(dirname "$file")"
+    [[ -f "$file" ]] || : > "$file"
+
+    begin_exact="$(grep -Fxc -- "$begin" "$file" || true)"
+    end_exact="$(grep -Fxc -- "$end" "$file" || true)"
+    begin_any="$(grep -Fc -- "$begin" "$file" || true)"
+    end_any="$(grep -Fc -- "$end" "$file" || true)"
+
+    if [[ "$begin_any" == "0" && "$end_any" == "0" ]]; then
+        printf '\n' >> "$file"
+        cat "$block_file" >> "$file"
+        echo "    Appended dotfiles block to $file"
+    elif [[ "$begin_exact" == "1" && "$end_exact" == "1" &&
+            "$begin_any" == "1" && "$end_any" == "1" ]]; then
+        begin_line="$(grep -nFx -- "$begin" "$file" | cut -d: -f1)"
+        end_line="$(grep -nFx -- "$end" "$file" | cut -d: -f1)"
+        if (( begin_line >= end_line )); then
+            echo "    [!] Invalid dotfiles marker order in $file; keeping the file unchanged." >&2
+            return 1
+        fi
+
+        tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+        if ! awk -v begin="$begin" -v end="$end" -v block_file="$block_file" '
+            BEGIN { skip = 0; found_begin = 0; found_end = 0 }
+            $0 == begin {
+                while ((getline line < block_file) > 0) print line
+                close(block_file)
+                found_begin++
+                skip = 1
+                next
+            }
+            skip && $0 == end { found_end++; skip = 0; next }
+            !skip { print }
+            END { if (skip || found_begin != 1 || found_end != 1) exit 1 }
+        ' "$file" > "$tmp"; then
+            echo "    [!] Failed to replace dotfiles marker block in $file; keeping the file unchanged." >&2
+            return 1
+        fi
+        mv "$tmp" "$file"
+        echo "    Updated dotfiles block in $file"
+    else
+        echo "    [!] Invalid dotfiles marker state in $file; keeping the file unchanged." >&2
+        return 1
+    fi
+}
+
+install_shell_profiles() {
+    local profile src
+    echo "==> Updating shell profiles..."
+    for profile in bashrc inputrc; do
+        src="$ROOT/config/bash/$profile"
+        if [[ -f "$src" ]]; then
+            set_profile_block "$HOME/.$profile" "$(cat "$src")"
+        elif [[ "$profile" == "bashrc" ]]; then
+            echo "    [!] config/bash/bashrc not found, skipping bashrc."
+        fi
+    done
+
+    if [[ "$OS" == "Darwin" ]]; then
+        set_profile_block "$HOME/.zprofile" 'if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+fi'
+        set_profile_block "$HOME/.zshrc" 'typeset -U path PATH
+path=("$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.local/share/fnm" $path)
+
+if command -v fnm >/dev/null 2>&1; then
+    eval "$(fnm env --use-on-cd --shell zsh)"
+fi
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init zsh)"
+fi'
+    fi
+}
+
+merge_gitconfig() {
+    local path="$1"
+    if [[ ! -f "$path" ]]; then
+        echo "    [!] $path not found, skipping."
+        return 0
+    fi
+
+    local section="" trimmed key value existing_val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+        if [[ "$trimmed" =~ ^\[(.+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+        elif [[ -n "$trimmed" && "${trimmed:0:1}" != "#" && -n "$section" ]]; then
+            if [[ "$trimmed" =~ ^([^[:space:]=]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                existing_val=$(git config --global "$section.$key" 2>/dev/null || true)
+                if [[ -z "$existing_val" ]]; then
+                    if set_managed_git_value "$section.$key" "$value" &&
+                       [[ "$(git config --global --get "$section.$key" 2>/dev/null || true)" == "$value" ]]; then
+                        echo "    Added [$section] $key = $value"
+                    fi
+                else
+                    echo "    Skip  [$section] $key (already set)"
+                fi
+            fi
+        fi
+    done < "$path"
+    echo "    gitconfig merged."
+}
+
+# merge_codex_config <src> <dst> [placeholder-key...]
+#
+# TOML default merge — destination에 이미 있는 키는 건드리지 않는다.
+#
+# placeholder-key는 그 규칙의 예외다. 도구가 스스로 config를 다시 쓰면서 남기는 빈 값
+# (예: herdr onboarding의 `shell_mode = ""`)은 사용자의 선택이 아니라 자리표시자인데,
+# destination 우선을 그대로 적용하면 그 빈 값이 우리 기본값을 영구히 덮는다. 그래서
+# 병합 전에 destination 쪽에서 "빈 문자열일 때만" 걷어내 src 기본값이 다시 채워지게
+# 한다. 사용자가 실제로 넣은 값은 비어 있지 않으므로 그대로 이긴다.
+merge_codex_config() {
+    local src="$1" dst="$2" tmp effective_dst strip_expr key
+    shift 2
+
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] $src not found, skipping."
+        return 0
+    fi
+    if ! command -v yq >/dev/null 2>&1; then
+        echo "    [!] yq not found, keeping existing config.toml"
+        return 0
+    fi
+    if ! yq -p=toml -o=json '.' "$src" >/dev/null 2>&1; then
+        echo "    [!] source config.toml is invalid, keeping existing config.toml"
+        return 0
+    fi
+    if [[ ! -f "$dst" ]]; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
+        else install_managed_file "$src" "$dst" takeover || return 0
+        fi
+        echo "    Copied config.toml"
+        return 0
+    fi
+    if ! yq -p=toml -o=json '.' "$dst" >/dev/null 2>&1; then
+        echo "    [!] existing config.toml is invalid, keeping it unchanged"
+        return 0
+    fi
+
+    effective_dst="$dst"
+    if (( $# > 0 )); then
+        strip_expr='.'
+        for key in "$@"; do strip_expr="$strip_expr | del($key | select(. == \"\"))"; done
+        effective_dst="$(mktemp)"; _TMPFILES+=("$effective_dst")
+        # strip에 실패하면 원본 destination으로 되돌린다 — 예외를 못 적용하는 것이
+        # 사용자 값을 잃는 것보다 낫다.
+        if ! yq -p=toml -o=toml "$strip_expr" "$dst" > "$effective_dst" 2>/dev/null \
+            || [[ ! -s "$effective_dst" ]]; then
+            effective_dst="$dst"
+        fi
+    fi
+
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if yq eval-all -p=toml -o=toml \
+        'select(fileIndex == 0) * select(fileIndex == 1)' \
+        "$src" "$effective_dst" > "$tmp" 2>/dev/null \
+        && [[ -s "$tmp" ]] \
+        && yq -p=toml -o=json '.' "$tmp" >/dev/null 2>&1; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$dst"
+            echo "    Merged config.toml (existing values preserved)"
+        elif install_managed_file "$tmp" "$dst" merge; then
+            echo "    Merged config.toml (existing values preserved)"
+        fi
+    else
+        echo "    [!] merged config.toml is invalid, keeping existing config.toml"
+    fi
+}
+
+merge_json_registry() {
+    local src="$1" dst="$2" tmp
+    # 이번 실행에서 실제로 파일을 썼는지 남긴다. 나중 단계가 그 파일을 다시 쓸 때만
+    # 소유권 해시를 갱신하기 위한 것이라, 보존으로 끝난 경우와 반드시 구분해야 한다.
+    LAST_JSON_REGISTRY_DEPLOYED=false
+    if [[ ! -f "$src" ]]; then
+        echo "    [!] $src not found, skipping."
+        return 0
+    fi
+    if [[ ! -f "$dst" ]]; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then cp -f "$src" "$dst" || return 1
+        else install_managed_file "$src" "$dst" takeover || return 0
+        fi
+        LAST_JSON_REGISTRY_DEPLOYED=true
+        echo "    Copied $(basename "$dst")"
+        return 0
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "    [!] jq not found, keeping existing $(basename "$dst")"
+        return 0
+    fi
+    local filter="$ROOT/scripts/merge-json-registry.jq"
+    if [[ ! -f "$filter" ]]; then
+        echo "    [!] merge-json-registry.jq not found, keeping existing $(basename "$dst")"
+        return 0
+    fi
+
+    tmp="$(mktemp)"; _TMPFILES+=("$tmp")
+    if jq -s -f "$filter" "$dst" "$src" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$dst"
+            LAST_JSON_REGISTRY_DEPLOYED=true
+            echo "    Merged $(basename "$dst")"
+        elif install_managed_file "$tmp" "$dst" merge; then
+            LAST_JSON_REGISTRY_DEPLOYED=true
+            echo "    Merged $(basename "$dst")"
+        fi
+    else
+        echo "    [!] jq merge failed, keeping existing $(basename "$dst")"
+    fi
+}
+
+add_to_path_runtime() {
+    # 현재 셸 PATH 에 추가 (idempotent)
+    local dir="$1"
+    case ":$PATH:" in
+        *":$dir:"*) ;;
+        *) export PATH="$dir:$PATH" ;;
+    esac
+}
+
+run_privileged() {
+    # root면 직접 실행, 일반 유저면 sudo 경유
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+prune_node_versions() {
+    local current old
+    [[ "${DOTFILES_PRUNE_NODE_VERSIONS:-0}" == "1" ]] || return 0
+    current="$(fnm current 2>/dev/null || true)"
+    if [[ ! "$current" =~ ^v[0-9] ]]; then
+        echo "    [!] fnm current를 읽지 못해 구버전 정리를 건너뜀."
+        return
+    fi
+    while read -r old; do
+        [[ -n "$old" && "$old" != "$current" ]] || continue
+        if fnm uninstall "$old" >/dev/null 2>&1; then
+            echo "    Removed old Node: $old"
+        else
+            echo "    [!] Node $old 삭제 실패 — 해당 버전을 쓰는 셸이 열려 있는지 확인."
+        fi
+    done < <(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+}
+
+get_fnm_dir() {
+    if [[ -n "${FNM_DIR:-}" ]]; then
+        echo "$FNM_DIR"
+    elif [[ "${OS:-}" == "Darwin" ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+        echo "$HOME/Library/Application Support/fnm"
+    else
+        echo "$HOME/.local/share/fnm"
+    fi
+}
+
+link_fnm_default_bins() {
+    local default_path bin target link legacy_target
+    default_path="$(get_fnm_dir)/aliases/default"
+    for bin in node npm npx; do
+        target="$default_path/bin/$bin"
+        link="$LOCAL_BIN/$bin"
+        legacy_target="$default_path/$bin"
+        if [[ ! -x "$target" ]]; then
+            echo "    [!] fnm default $bin is not executable: $target"
+            continue
+        fi
+        if ensure_managed_symlink "$link" "$target" "$legacy_target"; then
+            echo "    Linked $link -> fnm default"
+        fi
+    done
+}
+
+update_fnm_statusline() {
+    local node_ver="$1" fnm_root target settings command rest old="" tmp
+    fnm_root="$(get_fnm_dir)"
+    target="$fnm_root/node-versions/$node_ver/installation/bin/node"
+    settings="$CLAUDE_DIR/settings.json"
+    [[ -x "$target" && -f "$settings" ]] || return 0
+    command="$(jq -r '.statusLine.command // ""' "$settings" 2>/dev/null || true)"
+    [[ "$command" == *"$fnm_root/node-versions/"* ]] || return 0
+    rest="${command#*"$fnm_root/node-versions/"}"
+    rest="${rest%%/*}"
+    for candidate in "$fnm_root/node-versions/$rest/installation/node" \
+                     "$fnm_root/node-versions/$rest/installation/bin/node"; do
+        [[ "$command" == *"$candidate"* ]] && old="$candidate" && break
+    done
+    [[ -n "$old" && "$old" != "$target" ]] || return 0
+
+    tmp="$(mktemp "$CLAUDE_DIR/.settings.json.XXXXXX")"; _TMPFILES+=("$tmp")
+    if jq --arg old "$old" --arg new "$target" \
+        '.statusLine.command |= (split($old) | join($new))' "$settings" > "$tmp" &&
+       jq empty "$tmp"; then
+        if [[ "$FUNCTIONS_ONLY_MODE" == 1 && "$RECEIPT_READY" == false ]]; then
+            mv "$tmp" "$settings"
+            echo "    Patched statusLine node path: $old -> $target"
+        # 산출물은 현재 settings.json을 읽어 statusLine 한 키만 바꾼 것이라 병합 산출물이다.
+        # Claude Code가 자기 설정을 다시 쓰는 파일이라 takeover면 영구히 보존으로 막힌다.
+        elif install_managed_file "$tmp" "$settings" merge; then
+            echo "    Patched statusLine node path: $old -> $target"
+        fi
+    fi
+}
+
+install_node_lts() {
+    echo
+    echo "==> Installing Node.js LTS via fnm..."
+    if ! command -v fnm >/dev/null 2>&1 && [[ ! -x "$HOME/.local/share/fnm/fnm" ]]; then
+        echo "    [!] fnm not found. Restart terminal and run:"
+        echo "        fnm install --lts"
+        return 1
+    fi
+
+    local fnm_env
+    if ! fnm_env="$(fnm env --shell bash)"; then
+        echo "    [!] fnm env failed"
+        return 1
+    fi
+    eval "$fnm_env"
+    if ! fnm install --lts; then
+        echo "    [!] fnm install --lts failed (network issue?). Run manually: fnm install --lts"
+        return 1
+    fi
+    if ! fnm default lts-latest; then echo "    [!] fnm default lts-latest failed"; return 1; fi
+    if ! fnm use lts-latest; then echo "    [!] fnm use lts-latest failed"; return 1; fi
+
+    local node_ver
+    node_ver="$(node --version 2>/dev/null || true)"
+    echo "    Node ${node_ver:-not active yet} active."
+    prune_node_versions
+    link_fnm_default_bins
+    if [[ "$node_ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        update_fnm_statusline "$node_ver"
+    fi
+    return 0
+}
+
+install_direct_file() {
+    local name="$1" version="$2" src="$3" dst="$4"
+    chmod 755 "$src" || return 1
+    if install_managed_file "$src" "$dst" skip; then
+        record_direct_version "$dst" "$version" || return 1
+        echo "    $name $version -> $dst"
+        return 0
+    fi
+    return 1
+}
+
+validate_direct_manifest() {
+    local manifest="$1"
+    awk -F '\t' '
+      /^#/ || /^[[:space:]]*$/ { next }
+      NF != 6 || $1 !~ /^(starship|atuin|fnm|bun|yazi|lazygit|fzf|nvim|delta|eza|yq)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(amd64|arm64)$/ || $4 !~ /^(tgz|zip|bin)$/ || $5 !~ /^https:\/\/github\.com\/[^[:space:]]+\/releases\/download\/[^[:space:]]+$/ || $5 ~ /\/(latest|HEAD|main)\// || $6 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      seen[$1 SUBSEP $3]++ { bad=1 }
+      { count[$1]++ }
+      END {
+        split("starship atuin fnm bun yazi lazygit fzf nvim delta eza yq", names, " ")
+        for (i in names) if (count[names[i]] != 2) bad=1
+        exit bad
+      }
+    ' "$manifest"
+}
+
+install_direct_artifacts() {
+    local manifest="$ROOT/manifests/direct-artifacts.tsv" name version arch format url checksum
+    local work archive extract member anchor state tree target current failed=0
+    [[ "$ARCH" == amd64 || "$ARCH" == arm64 ]] || { echo "    [!] Unsupported direct artifact architecture: $ARCH" >&2; return 1; }
+    [[ -f "$manifest" ]] || { echo "    [!] $manifest not found" >&2; return 1; }
+    validate_direct_manifest "$manifest" || { echo "    [!] Invalid direct artifact manifest: $manifest" >&2; return 1; }
+    while IFS=$'\t' read -r name version arch format url checksum; do
+        [[ -n "$name" && "$name" != \#* && "$arch" == "$ARCH" ]] || continue
+        case "$name" in
+            fnm) anchor="$HOME/.local/share/fnm/fnm" ;;
+            bun) anchor="$HOME/.bun/bin/bun" ;;
+            *) anchor="$LOCAL_BIN/$name" ;;
+        esac
+        if [[ "$name" == nvim && ( -e "$anchor" || -L "$anchor" ) ]] && ! jq -e --arg path "$anchor" '.artifacts | has($path)' "$RECEIPT_PATH" >/dev/null; then
+            echo "    [!] Unowned nvim launcher collision; preserving: $anchor" >&2
+            failed=1
+            continue
+        fi
+        direct_anchor_state "$anchor" "$version"; state="$DIRECT_STATE"
+        case "$state" in
+            current)
+                case "$name" in
+                    fnm) ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor" || failed=1; continue ;;
+                    bun)
+                        ensure_managed_symlink "$LOCAL_BIN/bun" "$anchor" || failed=1
+                        ensure_managed_symlink "$HOME/.bun/bin/bunx" bun || failed=1
+                        continue ;;
+                    yazi)
+                        direct_anchor_state "$LOCAL_BIN/ya" "$version"
+                        case "$DIRECT_STATE" in
+                            current) echo "    yazi $version already installed: $anchor"; continue ;;
+                            modified) echo "    [!] Managed ya artifact changed; preserving: $LOCAL_BIN/ya" >&2; failed=1; continue ;;
+                            upgrade-blocked) echo "    [!] ya version change requires DOTFILES_UPGRADE_DIRECT=1" >&2; failed=1; continue ;;
+                        esac ;;
+                    nvim)
+                        target="$HOME/.local/opt/nvim-v$version"
+                        if [[ -d "$target" && ! -L "$target" ]] &&
+                           [[ "$(tree_hash "$target")" == "$(jq -r --arg path "$target" '.artifacts[$path].installedTreeHash // empty' "$RECEIPT_PATH")" ]]; then
+                            echo "    nvim $version already installed: $target"
+                            continue
+                        fi
+                        echo "    [!] Managed nvim tree changed or missing; preserving: $target" >&2
+                        failed=1; continue ;;
+                    *) echo "    $name $version already installed: $anchor"; continue ;;
+                esac ;;
+            modified) echo "    [!] Managed direct artifact changed; preserving: $anchor" >&2; failed=1; continue ;;
+            upgrade-blocked)
+                if [[ "$name" == fnm ]] && ! ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor"; then failed=1; fi
+                echo "    [!] $name $DIRECT_INSTALLED_VERSION -> $version requires DOTFILES_UPGRADE_DIRECT=1" >&2
+                failed=1; continue ;;
+            upgrade) echo "    Upgrading $name: $DIRECT_INSTALLED_VERSION -> $version" ;;
+            new)
+                if command -v "$name" >/dev/null 2>&1; then
+                    if [[ "$name" == nvim ]]; then
+                        current="$(nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+                        [[ -n "$current" ]] && dpkg --compare-versions "$current" ge 0.10.0 && { echo "    nvim already provided outside the direct-artifact receipt: $(command -v nvim)"; continue; }
+                    elif [[ "$name" == fzf ]]; then
+                        current="$(fzf --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)"
+                        [[ -n "$current" ]] && dpkg --compare-versions "$current" ge 0.48.0 && { echo "    fzf already provided outside the direct-artifact receipt: $(command -v fzf)"; continue; }
+                    else
+                        echo "    $name already provided outside the direct-artifact receipt: $(command -v "$name")"
+                        continue
+                    fi
+                fi ;;
+        esac
+
+        work="$(mktemp -d)"; _TMPFILES+=("$work")
+        archive="$work/artifact"
+        if ! download_verified "$url" "$checksum" "$archive"; then failed=1; continue; fi
+        extract="$work/extract"; mkdir -p "$extract"
+        case "$format" in
+            tgz) tar -xzf "$archive" -C "$extract" || { failed=1; continue; } ;;
+            zip) unzip -q "$archive" -d "$extract" || { failed=1; continue; } ;;
+            bin) cp "$archive" "$extract/$name" || { failed=1; continue; } ;;
+            *) echo "    [!] Unsupported direct artifact format: $format" >&2; failed=1; continue ;;
+        esac
+
+        if [[ "$name" == nvim ]]; then
+            tree="$(find "$extract" -mindepth 1 -maxdepth 1 -type d -name 'nvim-linux-*' -print -quit)"
+            target="$HOME/.local/opt/nvim-v$version"
+            if [[ -z "$tree" ]] || ! install_managed_direct_tree "$tree" "$target" "$version"; then failed=1; continue; fi
+            if install_managed_symlink "$anchor" "$target/bin/nvim"; then
+                record_direct_version "$anchor" "$version" || { failed=1; continue; }
+                echo "    nvim $version -> $target"
+            else failed=1
+            fi
+            continue
+        fi
+
+        member="$(find "$extract" -type f -name "$name" -print -quit)"
+        if [[ -z "$member" ]] || ! install_direct_file "$name" "$version" "$member" "$anchor"; then failed=1; continue; fi
+        case "$name" in
+            yazi)
+                member="$(find "$extract" -type f -name ya -print -quit)"
+                [[ -n "$member" ]] && install_direct_file ya "$version" "$member" "$LOCAL_BIN/ya" || failed=1
+                ;;
+            fnm)
+                ensure_managed_symlink "$LOCAL_BIN/fnm" "$anchor" || failed=1
+                ;;
+            bun)
+                ensure_managed_symlink "$LOCAL_BIN/bun" "$anchor" || failed=1
+                ensure_managed_symlink "$HOME/.bun/bin/bunx" bun || failed=1
+                ;;
+        esac
+    done < "$manifest"
+    hash -r 2>/dev/null || true
+    return "$failed"
+}
+
+if [[ "${DOTFILES_FUNCTIONS_ONLY:-0}" == "1" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
+
+receipt_preflight || exit 1
+
+echo "==> Unix dotfiles setup starting..."
+echo "    Source: $ROOT"
+echo "    OS:     ${OS:-unknown}"
+echo "    Arch:   $ARCH"
+
+if [[ "$OS" == "Darwin" ]]; then
+    install_system_packages() {
+    # =============================================
+    # [macOS] Homebrew 및 Brewfile
+    # =============================================
+    echo
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "    [!] Homebrew is required. Install it first from https://brew.sh/" >&2
+      exit 1
+    fi
+
+    BREWFILE="$ROOT/manifests/Brewfile"
+    BREW_BEFORE="$(mktemp)"; _TMPFILES+=("$BREW_BEFORE")
+    if [[ -f "$BREWFILE" ]]; then
+        awk -F'"' '/^(brew|cask) "/ {kind=$1; sub(/ .*/, "", kind); print kind "\t" $2}' "$BREWFILE" | while IFS=$'\t' read -r kind package; do
+            before="$(brew list --"${kind/brew/formula}" --versions "$package" 2>/dev/null | awk '{print $2}' || true)"
+            before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+            printf '%s\t%s\t%s\t%s\n' "$kind" "$package" "$before_present" "$before"
+        done > "$BREW_BEFORE"
+    else
+        record_install_failure "Required manifest missing: manifests/Brewfile"
+        finish_install
+        exit 1
+    fi
+    if ! $RECEIPT_READY; then
+        jq_before="$(awk -F'\t' '$1=="brew" && $2=="jq" {print $3 "\t" $4}' "$BREW_BEFORE")"
+        IFS=$'\t' read -r jq_before_present jq_before_version <<< "$jq_before"
+        receipt_bootstrap_jq brew "${jq_before_present:-false}" || exit 1
+        jq_status=0
+        brew install jq || jq_status=$?
+        jq_after="$(brew list --formula --versions jq 2>/dev/null | awk '{print $2}' || true)"
+        if command -v jq >/dev/null 2>&1; then
+            receipt_init || exit 1
+            if [[ -n "$jq_after" && "$jq_after" != "${jq_before_version:-}" ]]; then
+                record_managed_package brew:jq "${jq_before_present:-false}" "${jq_before_version:-}" "$jq_after"
+            else
+                cancel_managed_package brew:jq
+            fi
+        fi
+        (( jq_status == 0 )) || exit "$jq_status"
+        $RECEIPT_READY || exit 1
+    fi
+    while IFS=$'\t' read -r kind package before_present before; do
+        [[ -n "$package" ]] || continue
+        begin_managed_package "$kind:$package" "$before_present" "$before" || exit 1
+    done < "$BREW_BEFORE"
+    echo "    Installing packages from Brewfile..."
+    brew_status=0
+    if [[ -f "$BREWFILE" ]]; then
+        brew bundle --file="$BREWFILE" || brew_status=$?
+    else
+        echo "    [!] manifests/Brewfile not found, skipping."
+    fi
+
+    if ! receipt_init; then (( brew_status == 0 )) || exit "$brew_status"; exit 1; fi
+    while IFS=$'\t' read -r kind package before_present before; do
+        [[ -n "$package" ]] || continue
+        after="$(brew list --"${kind/brew/formula}" --versions "$package" 2>/dev/null | awk '{print $2}' || true)"
+        if [[ -n "$after" && ( "$before_present" != true || "$after" != "$before" ) ]]; then
+            record_managed_package "$kind:$package" "$before_present" "$before" "$after"
+        else
+            cancel_managed_package "$kind:$package"
+        fi
+    done < "$BREW_BEFORE"
+    (( brew_status == 0 )) || exit "$brew_status"
+    }
+    run_optional_stage SKIP_PACKAGES "==> [CI] Skipping Homebrew packages (SKIP_PACKAGES=1)" install_system_packages
+
+    if $APPLY_DEFAULTS; then
+      echo "==> Applying macOS system defaults..."
+      MACOS_DEFAULTS="$ROOT/config/macos/.macos"
+      if [[ -f "$MACOS_DEFAULTS" ]]; then
+          bash "$MACOS_DEFAULTS"
+      fi
+    fi
+
+    echo
+    echo "==> Merging git config (macOS)..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    set_managed_git_value core.autocrlf input
+    set_managed_git_value core.fileMode true
+
+elif [[ "$OS" == "Linux" ]]; then
+    install_system_packages() {
+    # =============================================
+    # [Linux] apt 및 github releases
+    # =============================================
+    echo
+    echo "==> Installing packages via apt..."
+    APT_FILE="$ROOT/manifests/apt.txt"
+    if [[ -f "$APT_FILE" ]]; then
+        APT_BEFORE="$(mktemp)"; _TMPFILES+=("$APT_BEFORE")
+        while IFS= read -r package; do
+            dpkg_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' "$package" 2>/dev/null || true)"
+            IFS=$'\t' read -r dpkg_status dpkg_version <<< "$dpkg_state"
+            before=""; [[ "$dpkg_status" == 'ii ' ]] && before="$dpkg_version"
+            before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+            printf '%s\t%s\t%s\n' "$package" "$before_present" "$before"
+        done < <(manifest_lines "$APT_FILE") > "$APT_BEFORE"
+        run_privileged apt-get update -y
+        if ! $RECEIPT_READY; then
+            jq_before="$(awk -F'\t' '$1=="jq" {print $2 "\t" $3}' "$APT_BEFORE")"
+            IFS=$'\t' read -r jq_before_present jq_before_version <<< "$jq_before"
+            receipt_bootstrap_jq apt "${jq_before_present:-false}" || exit 1
+            jq_status=0
+            DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y jq --no-install-recommends || jq_status=$?
+            jq_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' jq 2>/dev/null || true)"
+            IFS=$'\t' read -r jq_dpkg_status jq_dpkg_version <<< "$jq_state"
+            jq_after=""; [[ "$jq_dpkg_status" == 'ii ' ]] && jq_after="$jq_dpkg_version"
+            if command -v jq >/dev/null 2>&1; then
+                receipt_init || exit 1
+                if [[ -n "$jq_after" && "$jq_after" != "${jq_before_version:-}" ]]; then
+                    record_managed_package apt:jq "${jq_before_present:-false}" "${jq_before_version:-}" "$jq_after"
+                else
+                    cancel_managed_package apt:jq
+                fi
+            fi
+            (( jq_status == 0 )) || exit "$jq_status"
+            $RECEIPT_READY || exit 1
+        fi
+        while IFS=$'\t' read -r package before_present before; do
+            [[ -n "$package" ]] || continue
+            begin_managed_package "apt:$package" "$before_present" "$before" || exit 1
+        done < "$APT_BEFORE"
+        apt_status=0
+        # shellcheck disable=SC2046
+        DEBIAN_FRONTEND=noninteractive run_privileged apt-get install -y \
+            $(manifest_lines "$APT_FILE") --no-install-recommends || apt_status=$?
+        if ! receipt_init; then (( apt_status == 0 )) || exit "$apt_status"; exit 1; fi
+        while IFS=$'\t' read -r package before_present before; do
+            [[ -n "$package" ]] || continue
+            dpkg_state="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Version}' "$package" 2>/dev/null || true)"
+            IFS=$'\t' read -r dpkg_status dpkg_version <<< "$dpkg_state"
+            after=""; [[ "$dpkg_status" == 'ii ' ]] && after="$dpkg_version"
+            if [[ -n "$after" && ( "$before_present" != true || "$after" != "$before" ) ]]; then
+                record_managed_package "apt:$package" "$before_present" "$before" "$after"
+            else
+                cancel_managed_package "apt:$package"
+            fi
+        done < "$APT_BEFORE"
+        (( apt_status == 0 )) || exit "$apt_status"
+    else
+        record_install_failure "Required manifest missing: manifests/apt.txt"
+        receipt_init || exit 1
+    fi
+
+    echo "    Refreshing font cache..."
+    fc-cache -vf
+
+    # 22.04에서 'bat'은 batcat 으로, 'fd'는 fdfind 로 설치됨 → ~/.local/bin 심볼릭 링크
+    if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
+        if ensure_managed_symlink "$LOCAL_BIN/bat" "$(command -v batcat)"; then echo "    Linked $LOCAL_BIN/bat -> batcat"; fi
+    fi
+    if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
+        if ensure_managed_symlink "$LOCAL_BIN/fd" "$(command -v fdfind)"; then echo "    Linked $LOCAL_BIN/fd -> fdfind"; fi
+    fi
+    }
+    run_optional_stage SKIP_PACKAGES "==> [CI] Skipping apt packages (SKIP_PACKAGES=1)" install_system_packages
+
+    # =============================================
+    # 1-1. gitconfig 병합 + Linux 전용 override
+    # =============================================
+    echo
+    echo "==> Merging git config..."
+    merge_gitconfig "$ROOT/config/git/gitconfig"
+    set_managed_git_value core.autocrlf input
+    set_managed_git_value core.fileMode true
+fi
+
+# =============================================
+# 1-2. tmux 설정 복사 (config/tmux/tmux.linux.conf → ~/.tmux.conf)
+# =============================================
+echo
+TMUX_SRC="$ROOT/config/tmux/tmux.linux.conf"
+if [[ -f "$TMUX_SRC" ]]; then
+    if install_managed_file "$TMUX_SRC" "$HOME/.tmux.conf" takeover; then echo "    Copied tmux.linux.conf to .tmux.conf (Unix)"; fi
+fi
+
+# =============================================
+# 1-3. yazi 설정 배포 (config/yazi/ → ~/.config/yazi/)
+# =============================================
+echo
+echo "==> Deploying yazi config..."
+if [[ -d "$ROOT/config/yazi" ]]; then
+    if install_managed_tree "$ROOT/config/yazi" "$YAZI_CONFIG_DIR" takeover; then echo "    yazi config deployed to $YAZI_CONFIG_DIR"; fi
+else
+    echo "    [!] config/yazi not found, skipping."
+fi
+
+# =============================================
+# 1-4. Neovim 설정 배포 (config/nvim/ → ~/.config/nvim/)
+# =============================================
+echo
+echo "==> Setting up lazy.nvim (Neovim Plugin Manager - Structured Setup)..."
+if [[ ! -f "$ROOT/config/nvim/init.lua" ]]; then
+    echo "    [!] config/nvim/init.lua not found, skipping."
+else
+    if install_managed_tree "$ROOT/config/nvim" "$NVIM_CONFIG_DIR" takeover; then
+        echo "    lazy.nvim config deployed to $NVIM_CONFIG_DIR"
+        echo "    Run nvim to auto-install lazy.nvim on first launch."
+    fi
+fi
+
+# =============================================
+# 1-5. starship 설정 배포 (config/starship.toml → ~/.config/starship.toml)
+# =============================================
+echo
+if [[ -f "$ROOT/config/starship.toml" ]]; then
+    if install_managed_file "$ROOT/config/starship.toml" "$STARSHIP_CONFIG" takeover; then echo "    Copied starship.toml to $STARSHIP_CONFIG"; fi
+fi
+
+add_to_path_runtime "$LOCAL_BIN"
+add_to_path_runtime "$HOME/.bun/bin"
+add_to_path_runtime "$HOME/.local/share/fnm"
+
+# macOS는 Brewfile을 사용하고 Linux만 pinned, checksum-verified artifact를 설치한다.
+install_runtime_packages() {
+if [[ "$OS" == "Linux" ]]; then
+    echo
+    echo "==> Installing pinned direct artifacts..."
+    install_direct_artifacts || exit 1
+fi
+
+    # =============================================
+    # 2. Node.js LTS (fnm)
+    # =============================================
+    install_node_lts || record_install_failure "Node.js LTS installation failed."
+# =============================================
+# 2-1. npm 전역 패키지 (manifests/npm-global.txt)
+# =============================================
+echo
+echo "==> Installing global npm packages..."
+NPM_FILE="$ROOT/manifests/npm-global.txt"
+if [[ -f "$NPM_FILE" ]] && command -v npm >/dev/null 2>&1; then
+    npm_root="$(npm root -g)"; npm_prefix="$(npm prefix -g)"
+    # fnm multishell 링크를 풀어 셸 간 안정적인 prefix로 기록한다.
+    # uninstall의 npm prefix allowlist는 `<fnm_root>/node-versions/<version>/installation`만 받는다.
+    npm_prefix="$(resolve_link_path "$npm_prefix")"
+    npm_failed=0
+    while IFS= read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+        package_json="$npm_root/$pkg/package.json"
+        before="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
+        before_present=false; if [[ -n "$before" ]]; then before_present=true; fi
+        # 소유권을 판정할 수 없는 패키지 하나 때문에 이후 설치 단계 전체를 중단하지 않는다.
+        if ! begin_managed_package "npm:$pkg" "$before_present" "$before" "$npm_prefix"; then
+            record_install_failure "npm receipt journal failed; skipping package: $pkg"
+            continue
+        fi
+        # 종료 코드와 출력을 남긴다. 둘 다 버리면 EBUSY(실행 중인 바이너리 교체 실패)
+        # 같은 원인을 로그만 보고는 알 수 없어, 손으로 재현해야만 진단이 된다.
+        npm_log="$(mktemp)"; _TMPFILES+=("$npm_log")
+        npm_status=0
+        npm install -g "$pkg" >"$npm_log" 2>&1 || npm_status=$?
+        if (( npm_status == 0 )); then
+            echo "    Installed $pkg"
+        else
+            echo "    [!] Failed: $pkg (exit: $npm_status)"
+            npm_diag="$(grep -m 4 -E '^npm (error|ERR!)' "$npm_log" 2>/dev/null || true)"
+            [[ -n "$npm_diag" ]] || npm_diag="$(tail -n 4 "$npm_log" 2>/dev/null || true)"
+            [[ -z "$npm_diag" ]] || while IFS= read -r npm_diag_line; do echo "        $npm_diag_line"; done <<<"$npm_diag"
+            npm_failed=1
+        fi
+        after="$(jq -r '.version // empty' "$package_json" 2>/dev/null || true)"
+        if [[ -n "$after" && ( "$before_present" != true || "$before" != "$after" ) ]]; then
+            record_managed_package "npm:$pkg" "$before_present" "$before" "$after" "$npm_prefix"
+        else
+            cancel_managed_package "npm:$pkg"
+        fi
+    done < <(manifest_lines "$NPM_FILE")
+    (( npm_failed == 0 )) || record_install_failure "One or more npm packages failed."
+elif [[ ! -f "$NPM_FILE" ]]; then
+    record_install_failure "Required manifest missing: manifests/npm-global.txt"
+else
+    record_install_failure "npm is required for manifests/npm-global.txt."
+fi
+}
+run_optional_stage SKIP_PACKAGES "==> [CI] Skipping direct, Node.js, and npm packages (SKIP_PACKAGES=1)" install_runtime_packages
+
+# =============================================
+# 1-7. herdr 설치 + 설정 배포 (config/herdr/config.toml → ~/.config/herdr/config.toml)
+#
+# 패키지 단계 뒤에 둔다 — 설정 병합에 yq가 필요하고, Linux는 yq를
+# manifests/direct-artifacts.tsv에서, macOS는 Brewfile에서 받는다.
+# =============================================
+install_herdr_stage() {
+    echo
+    echo "==> Installing herdr and deploying config..."
+    if install_herdr; then deploy_herdr_config; fi
+}
+run_optional_stage SKIP_HERDR "==> [CI] Skipping herdr (SKIP_HERDR=1)" install_herdr_stage
+
+# =============================================
+# 1-8. shellcheck 설치 (manifests/shellcheck.tsv → ~/.local/bin/shellcheck)
+#
+# CI(pr-gate.yml의 lint 잡)와 같은 pinned 버전을 쓴다. 패키지 단계 뒤에 두는 이유는
+# receipt 기록에 jq가 필요하기 때문이다 — Linux는 apt, macOS는 Brewfile이 준다.
+# =============================================
+install_shellcheck_stage() {
+    echo
+    echo "==> Installing pinned shellcheck..."
+    install_shellcheck || true
+}
+run_optional_stage SKIP_SHELLCHECK "==> [CI] Skipping shellcheck (SKIP_SHELLCHECK=1)" install_shellcheck_stage
+
+# =============================================
+# 2-2. Codex 설정 배포 (config/codex/ + config/agents/global.md → ~/.codex/)
+# =============================================
+echo
+echo "==> Deploying Codex config..."
+mkdir -p "$CODEX_DIR"
+merge_codex_config "$ROOT/config/codex/config.toml" "$CODEX_DIR/config.toml"
+
+AGENTS_GLOBAL_SRC="$ROOT/config/agents/global.md"
+ROLES_SRC="$ROOT/config/agents/roles"
+if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+    if install_managed_file "$AGENTS_GLOBAL_SRC" "$CODEX_DIR/AGENTS.md" takeover; then echo "    Copied global agent instructions to AGENTS.md"; fi
+else
+    echo "    [!] config/agents/global.md not found"
+fi
+
+# 공용 role: config/agents/roles/<name>/ = codex.toml + body.md 조립
+# → ~/.codex/agents/<name>.toml (Codex subagent. body.md는 developer_instructions 값이 된다)
+if [[ -d "$ROLES_SRC" ]]; then
+    mkdir -p "$CODEX_DIR/agents"
+    for d in "$ROLES_SRC"/*/; do
+        [[ -f "$d/codex.toml" && -f "$d/body.md" ]] || continue
+        name="$(basename "$d")"
+        # TOML literal multi-line string(''') — 이스케이프 해석이 없어 body를 그대로 담는다
+        tmp_agent="$(mktemp)"; _TMPFILES+=("$tmp_agent")
+        {
+            cat "$d/codex.toml"
+            printf "developer_instructions = '''\n"
+            cat "$d/body.md"
+            printf "'''\n"
+        } > "$tmp_agent"
+        if install_managed_file "$tmp_agent" "$CODEX_DIR/agents/$name.toml" skip; then echo "    Deployed agent: $name"; fi
+    done
+fi
+
+# hooks.json: 사용자 hook 보존 + dotfiles 관리 command upsert
+CODEX_HOOKS_JSON_SRC="$ROOT/config/codex/hooks.json"
+if [[ -f "$CODEX_HOOKS_JSON_SRC" ]]; then
+    merge_json_registry "$CODEX_HOOKS_JSON_SRC" "$CODEX_DIR/hooks.json"
+else
+    echo "    [!] config/codex/hooks.json not found"
+fi
+
+# takeover인 이유: 이 이름의 파일은 이 저장소가 소유한다. skip이면 receipt에 없는 구버전
+# 사본이 영구히 남아 hook이 조용히 낡는다. 기존 파일은 .dotfiles-backup으로 백업된다.
+# hooks/temporal-context.sh 배포
+CODEX_HOOKS_DIR="$CODEX_DIR/hooks"
+TEMPORAL_SRC="$ROOT/config/codex/hooks/temporal-context.sh"
+if [[ -f "$TEMPORAL_SRC" ]]; then
+    if install_managed_file "$TEMPORAL_SRC" "$CODEX_HOOKS_DIR/temporal-context.sh" takeover; then
+        echo "    Copied temporal-context.sh to ~/.codex/hooks/ and set +x"
+    fi
+else
+    echo "    [!] config/codex/hooks/temporal-context.sh not found, skipping."
+fi
+
+# =============================================
+# 3. Claude Code package-manager 설치
+# =============================================
+echo
+install_claude_code_stage() {
+    echo "==> Installing Claude Code via package manager..."
+    if [[ "$OS" == Darwin ]] && jq -e '.packages["cask:claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        reconcile_pending_claude_package cask:claude-code query_claude_cask "$command_present" || {
+            echo "    [!] Pending Claude cask identity unavailable; receipt left pending." >&2; exit 1;
+        }
+    elif [[ "$OS" == Linux ]] && jq -e '.packages["npm:@anthropic-ai/claude-code"].pending != null' "$RECEIPT_PATH" >/dev/null; then
+        CLAUDE_NPM_PREFIX="$(jq -r '.packages["npm:@anthropic-ai/claude-code"].prefix // empty' "$RECEIPT_PATH")"
+        [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix missing; receipt preserved." >&2; exit 1; }
+        # 이전 버전이 기록한 multishell 경로는 셸이 끝나면 죽는다. 그대로 조회하면 identity가 영영
+        # absent로 나와 pending을 못 풀고 매 실행 같은 자리에서 멈춘다. 살아 있으면 링크를 풀고,
+        # 죽었으면 현재 전역 prefix로 대체한다.
+        if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX"; then
+            CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
+            if is_ephemeral_npm_prefix "$CLAUDE_NPM_PREFIX" && command -v npm >/dev/null 2>&1; then
+                CLAUDE_NPM_PREFIX="$(resolve_link_path "$(npm prefix -g 2>/dev/null || true)")"
+            fi
+            [[ -n "$CLAUDE_NPM_PREFIX" ]] || { echo "    [!] Pending Claude npm prefix unresolvable; receipt preserved." >&2; exit 1; }
+        fi
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        reconcile_pending_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$command_present" || {
+            echo "    [!] Pending Claude npm identity unavailable; receipt left pending." >&2; exit 1;
+        }
+    fi
+    if command -v claude >/dev/null 2>&1; then
+        echo "    Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
+    elif [[ "$OS" == Darwin ]]; then
+        query_claude_cask || { echo "    [!] Claude cask identity query failed before installation." >&2; exit 1; }
+        before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
+        begin_managed_package cask:claude-code "$before_present" "$before" || exit 1
+        manager_status=0; brew install --cask claude-code || manager_status=$?
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        complete_managed_claude_package cask:claude-code query_claude_cask "$before_present" "$before" "$manager_status" "$command_present" || exit $?
+    elif command -v npm >/dev/null 2>&1 && [[ "$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)" -ge 22 ]]; then
+        CLAUDE_NPM_PREFIX="$(npm prefix -g)" || exit 1
+        # npm 전역 패키지와 같은 이유로 fnm multishell 링크를 풀어 안정 경로로 기록한다.
+        CLAUDE_NPM_PREFIX="$(resolve_link_path "$CLAUDE_NPM_PREFIX")"
+        query_claude_npm_package || { echo "    [!] Claude npm identity query failed before installation." >&2; exit 1; }
+        before="$CLAUDE_QUERY_VERSION"; before_present=false; [[ "$CLAUDE_QUERY_STATE" == present ]] && before_present=true
+        npm_prefix="$CLAUDE_NPM_PREFIX"
+        begin_managed_package npm:@anthropic-ai/claude-code "$before_present" "$before" "$npm_prefix" || exit 1
+        manager_status=0; npm install -g @anthropic-ai/claude-code || manager_status=$?
+        command_present=false; command -v claude >/dev/null 2>&1 && command_present=true
+        complete_managed_claude_package npm:@anthropic-ai/claude-code query_claude_npm_package "$before_present" "$before" "$manager_status" "$command_present" "$npm_prefix" || exit $?
+    else
+        echo "    [!] Claude Code requires npm with Node.js 22+ on Linux." >&2
+        exit 1
+    fi
+
+    # =============================================
+    # 3-1. Claude Code 설정 배포 (config/claude/ + config/agents/global.md → ~/.claude/)
+    # =============================================
+    echo
+    echo "==> Deploying Claude Code config..."
+    mkdir -p "$CLAUDE_DIR"
+
+    SETTINGS_SRC="$ROOT/config/claude/settings.json"
+    SETTINGS_DST="$CLAUDE_DIR/settings.json"
+    if [[ -f "$SETTINGS_SRC" ]]; then
+        merge_json_registry "$SETTINGS_SRC" "$SETTINGS_DST"
+        CLAUDE_SETTINGS_DEPLOYED="$LAST_JSON_REGISTRY_DEPLOYED"
+    else
+        echo "    [!] config/claude/settings.json not found"
+    fi
+
+    if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$CLAUDE_DIR/CLAUDE.md" takeover; then echo "    Copied global agent instructions to CLAUDE.md"; fi
+    else
+        echo "    [!] config/agents/global.md not found"
+    fi
+
+    # hooks/: 배포 (temporal-context.sh 등) + 실행 권한. takeover 근거는 Codex 쪽 주석 참고.
+    HOOKS_SRC="$ROOT/config/claude/hooks"
+    HOOKS_DST="$CLAUDE_DIR/hooks"
+    if [[ -d "$HOOKS_SRC" ]]; then
+        hook_status=0
+        while IFS= read -r -d '' hook_src; do
+            hook_rel="${hook_src#"$HOOKS_SRC"/}"
+            managed_hook="$hook_src"
+            if [[ "$hook_src" == *.sh ]]; then
+                managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
+                if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
+            fi
+            if ! install_managed_file "$managed_hook" "$HOOKS_DST/$hook_rel" takeover; then
+                hook_status=1
+            fi
+        done < <(find "$HOOKS_SRC" -type f -print0)
+        if (( hook_status == 0 )); then echo "    Copied hooks/ and set +x"; fi
+    else
+        echo "    [!] config/claude/hooks not found, skipping."
+    fi
+
+    # statusline.sh: settings.json의 statusLine이 가리키는 wrapper. claude-hud 출력과
+    # ccusage 출력을 합친다. takeover 근거는 hook 스크립트와 같다 — 이름으로 소유하는
+    # 파일이라 skip이면 구버전 사본이 "사용자 파일"로 판정돼 영구히 남는다.
+    STATUSLINE_SRC="$ROOT/config/claude/statusline.sh"
+    if [[ -f "$STATUSLINE_SRC" ]]; then
+        managed_statusline="$(mktemp)"; _TMPFILES+=("$managed_statusline")
+        if cp -p "$STATUSLINE_SRC" "$managed_statusline" && chmod +x "$managed_statusline" \
+            && install_managed_file "$managed_statusline" "$CLAUDE_DIR/statusline.sh" takeover; then
+            echo "    Copied statusline.sh and set +x"
+        fi
+    else
+        echo "    [!] config/claude/statusline.sh not found, skipping."
+    fi
+
+    # claude-hud.json: 플러그인 설정 override. 플러그인 디렉터리 밖(~/.claude/claude-hud.json)
+    # 이라 플러그인 업데이트가 지우지 않고, claude-hud 자신도 이 경로에는 쓰지 않는다
+    # (/claude-hud:setup은 plugins/claude-hud/config.json을 쓴다). 쓰는 주체가 이 저장소뿐이라
+    # merge가 아니라 takeover다 — merge면 기본값을 고쳐도 기존 머신에 영원히 안 들어간다.
+    HUD_CONFIG_SRC="$ROOT/config/claude/claude-hud.json"
+    if [[ -f "$HUD_CONFIG_SRC" ]]; then
+        if install_managed_file "$HUD_CONFIG_SRC" "$CLAUDE_DIR/claude-hud.json" takeover; then
+            echo "    Copied claude-hud.json"
+        fi
+    else
+        echo "    [!] config/claude/claude-hud.json not found, skipping."
+    fi
+
+    # skill은 이 저장소가 배포하지 않는다 — 전부 manifests/skills.txt의 npx skills 설치다 (6단계).
+
+    # 공용 role: config/agents/roles/<name>/ = claude.frontmatter + body.md 조립
+    # → ~/.claude/agents/<name>.md (사용자가 직접 만든 다른 agent 파일은 보존)
+    if [[ -d "$ROLES_SRC" ]]; then
+        mkdir -p "$CLAUDE_DIR/agents"
+        for d in "$ROLES_SRC"/*/; do
+            [[ -f "$d/claude.frontmatter" && -f "$d/body.md" ]] || continue
+            name="$(basename "$d")"
+            tmp_agent="$(mktemp)"; _TMPFILES+=("$tmp_agent")
+            cat "$d/claude.frontmatter" "$d/body.md" > "$tmp_agent"
+            if install_managed_file "$tmp_agent" "$CLAUDE_DIR/agents/$name.md" skip; then echo "    Deployed agent: $name"; fi
+        done
+    fi
+}
+run_optional_stage SKIP_CLAUDE_CODE "==> [CI] Skipping Claude Code installation (SKIP_CLAUDE_CODE=1)" install_claude_code_stage
+
+# =============================================
+# 3-2. Antigravity CLI(agy) 설치 + 설정 배포 (config/agy/ + config/agents/global.md → ~/.gemini/)
+#
+# CLI를 먼저 세운다. 뒤따르는 3-3(rhwp)은 `~/.gemini`가 있거나 `agy`가 PATH에 있을 때
+# Gemini MCP를 등록하는데, 설정 배포(SKIP_AGY 미설정)가 그 디렉터리를 먼저 만들므로
+# 보통은 디렉터리 쪽에서 먼저 걸린다. CLI를 앞에 두는 것이 실제로 값을 하는 경우는
+# SKIP_AGY=1(설정 생략)로 디렉터리가 없을 때다 — 그때도 MCP 등록이 이뤄진다.
+# 바이너리(SKIP_AGY_CLI)와 설정(SKIP_AGY)은 소유자가 달라 플래그도 따로 둔다.
+# =============================================
+install_agy_cli_stage() {
+    echo
+    echo "==> Installing Antigravity CLI (agy)..."
+    install_agy_cli || true
+}
+run_optional_stage SKIP_AGY_CLI "==> [CI] Skipping Antigravity CLI (SKIP_AGY_CLI=1)" install_agy_cli_stage
+
+deploy_agy_stage() {
+    echo
+    echo "==> Deploying Antigravity (AGY) config..."
+    mkdir -p "$GEMINI_DIR" "$GEMINI_CONFIG_DIR"
+
+    if [[ -f "$AGENTS_GLOBAL_SRC" ]]; then
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$GEMINI_CONFIG_DIR/GEMINI.md" takeover; then
+            echo "    Copied global agent instructions to ~/.gemini/config/GEMINI.md"
+        fi
+        if install_managed_file "$AGENTS_GLOBAL_SRC" "$GEMINI_DIR/GEMINI.md" takeover; then
+            echo "    Copied global agent instructions to ~/.gemini/GEMINI.md"
+        fi
+    else
+        echo "    [!] config/agents/global.md not found"
+    fi
+
+    AGY_HOOKS_JSON_SRC="$ROOT/config/agy/hooks.json"
+    AGY_HOOKS_JSON_DST="$GEMINI_CONFIG_DIR/hooks.json"
+    if [[ -f "$AGY_HOOKS_JSON_SRC" ]]; then
+        merge_json_registry "$AGY_HOOKS_JSON_SRC" "$AGY_HOOKS_JSON_DST"
+    else
+        echo "    [!] config/agy/hooks.json not found"
+    fi
+
+    # hooks/: 배포 + 실행 권한. takeover 근거는 Codex 쪽 주석 참고.
+    AGY_HOOKS_SRC="$ROOT/config/agy/hooks"
+    AGY_HOOKS_DST="$GEMINI_DIR/hooks"
+    if [[ -d "$AGY_HOOKS_SRC" ]]; then
+        hook_status=0
+        while IFS= read -r -d '' hook_src; do
+            hook_rel="${hook_src#"$AGY_HOOKS_SRC"/}"
+            managed_hook="$hook_src"
+            if [[ "$hook_src" == *.sh ]]; then
+                managed_hook="$(mktemp)"; _TMPFILES+=("$managed_hook")
+                if ! cp -p "$hook_src" "$managed_hook" || ! chmod +x "$managed_hook"; then hook_status=1; continue; fi
+            fi
+            if ! install_managed_file "$managed_hook" "$AGY_HOOKS_DST/$hook_rel" takeover; then
+                hook_status=1
+            fi
+        done < <(find "$AGY_HOOKS_SRC" -type f -print0)
+        if (( hook_status == 0 )); then echo "    Copied hooks/ to ~/.gemini/hooks/ and set +x"; fi
+    else
+        echo "    [!] config/agy/hooks not found, skipping."
+    fi
+
+}
+run_optional_stage SKIP_AGY "==> [CI] Skipping Antigravity (AGY) config (SKIP_AGY=1)" deploy_agy_stage
+
+# =============================================
+# 3-3. rhwp 설치 + MCP 등록 (manifests/rhwp.tsv → ~/rhwp, Codex/Claude/Gemini MCP)
+#
+# Claude Code / Antigravity 설치 뒤에 둔다.
+# =============================================
+install_rhwp_stage() {
+    echo
+    echo "==> Installing rhwp and registering MCP..."
+    install_rhwp || true
+}
+run_optional_stage SKIP_RHWP "==> [CI] Skipping rhwp (SKIP_RHWP=1)" install_rhwp_stage
+
+# =============================================
+# 4. shell 프로파일 설정 (bash + macOS zsh, 마커 방식)
+# =============================================
+echo
+install_shell_profiles
+
+# =============================================
+# 6. Claude Code skills 설치·업데이트 (manifests/skills.txt)
+# =============================================
+echo
+run_skills_stage "$ROOT/manifests/skills.txt"
+
+# =============================================
+# 7. Claude Code 플러그인 설치 (manifests/plugins.txt)
+# =============================================
+echo
+run_plugins_stage "$ROOT/manifests/plugins.txt"
+
+# 플러그인 CLI가 settings.json을 자기 형식으로 다시 쓰므로 3-1이 기록한 해시가 낡는다.
+# 3-1이 실제로 배포한 경우에만 갱신한다 — 보존으로 끝난 파일까지 소유권에 넣지 않는다.
+if [[ "${CLAUDE_SETTINGS_DEPLOYED:-false}" == true ]] && sync_managed_file_hash "$CLAUDE_DIR/settings.json"; then
+    echo "    Refreshed settings.json ownership hash."
+fi
+
+finish_install || exit 1

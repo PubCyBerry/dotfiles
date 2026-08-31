@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# macOS 시스템 설정 자동화
+#
+# 사용법:
+#   bash macos/.macos
+#
+# 되돌리는 방법:
+#   개별 항목: defaults delete <domain> <key>
+#   예시: defaults delete com.apple.dock autohide
+#   그러면 Apple 기본값으로 복원됨.
+#   또는 시스템 설정 앱에서 수동으로 변경해도 동일.
+#
+# 주의:
+#   - 일부 설정은 로그아웃/재시작 후 적용됨 (스크립트 하단 재시작 명령 참고)
+#   - 개인 취향에 따라 항목 주석 처리 후 실행할 것
+
+set -Eeuo pipefail
+
+# macOS 확인
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "이 스크립트는 macOS 전용입니다." >&2
+  exit 1
+fi
+
+echo "==> macOS 시스템 설정 적용 중..."
+
+###############################################################################
+# 일반 (General)
+###############################################################################
+
+# 저장 다이얼로그를 기본으로 확장 (iCloud 저장 대신 로컬 저장)
+defaults write NSGlobalDomain NSDocumentSaveNewDocumentsToCloud -bool false
+
+# 인쇄 다이얼로그를 기본으로 확장
+defaults write NSGlobalDomain PMPrintingExpandedStateForPrint -bool true
+defaults write NSGlobalDomain PMPrintingExpandedStateForPrint2 -bool true
+
+# 문서를 닫을 때 변경 사항 저장 여부 묻지 않기 (자동 저장 믿기)
+# 기본값: false (묻지 않음) — 이미 기본이지만 명시적으로 설정
+# defaults write NSGlobalDomain NSCloseAlwaysConfirmsChanges -bool false
+
+# 앱 종료 시 윈도우 복원 비활성화 (깔끔한 재시작 선호 시)
+# 기본값: true (복원함) — 비활성화하려면 아래 주석 해제
+# defaults write NSGlobalDomain NSQuitAlwaysKeepsWindows -bool false
+
+echo "    [완료] 일반 설정"
+
+###############################################################################
+# 키보드 (Keyboard)
+###############################################################################
+
+# 키 반복 속도 최대로 (기본값: 6, 낮을수록 빠름)
+# 되돌리기: defaults delete NSGlobalDomain KeyRepeat
+defaults write NSGlobalDomain KeyRepeat -int 2
+
+# 키 반복 시작 딜레이 최소로 (기본값: 68, 낮을수록 빠름)
+# 되돌리기: defaults delete NSGlobalDomain InitialKeyRepeat
+defaults write NSGlobalDomain InitialKeyRepeat -int 15
+
+# 자동 맞춤법 수정 비활성화 (코딩 시 방해됨)
+# 되돌리기: defaults delete NSGlobalDomain NSAutomaticSpellingCorrectionEnabled
+defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
+
+# 자동 대문자 비활성화
+# 되돌리기: defaults delete NSGlobalDomain NSAutomaticCapitalizationEnabled
+defaults write NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false
+
+# 스마트 따옴표 비활성화 (코드에서 "" 가 '""'로 바뀌는 현상 방지)
+# 되돌리기: defaults delete NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled
+defaults write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
+
+# 스마트 대시 비활성화 (-- 가 —로 바뀌는 현상 방지)
+# 되돌리기: defaults delete NSGlobalDomain NSAutomaticDashSubstitutionEnabled
+defaults write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
+
+echo "    [완료] 키보드 설정"
+
+###############################################################################
+# 트랙패드 (Trackpad)
+###############################################################################
+
+# 탭으로 클릭 활성화 (물리 클릭 없이 탭만으로 클릭)
+# 되돌리기: defaults delete com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
+defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
+# 로그인 화면에도 적용
+defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+
+echo "    [완료] 트랙패드 설정"
+
+###############################################################################
+# Finder
+###############################################################################
+
+# 모든 파일 확장자 표시 (기본값: 숨김)
+# 되돌리기: defaults delete NSGlobalDomain AppleShowAllExtensions
+defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+
+# 숨김 파일 표시 (기본값: 숨김)
+# 되돌리기: defaults delete com.apple.finder AppleShowAllFiles
+defaults write com.apple.finder AppleShowAllFiles -bool true
+
+# 경로 표시줄 표시 (하단에 현재 경로 표시)
+# 되돌리기: defaults delete com.apple.finder ShowPathbar
+defaults write com.apple.finder ShowPathbar -bool true
+
+# 상태 표시줄 표시 (하단에 항목 수/용량 표시)
+# 되돌리기: defaults delete com.apple.finder ShowStatusBar
+defaults write com.apple.finder ShowStatusBar -bool true
+
+# 제목 표시줄에 전체 경로 표시
+# 되돌리기: defaults delete com.apple.finder _FXShowPosixPathInTitle
+defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+
+# 기본 보기를 목록 보기로 설정 (icnv=아이콘, Nlsv=목록, clmv=열, glyv=갤러리)
+# 되돌리기: defaults delete com.apple.finder FXPreferredViewStyle
+defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+
+# 검색 범위 기본값을 현재 폴더로 설정 (기본값: SCev=전체 Mac)
+# 되돌리기: defaults delete com.apple.finder FXDefaultSearchScope
+defaults write com.apple.finder FXDefaultSearchScope -string "SCcf"
+
+# 폴더를 항상 맨 위에 정렬 (이름순 정렬 시)
+# 되돌리기: defaults delete com.apple.finder _FXSortFoldersFirst
+defaults write com.apple.finder _FXSortFoldersFirst -bool true
+
+# .DS_Store 파일을 네트워크 드라이브/USB에 생성 안 함
+# 되돌리기: defaults delete com.apple.desktopservices DSDontWriteNetworkStores
+defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
+defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
+
+# 파일 확장자 변경 시 경고 비활성화
+# 되돌리기: defaults delete com.apple.finder FXEnableExtensionChangeWarning
+defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
+
+# 새 Finder 창의 기본 위치를 홈 폴더로
+# 되돌리기: defaults delete com.apple.finder NewWindowTarget && defaults delete com.apple.finder NewWindowTargetPath
+defaults write com.apple.finder NewWindowTarget -string "PfHm"
+defaults write com.apple.finder NewWindowTargetPath -string "file://${HOME}/"
+
+echo "    [완료] Finder 설정"
+
+###############################################################################
+# Dock
+###############################################################################
+
+# Dock 자동 숨기기
+# 되돌리기: defaults delete com.apple.dock autohide
+defaults write com.apple.dock autohide -bool true
+
+# 자동 숨기기 딜레이 제거 (마우스 올리면 즉시 나타남)
+# 되돌리기: defaults delete com.apple.dock autohide-delay
+defaults write com.apple.dock autohide-delay -float 0
+
+# 숨기기/보이기 애니메이션 속도 빠르게 (기본값: 0.5)
+# 되돌리기: defaults delete com.apple.dock autohide-time-modifier
+defaults write com.apple.dock autohide-time-modifier -float 0.15
+
+# Dock 크기 (기본값: 64)
+# 되돌리기: defaults delete com.apple.dock tilesize
+defaults write com.apple.dock tilesize -int 48
+
+# 최근 앱 Dock에 표시 안 함
+# 되돌리기: defaults delete com.apple.dock show-recents
+defaults write com.apple.dock show-recents -bool false
+
+# 앱 실행 시 튀어오르는 애니메이션 비활성화
+# 되돌리기: defaults delete com.apple.dock launchanim
+defaults write com.apple.dock launchanim -bool false
+
+echo "    [완료] Dock 설정"
+
+###############################################################################
+# 스크린샷 (Screenshot)
+###############################################################################
+
+# 스크린샷 저장 위치를 ~/Desktop/Screenshots 로 변경
+# 되돌리기: defaults delete com.apple.screencapture location
+SCREENSHOT_DIR="$HOME/Desktop/Screenshots"
+mkdir -p "$SCREENSHOT_DIR"
+defaults write com.apple.screencapture location -string "$SCREENSHOT_DIR"
+
+# 스크린샷 파일 형식을 PNG로 (기본값: png — 명시적으로 설정)
+# 되돌리기: defaults delete com.apple.screencapture type
+defaults write com.apple.screencapture type -string "png"
+
+# 스크린샷에 그림자 제거
+# 되돌리기: defaults delete com.apple.screencapture disable-shadow
+defaults write com.apple.screencapture disable-shadow -bool true
+
+echo "    [완료] 스크린샷 설정"
+
+###############################################################################
+# 터미널 / 개발 환경
+###############################################################################
+
+# UTF-8 인코딩 강제 (Terminal.app)
+defaults write com.apple.terminal StringEncodings -array 4
+
+# Xcode 빌드 시 병렬 작업 수를 CPU 코어 수로 설정
+# 되돌리기: defaults delete com.apple.dt.Xcode IDEBuildOperationMaxNumberOfConcurrentCompileTasks
+# defaults write com.apple.dt.Xcode IDEBuildOperationMaxNumberOfConcurrentCompileTasks -int "$(sysctl -n hw.ncpu)"
+
+echo "    [완료] 터미널/개발 환경 설정"
+
+###############################################################################
+# 설정 적용 (영향받는 앱 재시작)
+###############################################################################
+
+echo ""
+echo "==> 변경 사항 적용 중..."
+
+# Finder 재시작 (Finder 설정 적용)
+killall Finder 2>/dev/null && echo "    Finder 재시작됨" || true
+
+# Dock 재시작 (Dock 설정 적용)
+killall Dock 2>/dev/null && echo "    Dock 재시작됨" || true
+
+# SystemUIServer 재시작 (메뉴바 설정 적용)
+killall SystemUIServer 2>/dev/null && echo "    SystemUIServer 재시작됨" || true
+
+echo ""
+echo "==> 완료! 일부 설정은 로그아웃 후 적용됩니다."
+echo "    트랙패드 탭 클릭은 시스템 설정 앱에서 확인하세요."

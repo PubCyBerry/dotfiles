@@ -1,0 +1,23 @@
+# Claude Code skills 목록
+# install.ps1 / install.sh가 읽어서 설치·업데이트
+# 형식: owner/repo@skill-name
+# 설치는 `npx skills add`, 이미 있으면 `npx skills update`
+
+# Example / Creator
+anthropics/skills@skill-creator
+
+# Documents
+anthropics/skills@pdf
+anthropics/skills@pptx
+anthropics/skills@docx
+anthropics/skills@xlsx
+
+# Agents (이 사용자가 소유한 저장소)
+PubCyBerry/subagent-creator@subagent-creator
+PubCyBerry/repo-scaffold@repo-scaffold
+
+# Dev tooling
+herdrdev/herdr@herdr
+
+# Design
+# pbakaus/impeccable@impeccable

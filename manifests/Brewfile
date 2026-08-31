@@ -1,0 +1,45 @@
+# Brewfile - macOS 패키지 목록
+
+# 기본 도구
+brew "git"
+brew "curl"
+brew "wget"
+brew "vim"
+brew "neovim"
+# shellcheck는 여기서 빼 둔다. brew formula에는 versioned formula가 없어 항상 최신으로
+# 흐르는데, CI와 세 OS가 한 버전을 써야 하므로 manifests/shellcheck.tsv의 pinned
+# release로 설치한다 (AGENTS.md "shellcheck 관리").
+
+# Node 버전 관리
+brew "fnm"
+
+# Node LTS는 install.sh에서, Claude Code는 SKIP guard 내 Homebrew cask로 처리
+
+# GitHub CLI
+brew "gh"
+
+# 개발 도구
+brew "jq"
+
+# Modern CLI
+brew "bat"        # syntax-highlighted cat
+brew "fzf"        # 퍼지 파인더
+brew "eza"        # 컬러/아이콘 ls 대체
+brew "fd"         # 빠른 find 대체
+brew "delta"      # git diff 뷰어
+brew "ripgrep"    # 빠른 grep 대체 (rg)
+brew "oven-sh/bun/bun", trusted: true  # JavaScript 런타임 & 패키지 매니저
+
+# 추가 CLI 도구
+brew "zoxide"       # 스마트 cd 대체 (z 명령어)
+brew "yq"           # YAML/JSON 처리 (jq 페어)
+brew "lazygit"      # TUI git 클라이언트
+brew "yazi"         # TUI 파일 매니저
+brew "starship"     # 크로스쉘 프롬프트
+brew "ruff"         # Python 린터/포매터 (flake8+black+isort 대체)
+brew "difftastic"   # AST 기반 diff
+brew "ast-grep"     # AST 기반 코드 검색/리팩터 (sg 명령어)
+brew "atuin"        # 히스토리 강화
+
+brew "tmux"
+brew "herdr"        # 코딩 에이전트용 터미널 멀티플렉서 (workspace/tab/pane + agent 인식)

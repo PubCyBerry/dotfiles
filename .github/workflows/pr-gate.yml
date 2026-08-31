@@ -1,0 +1,610 @@
+name: PR Gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # lint 잡이 `git ls-files '*.sh'`로 저장소 전체 셸 스크립트를 검사하므로,
+      # 트리거 목록도 그 범위를 덮어야 한다. uninstall.* 가 빠져 있으면 그 파일만
+      # 고친 PR에서 shellcheck가 한 번도 돌지 않는다(uninstall-validation.yml에는
+      # lint 단계가 없다).
+      - install.sh
+      - install.ps1
+      - uninstall.sh
+      - uninstall.ps1
+      - "config/**"
+      - "manifests/**"
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/pr-gate.yml"
+  pull_request:
+    paths:
+      # lint 잡이 `git ls-files '*.sh'`로 저장소 전체 셸 스크립트를 검사하므로,
+      # 트리거 목록도 그 범위를 덮어야 한다. uninstall.* 가 빠져 있으면 그 파일만
+      # 고친 PR에서 shellcheck가 한 번도 돌지 않는다(uninstall-validation.yml에는
+      # lint 단계가 없다).
+      - install.sh
+      - install.ps1
+      - uninstall.sh
+      - uninstall.ps1
+      - "config/**"
+      - "manifests/**"
+      - "scripts/**"
+      - "tests/**"
+      - ".github/workflows/pr-gate.yml"
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # 러너 이미지의 사전 설치본을 쓰지 않는다. 그 버전은 러너 이미지를 따라
+      # 움직이고(현재 ubuntu-24.04 = apt 0.9.0), 로컬 설치본과 어긋나는 순간
+      # "로컬에서는 통과하는데 CI에서 깨진다"가 시작된다. install.sh/install.ps1이
+      # 보는 것과 같은 manifests/shellcheck.tsv에서 받아 CI와 로컬을 한 버전으로 모은다.
+      - name: Install pinned ShellCheck
+        run: |
+          set -euo pipefail
+          row="$(awk -F '\t' '$1 == "linux-x86_64" { print; exit }' manifests/shellcheck.tsv)"
+          [[ -n "$row" ]] || { echo "no linux-x86_64 row in manifests/shellcheck.tsv"; exit 1; }
+          IFS=$'\t' read -r _ version _ url checksum <<< "$row"
+          bin="$RUNNER_TEMP/pinned-shellcheck"
+          mkdir -p "$bin"
+          curl --retry 3 --retry-delay 2 -fsSL -o "$RUNNER_TEMP/shellcheck.tar.gz" "$url"
+          echo "$checksum  $RUNNER_TEMP/shellcheck.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/shellcheck.tar.gz" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/shellcheck-v$version/shellcheck" "$bin/shellcheck"
+          echo "$bin" >> "$GITHUB_PATH"
+          echo "SHELLCHECK_PINNED_VERSION=$version" >> "$GITHUB_ENV"
+
+      # GITHUB_PATH는 앞에 붙지만, 사전 설치본이 잡히면 게이트가 조용히 뜻을 잃는다.
+      # 실제로 해석되는 shellcheck가 pin한 그 바이너리인지 여기서 단언한다.
+      - name: Assert the pinned version is what runs
+        run: |
+          set -euo pipefail
+          test "$(command -v shellcheck)" = "$RUNNER_TEMP/pinned-shellcheck/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$SHELLCHECK_PINNED_VERSION"
+          echo "OK: shellcheck $SHELLCHECK_PINNED_VERSION"
+
+      # 테스트 스크립트까지 검사한다. `! cmd` 단독(SC2251)은 errexit을 타지 않아
+      # 단언이 조용히 통과하므로, 게이트 스크립트에서 특히 위험하다.
+      # -z/-0: 공백·따옴표가 든 경로가 쪼개지지 않게 NUL 구분. -r: 대상이 0개일 때
+      # shellcheck를 인자 없이 부르지 않게 한다.
+      - run: git ls-files -z '*.sh' | xargs -0 -r shellcheck -x
+
+  test-apt-install:
+    name: Ubuntu install + verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
+      SKIP_HERDR: "1"
+      # Antigravity CLI는 pin되지 않은 원격 installer(curl | bash)를 탄다. herdr와 같은
+      # 정책으로 CI에서는 실행하지 않는다. shellcheck는 pinned artifact라 그대로 돌린다.
+      SKIP_AGY_CLI: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated HOME
+        run: |
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
+          printf '%s\n' "$home/.local/bin" "$home/.local/share/fnm" "$home/.bun/bin" >> "$GITHUB_PATH"
+
+      - name: Restore apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ubuntu-24.04-${{ hashFiles('manifests/apt.txt') }}
+          restore-keys: apt-ubuntu-24.04-
+
+      - name: Run install.sh
+        run: bash install.sh
+
+      - name: Verify tools
+        run: |
+          set -e
+          git --version
+          curl --version | head -1
+          tmux -V
+          jq --version
+          gh --version
+          rg --version | head -1
+          bat --version | head -1 || batcat --version | head -1
+          fd --version | head -1 || fdfind --version | head -1
+          nvim --version | head -1
+          lazygit --version
+          delta --version
+          fzf --version
+          eza --version | head -1
+          yq --version
+          yazi --version
+          zoxide --version
+          starship --version
+          fnm --version
+          bun --version
+
+          # shellcheck는 러너 이미지의 /usr/bin/shellcheck(0.9.0)가 아니라
+          # manifests/shellcheck.tsv가 pin한 ~/.local/bin 쪽이 잡혀야 한다.
+          # 이 두 단언이 lint 잡과 로컬 설치가 같은 버전을 쓴다는 계약이다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          test "$(command -v shellcheck)" = "$HOME/.local/bin/shellcheck"
+          test "$(shellcheck --version | awk -F': *' '$1 == "version" { print $2 }')" = "$sc_version"
+
+      # SKIP_CLAUDE_CODE=1이라 ~/.claude 배포는 건너뛴다. Codex 쪽은 항상 실행되므로
+      # install.sh의 실제 role 조립 로직을 여기서 검증한다.
+      - name: Verify Codex agent roles deployed
+        run: |
+          set -euo pipefail
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            agent="$HOME/.codex/agents/$name.toml"
+            [[ -f "$agent" ]] || { echo "missing agent toml: $name"; exit 1; }
+            # TOML로 파싱되고, name이 맞고, developer_instructions가 소스 body.md와 같아야 한다
+            test "$(yq -p=toml -r '.name' "$agent")" = "$name"
+            yq -p=toml -r '.developer_instructions' "$agent" > "$RUNNER_TEMP/$name.body"
+            diff -u <(sed -e '${/^$/d;}' "$d/body.md") <(sed -e '${/^$/d;}' "$RUNNER_TEMP/$name.body")
+          done
+
+      - name: Assert legacy Codex skill path is not used
+        run: |
+          set -euo pipefail
+          # role은 subagent(~/.codex/agents/)로만 배포한다. 구 skill 경로가 남으면 중복 정의가 된다.
+          for d in config/agents/roles/*/; do
+            name="$(basename "$d")"
+            [[ ! -e "$HOME/.codex/skills/$name" ]] \
+              || { echo "legacy skill still deployed: $name"; exit 1; }
+          done
+          echo "OK: no legacy skill paths"
+
+      - name: Seed existing user settings
+        run: |
+          set -euo pipefail
+          printf '%s\n' '[user]' 'sentinel = "keep"' >> "$HOME/.codex/config.toml"
+          printf '%s\n' '# user-sentinel' > "$HOME/.bashrc"
+          mkdir -p "$HOME/.claude"
+          node_ver="$(fnm ls 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1)"
+          printf '{"statusLine":{"command":"%s/.local/share/fnm/node-versions/%s/installation/bin/node /mock/user-statusline"}}\n' "$HOME" "$node_ver" > "$HOME/.claude/settings.json"
+
+      - name: Second install and sentinel verification
+        run: |
+          set -euo pipefail
+          bash install.sh
+          test "$(yq -p=toml -r '.user.sentinel' "$HOME/.codex/config.toml")" = keep
+          test "$(grep -Fxc '# user-sentinel' "$HOME/.bashrc")" -eq 1
+          test "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.bashrc")" -eq 1
+          jq -e '.statusLine.command | contains("/mock/user-statusline")' "$HOME/.claude/settings.json" > /dev/null
+          # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
+          grep -Fq '$include /etc/inputrc' "$HOME/.inputrc"
+          grep -Fq 'set input-meta on' "$HOME/.inputrc"
+          grep -Fq 'set convert-meta off' "$HOME/.inputrc"
+
+      - name: Verify rhwp tree and MCP registration
+        run: |
+          set -euo pipefail
+          version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/rhwp.tsv)"
+          test "$("$HOME/rhwp/rhwp" --version)" = "rhwp v$version"
+          test -f "$HOME/rhwp/LICENSE"
+          test "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" = "$HOME/rhwp/rhwp"
+          test "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.args[0]' "$HOME/.codex/config.toml")" = mcp-serve
+          jq -e --arg k mcp:codex:rhwp --arg p "$HOME/rhwp" \
+            '(.values[$k].installed | type) == "string" and (.artifacts[$p].directVersion | type) == "string"' \
+            "$DOTFILES_RECEIPT_PATH" > /dev/null
+
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
+
+      - name: Failure contract
+        run: bash tests/install/failure-contract.sh
+
+      # receipt 소유권과 direct artifact 버전 게이트의 단위 계약. 네트워크를 타지 않고
+      # (curl은 스크립트 안에서 stub된다) 격리된 HOME에서만 돈다.
+      #
+      # 이 잡 뒤에 두는 이유는 두 가지가 실제 설치본을 요구하기 때문이다. jq/rg는
+      # manifests/apt.txt가 주고, direct-artifacts.sh의 정적 검사는 그중 rg를 쓴다.
+      # 그 검사는 install 스크립트에 pin되지 않은 원격 실행(`curl | sh`, latest/HEAD
+      # 경로)이 새로 들어오는 것을 막는다 — herdr와 agy 두 예외만 면제된다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
+      # Node 버전 보존 계약. fnm 스텁과 진짜 symlink를 쓰므로 Unix 잡에서만 돈다
+      # (Git Bash는 개발자 모드 없이 `ln -s`를 복사로 처리해 스스로 SKIP한다).
+      - name: fnm non-destructive install contract
+        run: bash tests/fnm/non-destructive-install.sh
+
+  test-macos-install:
+    name: macOS install + verify
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
+      # Antigravity CLI는 brew formula가 없어 macOS도 원격 installer(curl | bash)를 탄다.
+      # herdr와 달리 여기서도 건너뛴다.
+      SKIP_AGY_CLI: "1"
+      # SKIP_HERDR는 여기서만 걸지 않는다. macOS는 herdr 바이너리를 Brewfile이 주므로
+      # install_herdr가 `command -v herdr`에서 바로 통과하고, 공식 installer(원격
+      # 스크립트)는 한 줄도 실행되지 않는다. 덕분에 herdr 설정의 default merge,
+      # 재실행 멱등성, uninstall 소유권 판정을 원격 실행 없이 이 잡에서 검증한다.
+      # Linux/Windows 잡은 curl|sh / irm 경로를 타므로 SKIP_HERDR=1을 유지한다.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated HOME
+        run: |
+          home="$RUNNER_TEMP/dotfiles-home"
+          printf '%s\n' "HOME=$home" "GIT_CONFIG_GLOBAL=$home/.gitconfig" "DOTFILES_RECEIPT_PATH=$home/.local/state/dotfiles/install-receipt.json" >> "$GITHUB_ENV"
+          mkdir -p "$home"
+
+      - name: Seed existing user settings
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.codex"
+          printf '%s\n' 'sentinel = "keep"' > "$HOME/.codex/config.toml"
+          printf '%s\n' '# user-sentinel' > "$HOME/.zshrc"
+          : > "$GIT_CONFIG_GLOBAL"
+
+          # herdr가 config를 다시 쓴 뒤의 상태를 흉내낸다. agent_panel_sort는 사용자가
+          # 고른 값이라 보존되어야 하고, shell_mode = "" 는 herdr가 남긴 자리표시자라
+          # dotfiles 기본값("auto")으로 다시 채워져야 한다.
+          mkdir -p "$HOME/.config/herdr"
+          printf '%s\n' '[terminal]' 'shell_mode = ""' '[ui]' 'agent_panel_sort = "name"' \
+            > "$HOME/.config/herdr/config.toml"
+
+      - name: First install (seeded environment)
+        run: /bin/bash install.sh --with-defaults
+
+      - name: Verify first install
+        run: |
+          set -euo pipefail
+          /bin/bash --version
+          command -v nvim
+          nvim --version
+
+      - name: Second install (idempotent / update path)
+        run: /bin/bash install.sh
+
+      - name: Verify install contract
+        run: |
+          set -euo pipefail
+          brew list --formula --versions neovim
+          command -v nvim
+          nvim --version
+
+          editor="$(git config --global --get core.editor)"
+          [[ "$editor" == "nvim -f" ]]
+          command -v "${editor%% *}"
+
+          yazi_run="$(yq -p=toml -r '.opener.edit[] | select(.for == "unix") | .run' "$HOME/.config/yazi/yazi.toml")"
+          [[ "$yazi_run" == 'nvim "%s"' ]]
+          command -v "${yazi_run%% *}"
+
+          [[ "$(yq -p=toml -r '.sentinel' "$HOME/.codex/config.toml")" == "keep" ]]
+
+          # herdr: 바이너리는 Brewfile 소유, 설정은 이 저장소 소유.
+          brew list --formula --versions herdr
+          command -v herdr
+          herdr_cfg="$HOME/.config/herdr/config.toml"
+          [[ "$(yq -p=toml -r '.ui.agent_panel_sort' "$herdr_cfg")" == "name" ]]
+          [[ "$(yq -p=toml -r '.terminal.shell_mode' "$herdr_cfg")" == "auto" ]]
+
+          # rhwp: pinned archive 전체가 ~/rhwp에 있고 MCP가 absolute path로 등록되어야 한다.
+          # 네 플랫폼 행이 같은 버전을 pin하므로 아무 행에서나 읽어도 된다.
+          version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/rhwp.tsv)"
+          [[ "$("$HOME/rhwp/rhwp" --version)" == "rhwp v$version" ]]
+          [[ -f "$HOME/rhwp/LICENSE" ]]
+          [[ "$(yq -p=toml -o=json -r '.mcp_servers.rhwp.command' "$HOME/.codex/config.toml")" == "$HOME/rhwp/rhwp" ]]
+
+          # shellcheck: Brewfile이 아니라 manifests/shellcheck.tsv가 pin한 바이너리다.
+          # 이 잡은 ~/.local/bin을 PATH에 얹지 않으므로 절대 경로로 확인한다.
+          sc_version="$(awk -F '\t' '!/^#/ && NF==5 {print $2; exit}' manifests/shellcheck.tsv)"
+          [[ "$("$HOME/.local/bin/shellcheck" --version | awk -F': *' '$1 == "version" { print $2 }')" == "$sc_version" ]]
+
+          [[ "$(grep -Fxc '# user-sentinel' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-begin =====' "$HOME/.zshrc")" -eq 1 ]]
+          [[ "$(grep -Fxc '# ===== dotfiles-end =====' "$HOME/.zshrc")" -eq 1 ]]
+
+          # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
+          # install_shell_profiles는 OS 중립이라 macOS도 ~/.inputrc를 배포한다.
+          grep -Fq '$include /etc/inputrc' "$HOME/.inputrc"
+          grep -Fq 'set input-meta on' "$HOME/.inputrc"
+          grep -Fq 'set convert-meta off' "$HOME/.inputrc"
+
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
+
+      # Ubuntu·Windows 잡과 같은 단위 계약을 macOS에서도 돌린다. 두 스크립트는 BSD
+      # 계열 도구(stat, find, tar)에서 갈라지는 경로를 그대로 지나므로, 여기서 돌지
+      # 않으면 file_mode / tree_hash의 macOS 전용 회귀를 잡는 검사가 하나도 없다.
+      # Ubuntu 잡과 같은 이유로 install 뒤에 둔다 — jq/rg를 Brewfile이 준다.
+      - name: Receipt ownership contract
+        run: bash tests/ownership/install-receipt.sh
+
+      - name: Direct artifact ownership contract
+        run: bash tests/ownership/direct-artifacts.sh
+
+      - name: fnm non-destructive install contract
+        run: bash tests/fnm/non-destructive-install.sh
+
+  test-windows-install:
+    name: Windows install + verify
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      SKIP_PACKAGES: "1"
+      SKIP_CLAUDE_CODE: "1"
+      SKIP_SKILLS: "1"
+      SKIP_PLUGINS: "1"
+      SKIP_HERDR: "1"
+      # Antigravity CLI는 pin되지 않은 원격 installer(irm | iex)를 탄다. herdr와 같은
+      # 정책으로 CI에서는 실행하지 않는다. shellcheck는 pinned artifact라 그대로 돌린다
+      # (SKIP_PACKAGES와 무관한 별도 단계다 — User PATH를 건드리지 않으므로 아래
+      # "config install changed User PATH" 단언과 충돌하지 않는다).
+      SKIP_AGY_CLI: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Failure contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/install/failure-contract.ps1
+
+      # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
+      # TOML 편집을 하고, tests/ownership/install-receipt.ps1이 receipt를 jq로 읽으므로
+      # 여기서만 따로 확보한다.
+      - name: Ensure yq and jq
+        shell: pwsh
+        run: |
+          foreach ($tool in 'yq', 'jq') {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { choco install $tool -y --no-progress }
+          }
+
+      # Ubuntu 잡의 tests/install/config-merge.sh와 짝이다. merge filter는 공용이지만
+      # 이를 부르는 Merge-JsonRegistry는 별도 구현이라, 여기서 돌지 않으면 PowerShell
+      # 쪽 회귀를 잡는 검사가 하나도 없다. yq/jq 확보 뒤에 둔다.
+      - name: Config merge contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/install/config-merge.ps1
+
+      # receipt 소유권과 direct file 버전 게이트의 단위 계약. 네트워크 없이 격리된
+      # USERPROFILE에서만 돌아 설치 전에 세울 수 있다. Get-DirectFileState /
+      # Set-DirectFileVersion의 upgrade / upgrade-blocked / modified 상태를 단언하는
+      # 유일한 검사라, 여기 없으면 shellcheck의 pin 계약이 회귀해도 보드가 초록으로 남는다
+      # (아래 install 잡은 fresh HOME이라 new -> current 전이만 지난다).
+      - name: Receipt ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/install-receipt.ps1
+
+      - name: Direct artifact ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/ownership/direct-artifacts.ps1
+
+      # PATH 정리 계약. scripts/clean-env.ps1은 install.ps1이 winget 뒤에 호출하는데
+      # 그 산출물이 User PATH 자체라, 여기서 회귀하면 다음 실행에 도구가 통째로
+      # 사라진다. 실제로 그렇게 jq/yq/fnm이 날아간 적이 있다.
+      - name: PATH cleanup contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/install/clean-env.ps1
+
+      # fnm multishell 경로가 direct fallback보다 먼저 잡히는지 본다. 순서가 뒤집히면
+      # 프로파일이 낡은 Node를 물고 npm 전역 패키지의 prefix 판정이 흔들린다.
+      - name: fnm profile precedence contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/fnm/profile-precedence.ps1
+
+      - name: Run isolated config install twice
+        shell: pwsh
+        run: |
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
+          $env:HOME = $env:USERPROFILE
+          $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:USERPROFILE '.gitconfig'
+          $env:DOTFILES_RECEIPT_PATH = Join-Path $env:LOCALAPPDATA 'dotfiles\install-receipt.json'
+          $env:DOTFILES_PS_PROFILE_PATH = Join-Path $env:USERPROFILE 'profile.ps1'
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex\hooks') | Out-Null
+          Set-Content $env:GIT_CONFIG_GLOBAL "[user]`n`tname = sentinel"
+          Set-Content $env:DOTFILES_PS_PROFILE_PATH '# user profile sentinel'
+          Set-Content (Join-Path $env:USERPROFILE '.codex\config.toml') "[user]`nkeep = true"
+          Set-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1') 'user-hook'
+          $pathBefore = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          $yaziBefore = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User')
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "first install failed: $LASTEXITCODE" }
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
+          if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
+          if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }
+          if ((Get-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1')) -ne 'user-hook') { throw 'hook sentinel changed' }
+          if ((git config --global user.name) -ne 'sentinel') { throw 'git sentinel changed' }
+          $pathAfter = [Environment]::GetEnvironmentVariable('PATH', 'User')
+          if ($pathAfter -cne $pathBefore) { throw 'config install changed User PATH' }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE', 'User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
+          # rhwp: pinned archive 전체가 ~\rhwp에 있고 MCP가 absolute path로 등록되어야 한다.
+          $version = (Get-Content manifests\rhwp.tsv | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } | Select-Object -First 1).Split("`t")[1]
+          $rhwpExe = Join-Path $env:USERPROFILE 'rhwp\rhwp.exe'
+          if ((& $rhwpExe --version) -cne "rhwp v$version") { throw 'rhwp version mismatch' }
+          if (-not (Test-Path (Join-Path $env:USERPROFILE 'rhwp\LICENSE'))) { throw 'rhwp archive not fully deployed' }
+          if ((& yq -p=toml -o=json -r '.mcp_servers.rhwp.command' (Join-Path $env:USERPROFILE '.codex\config.toml')) -cne $rhwpExe) { throw 'codex MCP command is not the absolute tree path' }
+          # shellcheck: winget이 아니라 manifests\shellcheck.tsv가 pin한 바이너리다.
+          # 첫 행이 windows-x86_64라 rhwp와 같은 방식으로 버전을 읽는다.
+          $scVersion = (Get-Content manifests\shellcheck.tsv | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() } | Select-Object -First 1).Split("`t")[1]
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck was not installed' }
+          $scReported = @(& $scExe --version) | ForEach-Object { if ($_ -match '^\s*version:\s*(\S+)\s*$') { $Matches[1] } } | Select-Object -First 1
+          if ($scReported -cne $scVersion) { throw "shellcheck reports '$scReported', expected '$scVersion'" }
+          # 실제 배포본에도 /etc/inputrc 복원과 UTF-8 8bit clean이 남아 있어야 한다.
+          $inputrc = Get-Content (Join-Path $env:USERPROFILE '.inputrc') -Raw
+          foreach ($line in '$include /etc/inputrc', 'set input-meta on', 'set convert-meta off') {
+            if (-not $inputrc.Contains($line)) { throw ".inputrc lost: $line" }
+          }
+
+      - name: rhwp ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
+
+  test-profiles:
+    name: Shell profile contract
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # install 없이 install 스크립트의 프로파일 함수만 로드해 돌린다(네트워크 없음).
+      # .inputrc의 $include / 8bit clean 회귀 가드는 Linux 잡(bash 쪽)에서만 돈다.
+      # profile-idempotency.ps1은 Set-ProfileBlock만 검사하며 .inputrc를 다루지 않는다.
+      # Windows의 .inputrc 배포는 test-windows-install 잡이 단언한다.
+      - name: bash profile contract
+        if: runner.os == 'Linux'
+        run: bash tests/profile/profile-idempotency.sh
+
+      - name: PowerShell profile contract
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/profile/profile-idempotency.ps1
+
+  test-configs:
+    name: Config syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: gitconfig 문법
+        run: git config --file config/git/gitconfig --list > /dev/null
+
+      - name: JSON 문법
+        run: |
+          jq empty config/claude/settings.json
+
+      - name: TOML 문법
+        run: yq -p=toml '.' config/codex/config.toml > /dev/null
+
+      # merge filter와 hook 계약의 단위 검사. 네트워크 없이 격리된 HOME에서만 돌아
+      # 설치 잡과 무관하게 세울 수 있다. PowerShell 쪽 대응 검사는 Windows 잡에 있다 —
+      # validator가 두 벌이라 한쪽만 돌리면 다른 쪽 회귀를 잡지 못한다.
+      - name: Config merge contract
+        run: bash tests/install/config-merge.sh
+
+      # hook 스크립트가 뱉는 hookEventName과 registry가 등록한 event key의 일치를 단언한다.
+      # 이 검사가 없으면 둘이 어긋나 hook 출력이 통째로 버려져도 보드가 초록으로 남는다.
+      - name: Claude runtime contract
+        run: bash tests/claude/runtime-contract.sh
+
+  test-manifest-syntax:
+    name: Manifest syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifests
+        run: |
+          set -e
+          _check_lines() {
+            local file="$1" pattern="$2" label="$3"
+            while IFS= read -r line; do
+              [[ -z "$line" ]] && continue
+              [[ "$line" =~ $pattern ]] || { echo "Invalid $label: $line"; exit 1; }
+            done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$file")
+            echo "OK: $file"
+          }
+          _check_lines manifests/apt.txt \
+            '^[a-z0-9][a-z0-9._+:-]*$' 'apt package'
+          _check_lines manifests/npm-global.txt \
+            '^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$' 'npm package'
+          _check_lines manifests/skills.txt \
+            '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+$' 'skill'
+          bash tests/install/failure-contract.sh
+
+      # rhwp manifest는 install.sh의 실제 validator로 검증한다 — 규칙을 두 벌 두지 않는다.
+      - name: Validate rhwp manifest
+        run: |
+          set -euo pipefail
+          export DOTFILES_FUNCTIONS_ONLY=1
+          # shellcheck disable=SC1091
+          source ./install.sh
+          validate_rhwp_manifest manifests/rhwp.tsv
+          echo "OK: manifests/rhwp.tsv"
+
+      # shellcheck manifest도 같은 이유로 install.sh의 실제 validator를 쓴다.
+      - name: Validate shellcheck manifest
+        run: |
+          set -euo pipefail
+          export DOTFILES_FUNCTIONS_ONLY=1
+          # shellcheck disable=SC1091
+          source ./install.sh
+          validate_shellcheck_manifest manifests/shellcheck.tsv
+          echo "OK: manifests/shellcheck.tsv"
+
+  test-agent-roles:
+    name: Agent role sources + composition
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Validate role sources and composed frontmatter
+        run: uv run --with pyyaml --python 3.11 scripts/validate-agent-roles.py
+
+      - name: Test agent validator
+        run: uv run --with pyyaml --python 3.11 -m unittest discover -s tests -p test_agent_role_validation.py
+
+      - name: Assert body stays platform-neutral
+        run: |
+          set -euo pipefail
+          # body는 Claude subagent와 Codex subagent 양쪽에서 그대로 성립해야 한다.
+          # 플랫폼 고유 명칭이 남으면 반대쪽에서 말이 안 된다.
+          if grep -rnE '메인 스레드|서브에이전트|subagent|SKILL\.md|Task 도구' config/agents/roles/*/body.md; then
+            echo "body.md는 플랫폼 중립 표현이어야 한다 (메타 파일로 분리할 것)"
+            exit 1
+          fi
+          echo "OK: platform-neutral"
+
+  summary:
+    name: Summary
+    needs: [lint, test-apt-install, test-macos-install, test-windows-install, test-profiles, test-configs, test-manifest-syntax, test-agent-roles]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          results=(
+            "lint:${{ needs.lint.result }}"
+            "test-apt-install:${{ needs.test-apt-install.result }}"
+            "test-macos-install:${{ needs.test-macos-install.result }}"
+            "test-windows-install:${{ needs.test-windows-install.result }}"
+            "test-profiles:${{ needs.test-profiles.result }}"
+            "test-configs:${{ needs.test-configs.result }}"
+            "test-manifest-syntax:${{ needs.test-manifest-syntax.result }}"
+            "test-agent-roles:${{ needs.test-agent-roles.result }}"
+          )
+          failed=0
+          for r in "${results[@]}"; do
+            name="${r%%:*}"; status="${r##*:}"
+            if [[ "$status" == "success" ]]; then
+              echo "✓ $name"
+            else
+              echo "✗ $name ($status)"; failed=1
+            fi
+          done
+          exit $failed

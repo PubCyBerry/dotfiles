@@ -1,0 +1,118 @@
+# bash/bashrc — Git Bash $HOME/.bashrc 및 Linux ~/.bashrc에 마커 블록으로 삽입.
+# 직접 실행하지 않음. install.ps1 / install.sh가 삽입한다.
+
+# === 비대화형 세션에서도 필요한 PATH 설정 ===
+# scp/rsync 등이 ~/.local/bin의 도구를 호출할 수 있으므로 가드 위에 둔다.
+LOCAL_BIN_PATH="$HOME/.local/bin"
+if [[ -d "$LOCAL_BIN_PATH" ]] && [[ ":$PATH:" != *":$LOCAL_BIN_PATH:"* ]]; then
+    export PATH="$LOCAL_BIN_PATH:$PATH"
+fi
+
+# === Windows: WinGet Links 우회 (SSH/NETWORK 토큰에서 reparse symlink 거부 회피) ===
+# Windows OpenSSH 세션은 NETWORK logon이라 WinGet Links의 reparse symlink 평가가
+# 거부된다. git pager처럼 자동 spawn되면 ENOSYS("Function not implemented")가,
+# 사용자가 직접 호출하면 "Permission denied"가 발생한다.
+# 실제 Packages 경로를 PATH 앞에 추가해 symlink 평가 자체를 회피한다.
+# 디렉토리 케이스는 매니페스트가 아니라 실제 폴더명을 따라야 한다 (bash glob은 case-sensitive).
+# Linux 환경에선 디렉토리 존재 체크가 false라 무동작.
+_winget_pkgs="$HOME/AppData/Local/Microsoft/WinGet/Packages"
+if [[ -d "$_winget_pkgs" ]]; then
+    # 그룹 A: exe가 패키지 디렉토리 직속
+    for _d in "$_winget_pkgs"/{Schniz.fnm,ajeetdsouza.zoxide,junegunn.fzf,eza-community.eza,jqlang.jq,MikeFarah.yq,JesseDuffield.lazygit,marlocarlo.psmux}_Microsoft.Winget.Source_*; do
+        [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
+    done
+    # 그룹 B: exe가 버전/아키텍처 서브 디렉토리 안
+    for _d in "$_winget_pkgs"/sharkdp.bat_Microsoft.Winget.Source_*/bat-v* \
+              "$_winget_pkgs"/sharkdp.fd_Microsoft.Winget.Source_*/fd-v* \
+              "$_winget_pkgs"/BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_*/ripgrep-* \
+              "$_winget_pkgs"/dandavison.delta_Microsoft.Winget.Source_*/delta-* \
+              "$_winget_pkgs"/Oven-sh.Bun_Microsoft.Winget.Source_*/bun-windows-x64 \
+              "$_winget_pkgs"/sxyazi.yazi_Microsoft.Winget.Source_*/yazi-x86_64-pc-windows-msvc; do
+        [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
+    done
+    export PATH
+    unset _d
+fi
+unset _winget_pkgs
+
+# === Windows: fnm node 실경로 (junction 우회) ===
+# fnm은 node를 junction 체인(multishell→aliases→version)으로 노출하는데, NETWORK
+# 토큰에서는 그 traversal이 막혀 `node`를 못 찾는다 (Claude Code 등의 hook이
+# `bash -c node`로 실행될 때 "node: command not found"). 가드 아래의 `fnm env`는
+# 비대화형에서 실행 전에 return되므로, 실제 설치 디렉토리(reparse 아님)를 여기서
+# PATH에 직접 추가해 비대화형 hook에서도 node/npm을 찾게 한다.
+_fnm_versions="$HOME/AppData/Roaming/fnm/node-versions"
+if [[ -d "$_fnm_versions" ]]; then
+    _node_dir=$(ls -d "$_fnm_versions"/*/installation 2>/dev/null | sort -V | tail -1)
+    if [[ -n "$_node_dir" ]] && [[ -e "$_node_dir/node.exe" ]] && [[ ":$PATH:" != *":$_node_dir:"* ]]; then
+        export PATH="$_node_dir:$PATH"
+    fi
+    unset _node_dir
+fi
+unset _fnm_versions
+
+# === 비대화형 셸은 여기서 종료 ===
+# SSH 명령 실행, scp, rsync, git over ssh 등에서 prompt/eval 초기화가
+# stderr를 오염시켜 파일 전송이 깨지는 것을 방지한다.
+case $- in
+    *i*) ;;
+    *) return ;;
+esac
+
+# === 대화형 전용 초기화 ===
+
+# fnm (Node.js 버전 관리)
+if [[ -z "${FNM_DIR:-}" ]]; then
+    if [[ "$OSTYPE" == darwin* ]]; then
+        FNM_DIR="$HOME/Library/Application Support/fnm"
+    else
+        FNM_DIR="$HOME/.local/share/fnm"
+    fi
+fi
+if [[ -d "$FNM_DIR" ]] && [[ ":$PATH:" != *":$FNM_DIR:"* ]]; then
+    export PATH="$FNM_DIR:$PATH"
+fi
+if command -v fnm &> /dev/null; then
+    eval "$(fnm env --use-on-cd --shell bash)"
+fi
+
+# zoxide
+# _ZO_DOCTOR=0: Git Bash의 cd 래퍼와 충돌로 인한 오탐 경고 억제
+if command -v zoxide &> /dev/null; then
+    export _ZO_DOCTOR=0
+    eval "$(zoxide init bash)"
+    # zoxide 0.10.0 버그 우회: MSYS/Cygwin용 __zoxide_pwd가 cygpath에 명령 치환 없이
+    # 리터럴 '\builtin pwd -L'을 넘겨 'D:\builtin pwd -L' 같은 경로가 만들어진다.
+    # 그 결과 hook의 zoxide add가 매번 실패해 DB에 아무것도 기록되지 않는다.
+    case "$OSTYPE" in
+        msys* | cygwin*)
+            __zoxide_pwd() { \command cygpath -w "$(\builtin pwd -L)"; }
+            __zoxide_oldpwd="$(__zoxide_pwd)"
+            ;;
+    esac
+fi
+
+# starship 프롬프트 (TERM=dumb 환경 — Emacs tramp 등 — 에서는 스킵)
+if [[ "$TERM" != "dumb" ]] && command -v starship &> /dev/null; then
+    eval "$(starship init bash)"
+fi
+
+# fzf 키 바인딩 (fzf 0.48+: Ctrl+t, Ctrl+r, Alt+c 자동 설정)
+if command -v fzf &> /dev/null; then
+    eval "$(fzf --bash)"
+fi
+
+# eza 별칭
+if command -v eza &> /dev/null; then
+    alias ls='eza'
+    alias ll='eza -la'
+    alias lt='eza --tree'
+fi
+
+# bat 별칭
+if command -v bat &> /dev/null; then
+    alias cat='bat'
+fi
+
+# Claude Code
+alias ccd='claude --dangerously-skip-permissions'

@@ -1,0 +1,63 @@
+name: Freshness Check
+
+on:
+  schedule:
+    - cron: "0 10 * * 1" # 매주 월요일 10:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-upstream:
+    name: Check upstream releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Check GitHub API rate limit
+        run: |
+          remaining=$(curl -fsSL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/rate_limit | jq '.rate.remaining')
+          echo "GitHub API remaining: $remaining"
+          (( remaining >= 20 )) || { echo "Rate limit too low"; exit 1; }
+
+      - name: Fetch latest tags
+        id: tags
+        run: |
+          _latest() {
+            curl -fsSL \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$1/releases/latest" \
+              | jq -r '.tag_name // "unknown"'
+          }
+
+          {
+            echo "zoxide     $(_latest ajeetdsouza/zoxide)"
+            echo "starship   $(_latest starship/starship)"
+            echo "atuin      $(_latest atuinsh/atuin)"
+            echo "fnm        $(_latest Schniz/fnm)"
+            echo "bun        $(_latest oven-sh/bun)"
+            echo "yazi       $(_latest sxyazi/yazi)"
+            echo "lazygit    $(_latest jesseduffield/lazygit)"
+            echo "neovim     $(_latest neovim/neovim)"
+            echo "git-delta  $(_latest dandavison/delta)"
+            echo "fzf        $(_latest junegunn/fzf)"
+            echo "eza        $(_latest eza-community/eza)"
+            echo "yq         $(_latest mikefarah/yq)"
+          } | tee /tmp/upstream-report.txt
+
+          echo "=== Latest upstream releases ==="
+          cat /tmp/upstream-report.txt
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-report-${{ github.run_id }}
+          path: /tmp/upstream-report.txt
+          retention-days: 30

@@ -1,0 +1,135 @@
+name: Safe-Clean-Uninstall
+
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - uninstall.sh
+      - uninstall.ps1
+      - tests/uninstall/**
+      - tests/rhwp/**
+      - manifests/**
+      - config/**
+      - docs/uninstall.md
+      - .github/workflows/uninstall-validation.yml
+  workflow_dispatch:
+
+jobs:
+  unix:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit contract
+        run: bash tests/uninstall/safe-clean.sh
+      - name: rhwp ownership contract
+        run: bash tests/rhwp/mcp-ownership.sh
+      - name: Real scripts twice in isolated HOME
+        env:
+          SKIP_PACKAGES: '1'
+          SKIP_CLAUDE_CODE: '1'
+          SKIP_SKILLS: '1'
+          SKIP_PLUGINS: '1'
+          SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
+        run: |
+          export HOME="$RUNNER_TEMP/dotfiles-home"
+          export DOTFILES_RECEIPT_PATH="$HOME/.local/state/dotfiles/install-receipt.json"
+          export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
+          mkdir -p "$HOME"
+          printf 'user-sentinel\n' > "$HOME/user.txt"
+          printf '# user profile sentinel\n' > "$HOME/.bashrc"
+          mkdir -p "$HOME/.codex/hooks"
+          printf '[user]\nkeep = true\n' > "$HOME/.codex/config.toml"
+          printf 'user-hook\n' > "$HOME/.codex/hooks/user.sh"
+          git_before="$(git --version)"
+          bash install.sh
+          bash install.sh
+          # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
+          test -x "$HOME/rhwp/rhwp"
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          test -x "$HOME/.local/bin/shellcheck"
+          bash uninstall.sh --keep-packages
+          bash uninstall.sh --keep-packages
+          test ! -e "$HOME/rhwp"
+          test ! -e "$HOME/.local/bin/shellcheck"
+          grep -Fxq user-sentinel "$HOME/user.txt"
+          grep -Fq '# user profile sentinel' "$HOME/.bashrc"
+          grep -Fq 'keep = true' "$HOME/.codex/config.toml"
+          grep -Fxq user-hook "$HOME/.codex/hooks/user.sh"
+          test "$(git --version)" = "$git_before"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/uninstall/safe-clean.ps1
+      # SKIP_PACKAGES=1이라 winget 단계가 yq를 깔지 않는다. rhwp의 Codex MCP 등록이
+      # TOML 편집을 하므로 여기서만 따로 확보한다.
+      - name: Ensure yq
+        shell: pwsh
+        run: if (-not (Get-Command yq -ErrorAction SilentlyContinue)) { choco install yq -y --no-progress }
+      - name: rhwp ownership contract
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/rhwp/mcp-ownership.ps1
+      - name: Real scripts twice in isolated profile
+        shell: pwsh
+        env:
+          SKIP_PACKAGES: '1'
+          SKIP_CLAUDE_CODE: '1'
+          SKIP_SKILLS: '1'
+          SKIP_PLUGINS: '1'
+          SKIP_HERDR: '1'
+          # pin되지 않은 원격 installer는 CI에서 돌리지 않는다(herdr와 같은 정책).
+          # shellcheck는 pinned artifact라 그대로 돌려 설치·제거 소유권까지 검증한다.
+          SKIP_AGY_CLI: '1'
+        run: |
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'dotfiles-home'
+          $env:HOME = $env:USERPROFILE
+          $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'AppData\Local'
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:USERPROFILE '.gitconfig'
+          $env:DOTFILES_RECEIPT_PATH = Join-Path $env:LOCALAPPDATA 'dotfiles\install-receipt.json'
+          $env:DOTFILES_PS_PROFILE_PATH = Join-Path $env:USERPROFILE 'profile.ps1'
+          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          Set-Content (Join-Path $env:USERPROFILE 'user.txt') 'user-sentinel'
+          Set-Content $env:DOTFILES_PS_PROFILE_PATH '# user profile sentinel'
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex\hooks') | Out-Null
+          Set-Content (Join-Path $env:USERPROFILE '.codex\config.toml') "[user]`nkeep = true"
+          Set-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1') 'user-hook'
+          $yaziBefore = [Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User')
+          $pathBefore = [Environment]::GetEnvironmentVariable('PATH','User')
+          $gitBefore = git --version
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "first install failed: $LASTEXITCODE" }
+          & ./install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "second install failed: $LASTEXITCODE" }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User') -cne $yaziBefore) { throw 'config install changed YAZI_FILE_ONE' }
+          if ([Environment]::GetEnvironmentVariable('PATH','User') -cne $pathBefore) { throw 'config install changed User PATH' }
+          # rhwp tree는 receipt가 소유하므로 uninstall이 통째로 걷어내야 한다.
+          $rhwpDir = Join-Path $env:USERPROFILE 'rhwp'
+          if (-not (Test-Path (Join-Path $rhwpDir 'rhwp.exe'))) { throw 'rhwp tree missing after install' }
+          # shellcheck도 receipt가 소유하는 pinned artifact다.
+          $scExe = Join-Path $env:USERPROFILE '.local\bin\shellcheck.exe'
+          if (-not (Test-Path $scExe)) { throw 'shellcheck missing after install' }
+          & ./uninstall.ps1 -KeepPackages
+          if ($LASTEXITCODE -ne 0) { throw "first uninstall failed: $LASTEXITCODE" }
+          & ./uninstall.ps1 -KeepPackages
+          if ($LASTEXITCODE -ne 0) { throw "second uninstall failed: $LASTEXITCODE" }
+          if (Test-Path $rhwpDir) { throw 'rhwp tree not removed by uninstall' }
+          if (Test-Path $scExe) { throw 'shellcheck not removed by uninstall' }
+          if ((Get-Content (Join-Path $env:USERPROFILE 'user.txt')) -ne 'user-sentinel') { throw 'user sentinel changed' }
+          if (-not (Get-Content $env:DOTFILES_PS_PROFILE_PATH -Raw).Contains('# user profile sentinel')) { throw 'profile sentinel changed' }
+          if (-not (Get-Content (Join-Path $env:USERPROFILE '.codex\config.toml') -Raw).Contains('keep = true')) { throw 'config sentinel changed' }
+          if ((Get-Content (Join-Path $env:USERPROFILE '.codex\hooks\user.ps1')) -ne 'user-hook') { throw 'hook sentinel changed' }
+          if ([Environment]::GetEnvironmentVariable('YAZI_FILE_ONE','User') -ne $yaziBefore) { throw 'environment value not restored' }
+          $pathAfter = [Environment]::GetEnvironmentVariable('PATH','User')
+          if ($pathAfter -cne $pathBefore) { throw 'User PATH not restored exactly' }
+          if ((git --version) -ne $gitBefore) { throw 'pre-existing package sentinel changed' }

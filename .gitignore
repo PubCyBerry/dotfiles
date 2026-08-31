@@ -1,0 +1,29 @@
+.claude
+
+
+
+
+# Secrets (절대 커밋 금지)
+.env
+.env.*
+secrets.*
+*.secret
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local overrides
+bash/.extra
+bash/.path
+bash/.gitconfig.local
+
+# 참고용 클론 (커밋 불필요)
+ref_repos/
+
+# skills 다운로드 캐시 (lockfile만 커밋)
+.agents/
+
+# Python
+__pycache__/
+*.pyc

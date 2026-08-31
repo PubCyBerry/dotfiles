@@ -1,0 +1,44 @@
+[core]
+    # diff/log 출력에 delta pager 사용
+    pager = delta
+    # 기본 편집기: neovim (포그라운드 실행)
+    editor = nvim -f
+    # 줄바꿈 정규화 기준: OS 네이티브
+    eol = native
+    # 비ASCII 경로를 octal escape("\353\241\234")로 감싸지 않고 그대로 출력.
+    # 기본값 true라 status/diff/log에서 한글 파일명이 전부 깨져 보인다.
+    # 로케일(LANG=ko_KR.UTF-8) 문제가 아니라 git 출력 인코딩 설정.
+    quotepath = false
+    # core.autocrlf, core.fileMode 은 OS별로 install 스크립트가 주입한다
+    #   Windows: autocrlf=true,  fileMode=false
+    #   Linux:   autocrlf=input, fileMode=true
+
+[init]
+    # git init / git clone(빈 저장소)의 첫 브랜치 이름.
+    # 미설정 시 git이 master를 쓰면서 hint 경고를 출력한다.
+    defaultBranch = main
+
+[interactive]
+    # git add -p 등 대화형 모드에서도 delta 컬러 필터 적용
+    diffFilter = delta --color-only
+
+[delta]
+    # n/N 키로 diff 섹션 이동
+    navigate = true
+    # 다크 테마 사용
+    dark = true
+    # 좌우 분할 비교 뷰
+    side-by-side = true
+    # 줄 번호 표시
+    line-numbers = true
+
+[merge]
+    # zdiff3: base 원본을 함께 표시해 충돌 컨텍스트 확대
+    conflictStyle = zdiff3
+
+[credential]
+    # Git for Windows의 system gitconfig가 박은 manager(GCM) helper는
+    # 기본적으로 wincredman 저장소를 사용. wincredman은 대화형 데스크톱
+    # 세션이 필요해 SSH 세션에서 fatal로 helper chain을 끊음.
+    # dpapi 저장소는 사용자 프로필 기반이라 SSH 세션에서도 동작.
+    credentialStore = dpapi
