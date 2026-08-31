@@ -20,3 +20,9 @@ openai/codex-plugin-cc    codex@openai-codex      user
 # statusline 좌측(경로·git·컨텍스트). 우측 비용은 ccusage가 채우며, 둘을 합치는 것은
 # config/claude/statusline.sh다 — AGENTS.md의 "statusline 관리" 참고.
 jarrodwatts/claude-hud    claude-hud@claude-hud   user
+
+# 유창한 한국어 출력 스타일
+snflkd/fluent-korean      fluent-korean@fluent-korean  user
+
+# YAGNI 모드(가장 단순한 해법을 강제). 자체 hook을 함께 배포한다.
+DietrichGebert/ponytail   ponytail@ponytail       user
