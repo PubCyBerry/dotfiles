@@ -204,6 +204,16 @@ claude plugin install <plugin>@<marketplace> --scope <scope>
 
 CI는 `SKIP_PLUGINS=1`로 이 단계를 건너뛴다(`claude` CLI가 없으면 자동으로도 skip).
 
+#### 플러그인이 제공하는 output style을 기본값으로 쓴다
+
+`config/claude/settings.json`의 `outputStyle`이 `fluent-korean:fluent-korean`을 가리킨다. 값의 형식은 `<플러그인>:<스타일>`이며, 플러그인이 `output-styles/` 아래에 정의한 스타일을 참조한다.
+
+이 값에는 **단계 순서가 뒤집혀 있다**는 점을 알아 둔다. settings.json은 3-1에서 배포되지만 플러그인은 마지막 단계에서 설치되므로, 새 머신의 첫 설치 도중에는 참조 대상이 아직 없는 구간을 지난다. 설치가 끝나면 해소되고, 그 사이에 Claude Code를 띄우면 기본 스타일로 떨어질 뿐 설치가 실패하지는 않는다. 순서를 바꾸지 않은 이유는 플러그인 설치가 `settings.json`을 자기 형식으로 다시 쓰기 때문이다 — 그래서 이 단계가 마지막에 있고, 3-1이 기록한 해시를 뒤에서 갱신한다.
+
+`settings.json`은 destination 우선 병합이므로, 이미 다른 `outputStyle`을 가진 머신에는 이 값이 들어가지 않는다. 그쪽이 사용자 선택이기 때문이며, 바꾸려면 `/config`로 직접 고른다.
+
+단 `/config`가 값을 어느 scope에 기록하는지는 확인하고 넘어간다. 실측으로 `/config`에서 고른 스타일이 `~/.claude/settings.json`이 아니라 **프로젝트 로컬**인 `.claude/settings.local.json`에 기록된 적이 있다. 그 파일은 `.gitignore`가 걸러내므로 저장소에 남지 않고 그 디렉터리에서만 적용된다. 머신 전역으로 적용하려면 `~/.claude/settings.json`의 `outputStyle`을 직접 확인한다.
+
 플러그인은 skill·agent와 배포 경로가 다르다.
 
 | 구분 | 소스 | 배포 경로 | 설치 주체 |

@@ -10,6 +10,7 @@
     "CLAUDE_CODE_NO_FLICKER": "1"
   },
   "language": "한국어",
+  "outputStyle": "fluent-korean:fluent-korean",
   "remoteControlAtStartup": true,
   "permissions": {
     "defaultMode": "auto"
