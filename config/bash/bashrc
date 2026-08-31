@@ -35,6 +35,41 @@ if [[ -d "$_winget_pkgs" ]]; then
 fi
 unset _winget_pkgs
 
+# === Windows: MSYS PATH 정규화 ===
+# MSYS PATH는 ':' 구분이라 Windows 형식(C:\Users\...)이 그대로 들어오면 'C'와
+# '/Users/...' 두 조각으로 쪼개진다. 'C'는 상대 경로 항목이 되고, '/c'가 빠진
+# '/Users/...'는 MSYS 루트 기준으로 해석돼 'C:\Program Files\Git\Users\...'라는
+# 존재하지 않는 경로가 된다. 이 상태로 Windows 자식 프로세스(Claude Code 등)에
+# PATH가 상속되면 아래 "fnm node 실경로" 블록이 심은 junction 우회 경로가 죽고,
+# node가 reparse 체인으로만 남아 NETWORK 토큰에서 "node: command not found"가 난다.
+# 오염원은 두 곳이다: Windows 형식으로 상속된 FNM_DIR, 그리고 fnm env 출력.
+# Linux/macOS에서는 즉시 return이라 무동작.
+_dotfiles_sanitize_path() {
+    case "$OSTYPE" in
+        msys*|cygwin*) ;;
+        *) return 0 ;;
+    esac
+    local _entries=() _entry _out=
+    IFS=':' read -ra _entries <<< "$PATH"
+    for _entry in "${_entries[@]}"; do
+        [[ -z "$_entry" ]] && continue
+        # 드라이브 문자 하나만 남은 조각
+        [[ "$_entry" =~ ^[A-Za-z]$ ]] && continue
+        # 쪼개진 나머지 절반. '\Users\...'는 드라이브 상대 경로라 자식 프로세스의
+        # 현재 드라이브에 따라 'D:\Users\...'처럼 엉뚱한 곳을 가리킨다.
+        [[ "$_entry" == \\* ]] && continue
+        # 존재하지 않는 항목 (쪼개진 나머지 절반이 여기서 걸린다)
+        [[ -d "$_entry" ]] || continue
+        # 중복
+        [[ ":$_out:" == *":$_entry:"* ]] && continue
+        _out="${_out:+$_out:}$_entry"
+    done
+    [[ -n "$_out" ]] && export PATH="$_out"
+}
+
+# 상속된 PATH의 오염부터 걷어낸다. 비대화형 hook도 이 지점까지는 실행된다.
+_dotfiles_sanitize_path
+
 # === Windows: fnm node 실경로 (junction 우회) ===
 # fnm은 node를 junction 체인(multishell→aliases→version)으로 노출하는데, NETWORK
 # 토큰에서는 그 traversal이 막혀 `node`를 못 찾는다 (Claude Code 등의 hook이
@@ -69,11 +104,23 @@ if [[ -z "${FNM_DIR:-}" ]]; then
         FNM_DIR="$HOME/.local/share/fnm"
     fi
 fi
+# Windows에서는 FNM_DIR이 'C:\Users\...' 형식으로 상속된다. 그대로 PATH에 붙이면
+# 드라이브 콜론에서 쪼개지므로 POSIX 형식으로 바꾼 뒤 넣는다.
+case "$OSTYPE" in
+    msys*|cygwin*)
+        if [[ "$FNM_DIR" == ?:[\\/]* ]] && command -v cygpath &> /dev/null; then
+            FNM_DIR=$(cygpath -u "$FNM_DIR")
+        fi
+        ;;
+esac
 if [[ -d "$FNM_DIR" ]] && [[ ":$PATH:" != *":$FNM_DIR:"* ]]; then
     export PATH="$FNM_DIR:$PATH"
 fi
 if command -v fnm &> /dev/null; then
     eval "$(fnm env --use-on-cd --shell bash)"
+    # fnm env가 Windows 형식 경로를 내보내므로 다시 걷어낸다. 정리 후에도 node가
+    # 남도록, 위에서 심은 실경로 항목은 존재하는 디렉토리라 살아남는다.
+    _dotfiles_sanitize_path
 fi
 
 # zoxide
