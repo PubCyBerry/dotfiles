@@ -18,7 +18,8 @@
   "includeCoAuthoredBy": false,
   "attribution": {
     "commit": "",
-    "pr": ""
+    "pr": "",
+    "sessionUrl": false
   },
   "hooks": {
     "UserPromptSubmit": [
