@@ -215,7 +215,7 @@ artifact_allowed() {
             # artifact와 달리 Linux·macOS 공통). agy는 없다 — Antigravity CLI 바이너리는
             # 공식 installer가 같은 디렉터리에 두지만 install이 소유하지 않는다.
             # (주석을 `# shellcheck`로 시작하면 ShellCheck가 directive로 읽어 죽는다)
-            case "$name" in starship|atuin|fnm|bun|bunx|yazi|ya|lazygit|fzf|nvim|delta|bat|fd|eza|yq|node|npm|npx|shellcheck) return 0;; esac ;;
+            case "$name" in starship|atuin|fnm|bun|bunx|yazi|ya|lazygit|fzf|nvim|delta|bat|fd|eza|yq|prek|node|npm|npx|shellcheck) return 0;; esac ;;
         "$HOME/.local/share/fnm/fnm"|"$HOME/.bun/bin/bun"|"$HOME/.bun/bin/bunx") return 0 ;;
         "$HOME/.local/opt/nvim-v"*) [[ "${path#"$HOME/.local/opt/nvim-v"}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0 ;;
         # rhwp는 공식 archive 전체를 이 tree 하나로 배치한다 (manifests/rhwp.tsv).

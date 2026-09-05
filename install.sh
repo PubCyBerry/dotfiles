@@ -1689,11 +1689,11 @@ validate_direct_manifest() {
     local manifest="$1"
     awk -F '\t' '
       /^#/ || /^[[:space:]]*$/ { next }
-      NF != 6 || $1 !~ /^(starship|atuin|fnm|bun|yazi|lazygit|fzf|nvim|delta|eza|yq)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(amd64|arm64)$/ || $4 !~ /^(tgz|zip|bin)$/ || $5 !~ /^https:\/\/github\.com\/[^[:space:]]+\/releases\/download\/[^[:space:]]+$/ || $5 ~ /\/(latest|HEAD|main)\// || $6 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
+      NF != 6 || $1 !~ /^(starship|atuin|fnm|bun|yazi|lazygit|fzf|nvim|delta|eza|yq|prek)$/ || $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || $3 !~ /^(amd64|arm64)$/ || $4 !~ /^(tgz|zip|bin)$/ || $5 !~ /^https:\/\/github\.com\/[^[:space:]]+\/releases\/download\/[^[:space:]]+$/ || $5 ~ /\/(latest|HEAD|main)\// || $6 !~ /^[0-9a-f]{64}$/ { bad=1; exit }
       seen[$1 SUBSEP $3]++ { bad=1 }
       { count[$1]++ }
       END {
-        split("starship atuin fnm bun yazi lazygit fzf nvim delta eza yq", names, " ")
+        split("starship atuin fnm bun yazi lazygit fzf nvim delta eza yq prek", names, " ")
         for (i in names) if (count[names[i]] != 2) bad=1
         exit bad
       }

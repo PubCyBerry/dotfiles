@@ -34,5 +34,6 @@ ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
 
 # 추가 CLI 도구
 astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
+j178.Prek                       # pre-commit 호환 git hook 러너 (Rust 재구현)
 # astral-sh.ruff
 
