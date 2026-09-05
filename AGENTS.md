@@ -65,7 +65,7 @@ dotfiles/
 │   ├── winget.txt       # Windows winget 패키지 ID
 │   ├── apt.txt          # Ubuntu apt 패키지
 │   ├── Brewfile         # macOS Homebrew 패키지
-│   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex, ccusage)
+│   ├── npm-global.txt   # npm 전역 패키지 (@openai/codex, ccusage, defuddle)
 │   ├── direct-artifacts.tsv # Linux direct artifact 버전·URL·SHA-256
 │   ├── rhwp.tsv         # rhwp pinned release 플랫폼·버전·URL·SHA-256 (전 OS 공통)
 │   ├── shellcheck.tsv   # shellcheck pinned release (전 OS + CI 공통 — 버전 drift 차단)
