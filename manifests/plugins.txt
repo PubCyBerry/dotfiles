@@ -11,9 +11,6 @@
 #   claude plugin install <plugin>@<marketplace> --scope <scope>
 # 둘 다 멱등이며, 이미 등록/설치된 항목은 그대로 둔다.
 
-# 응답 압축 모드
-JuliusBrussee/caveman    caveman@caveman         user
-
 # Codex를 Claude Code 안에서 사용
 openai/codex-plugin-cc    codex@openai-codex      user
 
