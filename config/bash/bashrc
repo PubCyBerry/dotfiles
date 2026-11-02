@@ -26,8 +26,7 @@ if [[ -d "$_winget_pkgs" ]]; then
               "$_winget_pkgs"/sharkdp.fd_Microsoft.Winget.Source_*/fd-v* \
               "$_winget_pkgs"/BurntSushi.ripgrep.MSVC_Microsoft.Winget.Source_*/ripgrep-* \
               "$_winget_pkgs"/dandavison.delta_Microsoft.Winget.Source_*/delta-* \
-              "$_winget_pkgs"/Oven-sh.Bun_Microsoft.Winget.Source_*/bun-windows-x64 \
-              "$_winget_pkgs"/sxyazi.yazi_Microsoft.Winget.Source_*/yazi-x86_64-pc-windows-msvc; do
+              "$_winget_pkgs"/Oven-sh.Bun_Microsoft.Winget.Source_*/bun-windows-x64; do
         [[ -d "$_d" ]] && [[ ":$PATH:" != *":$_d:"* ]] && PATH="$_d:$PATH"
     done
     export PATH

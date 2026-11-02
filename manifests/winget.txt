@@ -1,39 +1,23 @@
-# Windows winget 패키지 목록
-# install.ps1이 읽어서 설치
+# Windows 패키지. install.ps1이 줄마다 `winget install`을 실행한다(설치되어 있으면 업그레이드).
+# macOS Brewfile과 같은 도구 목록을 유지한다.
 
-# 개발 환경 기초
 Git.Git                         # Git for Windows (Git Bash 포함)
-GitHub.cli                      # Github CLI
-Neovim.Neovim                   # NeoVim
-
-# 자바스크립트 런타임
-Schniz.fnm                      # Node.js 버전관리
-Oven-sh.Bun                    
-
-# 터미널 멀티플렉서
-marlocarlo.psmux                # tmux on Windows Powershell
-
-# 현대적인 터미널 도구
-sharkdp.bat                     # 'cat' with syntax highlighting and Git intergration
-junegunn.fzf                    # command-line fuzzy finder
-eza-community.eza               # alternative to 'ls'
-sharkdp.fd                      # alternative to 'find'
-dandavison.delta                # A syntax-highlighting pager for git, diff, grep, rg --json, and blame output
-BurntSushi.ripgrep.MSVC         # ripgrep recursively searches directories for a regex pattern while respecting your gitignore
-jqlang.jq                       # Command-line JSON processor
-MikeFarah.yq                    # Command-line YAML, JSON, XML, CSV, TOML, HCL processor (ID 대소문자 주의 — --exact는 case-sensitive)
-ajeetdsouza.zoxide              # Smarter cd command
-Starship.Starship               # Customizable prompt for any shell
-sxyazi.yazi                     # Terminal file manager, based on async I/O
-JesseDuffield.lazygit           # Terminal UI for git commands
-
-# 동영상 / 미디어 / 문서
-Gyan.FFmpeg                     # 동영상
-oschwartz10612.Poppler          # PDF
-ImageMagick.ImageMagick         # 폰트, HEIC, JPEG
-
-# 추가 CLI 도구
-astral-sh.uv                    # Python 패키지 관리자 (hererocks/luarocks용 Python 제공)
-j178.Prek                       # pre-commit 호환 git hook 러너 (Rust 재구현)
-# astral-sh.ruff
-
+GitHub.cli
+Neovim.Neovim
+Schniz.fnm                      # Node.js 버전 관리
+Oven-sh.Bun
+marlocarlo.psmux                # tmux
+sharkdp.bat
+junegunn.fzf
+eza-community.eza
+sharkdp.fd
+dandavison.delta
+BurntSushi.ripgrep.MSVC
+jqlang.jq
+MikeFarah.yq                    # --exact는 ID 대소문자를 구분한다
+ajeetdsouza.zoxide
+Starship.Starship
+JesseDuffield.lazygit
+astral-sh.uv
+j178.Prek
+koalaman.shellcheck

@@ -23,7 +23,7 @@ WinGet으로 설치한 CLI 도구는 모두 `%LOCALAPPDATA%\Microsoft\WinGet\Lin
 - **PowerShell 7+**: 프로파일 로딩 시 `ResourceUnavailable`. `profile.ps1`의 `Resolve-ExePath` 헬퍼가 심볼릭 링크를 실제 실행 파일 경로로 해석해 우회.
 - **Git Bash**: `config/bash/bashrc`가 `$HOME/AppData/Local/Microsoft/WinGet/Packages/<pkg>_Microsoft.Winget.Source_*` 하위의 실제 바이너리 경로를 PATH 앞에 prepend해 symlink 평가 자체를 회피. 두 그룹으로 나눠 처리한다.
   - 그룹 A (exe가 패키지 디렉토리 직속): `Schniz.fnm`, `ajeetdsouza.zoxide`, `junegunn.fzf`, `eza-community.eza`, `jqlang.jq`, `MikeFarah.yq`, `JesseDuffield.lazygit`
-  - 그룹 B (exe가 버전/아키텍처 서브 디렉토리 안): `sharkdp.bat/bat-v*`, `sharkdp.fd/fd-v*`, `BurntSushi.ripgrep.MSVC/ripgrep-*`, `dandavison.delta/delta-*`, `Oven-sh.Bun/bun-windows-x64`, `sxyazi.yazi/yazi-x86_64-pc-windows-msvc`
+  - 그룹 B (exe가 버전/아키텍처 서브 디렉토리 안): `sharkdp.bat/bat-v*`, `sharkdp.fd/fd-v*`, `BurntSushi.ripgrep.MSVC/ripgrep-*`, `dandavison.delta/delta-*`, `Oven-sh.Bun/bun-windows-x64`
 
 > **새 WinGet 도구를 추가할 때**: `manifests/winget.txt`뿐 아니라 `config/bash/bashrc`의 두 그룹 중 적절한 쪽에도 등록해야 SSH 세션에서 깨지지 않는다. 디렉토리 케이스는 매니페스트가 아니라 실제 폴더명을 따른다 (bash glob은 case-sensitive). 예: `MikeFarah.yq`(대문자 M·F), `Oven-sh.Bun`(하이픈).
 
@@ -181,7 +181,7 @@ git config --global --get core.quotepath   # → false
 | `0x8A150052` (-1978335150) | `marlocarlo.psmux` | portable installer가 `WinGet\Packages\...\tmux.exe`를 교체하려다 `remove: Access is denied` — tmux 프로세스가 파일을 잡고 있음 | `tmux kill-server` 후 재실행 |
 | `0x8A150014` (-1978335212) | `mikefarah.yq` | `No app found matching input criteria`. **`--exact`는 ID 대소문자를 구분**하는데 매니페스트가 소문자였다. 실제 ID는 `MikeFarah.yq` | 매니페스트 ID를 winget 카탈로그 표기와 정확히 일치시킨다 |
 
-두 잠금 케이스는 `install.ps1`이 실행 전에 미리 경고한다(`[warn] Git.Git: 파일을 잠그는 프로세스 실행 중 — bash x6, ssh x2`).
+두 잠금 케이스는 해당 프로세스를 닫고 다시 실행하면 된다. `install.ps1`을 Git Bash가 아니라 PowerShell에서 실행하는 것도 같은 이유다.
 
 원인이 코드만으로 안 보이면 winget 자체 로그를 본다. 설치 관리자(Inno Setup 등)가 남긴 로그가 같은 디렉터리에 패키지 이름으로 따로 쌓인다.
 

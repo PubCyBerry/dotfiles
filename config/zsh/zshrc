@@ -1,0 +1,38 @@
+# zsh 설정 (macOS). install.sh가 ~/.zshrc에 마커 블록으로 넣는다.
+# config/bash/bashrc, config/powershell/profile.ps1과 같은 도구를 같은 방식으로 초기화한다.
+
+# Homebrew: Apple Silicon은 /opt/homebrew, Intel은 /usr/local
+for brew_bin in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    if [[ -x $brew_bin ]]; then
+        eval "$("$brew_bin" shellenv)"
+        break
+    fi
+done
+unset brew_bin
+
+typeset -U path PATH
+path=("$HOME/.local/bin" $path)
+
+if command -v fnm >/dev/null; then
+    eval "$(fnm env --use-on-cd --shell zsh)"
+fi
+if command -v zoxide >/dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+if [[ $TERM != dumb ]] && command -v starship >/dev/null; then
+    eval "$(starship init zsh)"
+fi
+if command -v fzf >/dev/null; then
+    source <(fzf --zsh)
+fi
+
+if command -v eza >/dev/null; then
+    alias ls='eza'
+    alias ll='eza -la'
+    alias lt='eza --tree'
+fi
+if command -v bat >/dev/null; then
+    alias cat='bat'
+fi
+
+alias ccd='claude --dangerously-skip-permissions'

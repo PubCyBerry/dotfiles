@@ -1,0 +1,13 @@
+# Linux 전용. apt에 없거나 너무 낡은 도구를 GitHub 최신 릴리스에서 받아 ~/.local/bin에 둔다.
+# 형식: name<TAB>repo<TAB>asset(x86_64)<TAB>asset(aarch64)
+# {v}는 최신 릴리스 태그에서 앞의 v를 뗀 버전으로 바뀐다. nvim은 압축을 푼 트리를 ~/.local/opt/nvim에 둔다.
+starship	starship/starship	starship-x86_64-unknown-linux-musl.tar.gz	starship-aarch64-unknown-linux-musl.tar.gz
+fnm	Schniz/fnm	fnm-linux.zip	fnm-arm64.zip
+bun	oven-sh/bun	bun-linux-x64.zip	bun-linux-aarch64.zip
+lazygit	jesseduffield/lazygit	lazygit_{v}_linux_x86_64.tar.gz	lazygit_{v}_linux_arm64.tar.gz
+fzf	junegunn/fzf	fzf-{v}-linux_amd64.tar.gz	fzf-{v}-linux_arm64.tar.gz
+nvim	neovim/neovim	nvim-linux-x86_64.tar.gz	nvim-linux-arm64.tar.gz
+delta	dandavison/delta	delta-{v}-x86_64-unknown-linux-gnu.tar.gz	delta-{v}-aarch64-unknown-linux-gnu.tar.gz
+eza	eza-community/eza	eza_x86_64-unknown-linux-gnu.tar.gz	eza_aarch64-unknown-linux-gnu.tar.gz
+yq	mikefarah/yq	yq_linux_amd64	yq_linux_arm64
+prek	j178/prek	prek-x86_64-unknown-linux-gnu.tar.gz	prek-aarch64-unknown-linux-gnu.tar.gz
