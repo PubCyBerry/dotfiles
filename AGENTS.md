@@ -34,8 +34,11 @@ config/
   agents/global.md           CLAUDE.md, Codex AGENTS.md, GEMINI.md의 공통 원본
   claude/ codex/ agy/        각 에이전트 설정과 hook
   bash/ zsh/ powershell/     셸 프로파일 (Git Bash·Linux는 bash, macOS는 zsh)
+  macos/.macos               macOS 시스템 기본값 (install이 실행하지 않는다. 직접 실행)
   git/ tmux/ nvim/ herdr/ starship.toml
-docs/TROUBLESHOOTING.md      Windows SSH 세션 등 운영 문제
+docs/
+  TROUBLESHOOTING.md         Windows SSH 세션 등 운영 문제
+  legacy-cleanup.md          #10 이전 설치본 정리용 에이전트 프롬프트 (임시. 정리할 머신이 없으면 지운다)
 ```
 
 ## 설치 순서

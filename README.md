@@ -47,11 +47,15 @@ bash ~/dotfiles/install.sh
 # 2. git 사용자 정보 설정 (최초 1회)
 git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
+
+# 3. (macOS, 선택) 시스템 기본값 적용. Finder·Dock이 재시작된다
+bash ~/dotfiles/config/macos/.macos
 ```
 
 ### 업데이트
 
 같은 스크립트를 다시 실행한다. 패키지를 최신으로 올리고 설정을 다시 배포한다.
+#10(2026-11) 이전 버전으로 설치한 머신은 먼저 에이전트에게 [docs/legacy-cleanup.md](docs/legacy-cleanup.md)를 실행시켜 예전 설치 잔재를 정리한다.
 
 ```bash
 cd ~/dotfiles && git pull
