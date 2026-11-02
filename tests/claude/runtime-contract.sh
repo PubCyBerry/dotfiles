@@ -5,6 +5,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_file="$(mktemp)"
 trap 'rm -f "$output_file"' EXIT
 
+# Removed plugins must not return on the next install.
+if grep -Eiq '^[[:space:]]*[^#].*(caveman|cavecrew)' "$repo_root/manifests/plugins.txt" "$repo_root/manifests/skills.txt"; then
+  echo 'Removed caveman component remains in an install manifest' >&2
+  exit 1
+fi
+
 jq -e '
   ((.env // {} | has("CLAUDE_CODE_SUBAGENT_MODEL")) | not) and
   ([ (.hooks // {}) | .. | strings | select(test("caveman"; "i")) ] | length == 0) and
