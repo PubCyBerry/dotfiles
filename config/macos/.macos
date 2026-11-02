@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # macOS 시스템 설정 자동화
 #
-# 사용법:
-#   bash macos/.macos
+# 사용법 (install.sh는 실행하지 않는다. Finder·Dock을 재시작하므로 필요할 때 직접 실행한다):
+#   bash ~/dotfiles/config/macos/.macos
 #
 # 되돌리는 방법:
 #   개별 항목: defaults delete <domain> <key>

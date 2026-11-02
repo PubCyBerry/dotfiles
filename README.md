@@ -1,36 +1,32 @@
 # dotfiles
 
-Windows 11 / Ubuntu / macOS 환경을 위한 개인 dotfiles.
-터미널 설정, CLI 도구, Claude Code 에이전트 설정을 관리한다.
+Windows 11 / macOS / Ubuntu 환경을 위한 개인 dotfiles.
+터미널 설정, CLI 도구, AI 에이전트(Claude Code, Codex, Antigravity) 설정을 관리한다.
+구조와 동작 방식은 [AGENTS.md](AGENTS.md)에 있다.
 
 ## 목차 <!-- omit from toc -->
 
 - [지원 환경](#지원-환경)
 - [Quickstart](#quickstart)
-- [파일 구조](#파일-구조)
-- [Neovim 키맵](#neovim-키맵)
 - [References](#references)
-
 
 ## 지원 환경
 
-| 환경 | 지원 |
-|------|------|
-| Windows 11 (PowerShell 7+) | 완전 지원 (주 환경) |
-| Ubuntu 24.04 | 완전 지원 (apt 기반) |
-| macOS | 완전 지원 (Homebrew 기반) |
+| 환경 | 패키지 | 셸 |
+|------|--------|----|
+| Windows 11 (주 환경) | winget | PowerShell 7, Git Bash |
+| macOS | Homebrew (Windows와 같은 도구 구성) | zsh |
+| Ubuntu 22.04+ | apt + GitHub 릴리스 | bash |
 
 ## Quickstart
 
 ### Windows 11
 
-PowerShell 7+ (pwsh)을 기본 셸로 사용한다.
-
 ```powershell
-# 1. PowerShell 7+ 설치 (관리자 권한)
-winget install --id Microsoft.PowerShell --source winget
+# 1. PowerShell 7 설치
+winget install --id Microsoft.PowerShell --exact
 
-# 2. 저장소 클론 후 단일 진입점 실행 (pwsh, 관리자 권한)
+# 2. 저장소 클론 후 실행 (pwsh, 관리자 권한이면 설치 중 UAC 창이 뜨지 않는다)
 git clone https://github.com/PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 pwsh -ExecutionPolicy Bypass -File $env:USERPROFILE\dotfiles\install.ps1
 
@@ -39,130 +35,33 @@ git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
 ```
 
-기존 머신 업데이트:
+### macOS / Ubuntu
 
-```powershell
-# Windows
-cd $env:USERPROFILE\dotfiles && git pull
-pwsh -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-### Ubuntu (22.04+)
-
-bash + apt 기반. sudo 권한이 필요하다.
+macOS는 [Homebrew](https://brew.sh)가 먼저 설치되어 있어야 한다. Ubuntu는 sudo 권한이 필요하다.
 
 ```bash
-# 1. 저장소 클론 후 단일 진입점 실행
+# 1. 저장소 클론 후 실행
 git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
 bash ~/dotfiles/install.sh
 
 # 2. git 사용자 정보 설정 (최초 1회)
 git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
+
+# 3. (macOS, 선택) 시스템 기본값 적용. Finder·Dock이 재시작된다
+bash ~/dotfiles/config/macos/.macos
 ```
 
-기존 머신 업데이트:
+### 업데이트
+
+같은 스크립트를 다시 실행한다. 패키지를 최신으로 올리고 설정을 다시 배포한다.
+#10(2026-11) 이전 버전으로 설치한 머신은 먼저 에이전트에게 [docs/legacy-cleanup.md](docs/legacy-cleanup.md)를 실행시켜 예전 설치 잔재를 정리한다.
 
 ```bash
 cd ~/dotfiles && git pull
-bash install.sh
+bash install.sh                                      # macOS / Ubuntu
+pwsh -ExecutionPolicy Bypass -File .\install.ps1     # Windows
 ```
-
-### macOS
-
-bash + Homebrew 기반. Xcode Command Line Tools가 설치되어 있어야 한다.
-
-```bash
-# 1. 저장소 클론 후 단일 진입점 실행
-git clone https://github.com/PubCyBerry/dotfiles.git ~/dotfiles
-bash ~/dotfiles/install.sh --with-defaults
-
-# 2. git 사용자 정보 설정 (최초 1회)
-git config --global user.name "Your Name"
-git config --global user.email "your@email.com"
-```
-
-기존 머신 업데이트:
-
-```bash
-cd ~/dotfiles && git pull
-bash install.sh
-```
-
-## 파일 구조
-
-```text
-dotfiles/
-  install.ps1                      # 설치 스크립트 (Windows 11)
-  install.sh                       # 설치 스크립트 (Ubuntu / macOS)
-  config/
-    agents/
-      global.md                    # Codex/Claude 공통 전역 지침 원본
-      roles/                       # planner/generator/evaluator — 공용 body.md + 플랫폼별 메타
-        <name>/body.md             # 공용 시스템 프롬프트
-        <name>/claude.frontmatter  # Claude subagent 메타 (YAML)
-        <name>/codex.toml          # Codex subagent 메타 (TOML)
-    claude/
-      settings.json                # Claude Code 설정 (hooks, env, permissions)
-      hooks/
-        temporal-context.sh        # Claude SessionStart 시간 컨텍스트 hook
-    codex/
-      config.toml                  # Codex 모델 기본값
-      hooks.json                   # Codex hook 설정
-      hooks/
-        temporal-context.sh         # Codex SessionStart 시간 컨텍스트 hook
-    git/
-      gitconfig                    # git 설정 (delta pager 포함, OS-중립)
-    herdr/
-      config.toml                  # herdr 설정 (Linux/macOS)
-      config.windows.toml          # herdr 설정 (Windows, default_shell=Git Bash)
-    powershell/
-      profile.ps1                  # PowerShell $PROFILE 설정 (fnm, zoxide, starship 등)
-    tmux/
-      tmux.windows.conf            # tmux 설정 (default-shell=pwsh)
-      tmux.linux.conf              # tmux 설정 (default-shell=bash)
-    macos/
-      .macos                       # macOS 시스템 기본값 설정 (Finder, Dock, 키보드 등)
-    bash/
-      bashrc                       # bash 설정 (Git Bash + Linux 공통)
-      inputrc                      # readline 설정
-    nvim/
-      init.lua                     # Neovim 진입점 (lazy.nvim 로드)
-      lua/config/lazy.lua          # lazy.nvim 부트스트랩 및 설정
-      lua/plugins/yazi.lua         # yazi.nvim 플러그인 설정
-    yazi/
-      yazi.toml                    # yazi 설정 (nvim 기본 에디터 설정)
-    starship.toml                  # Starship 프롬프트 설정
-  manifests/
-    winget.txt                     # Windows winget 패키지 목록 (Neovim 포함)
-    apt.txt                        # Ubuntu apt 패키지 목록
-    Brewfile                       # macOS Homebrew 패키지 목록
-    npm-global.txt                 # npm 전역 패키지 목록
-    shellcheck.tsv                 # shellcheck pinned release (전 OS + CI 공통 버전)
-    skills.txt                     # Claude Code skills 목록
-    plugins.txt                    # Claude Code 플러그인 목록
-  docs/
-    tools.md                       # CLI 도구 사용법 cheatsheet
-    ai-agents.md                   # Claude Code, 플러그인, skills 상세
-    uninstall.md                   # 클린 언인스톨 가이드
-    TROUBLESHOOTING.md             # 트러블슈팅 가이드
-    git-commit-convention.md       # Git Commit Convention (Conventional Commits)
-    worktree-git-workflows.md      # Worktree 커밋 히스토리 관리 전략
-    ci-pipelines.md                # GitHub Actions CI 파이프라인 가이드 (PR Gate / Precision / Freshness / Uninstall)
-    github-actions.md              # GitHub Actions 핵심 개념 레퍼런스
-```
-
-## Neovim 키맵
-
-`<leader>` = **Space**
-
-### yazi.nvim
-
-| 키 | 동작 |
-|----|------|
-| `Space` + `-` | 현재 파일 위치에서 yazi 열기 |
-| `Space` + `c` + `w` | nvim 작업 디렉토리에서 yazi 열기 |
-| `Ctrl` + `↑` | 마지막 yazi 세션 토글 |
 
 ## References
 
@@ -226,7 +125,6 @@ dotfiles/
 |--------|------|-------|
 | [neovim/neovim](https://github.com/neovim/neovim) | Neovim 텍스트 에디터 | <img src="https://img.shields.io/github/stars/neovim/neovim?style=flat&label=%E2%AD%90" alt="stars"> |
 | [folke/lazy.nvim](https://github.com/folke/lazy.nvim) | Neovim 플러그인 매니저 | <img src="https://img.shields.io/github/stars/folke/lazy.nvim?style=flat&label=%E2%AD%90" alt="stars"> |
-| [mikavilpas/yazi.nvim](https://github.com/mikavilpas/yazi.nvim) | Neovim용 yazi 파일 매니저 플러그인 | <img src="https://img.shields.io/github/stars/mikavilpas/yazi.nvim?style=flat&label=%E2%AD%90" alt="stars"> |
 
 ### Tmux
 
@@ -244,15 +142,12 @@ dotfiles/
 | [cli/cli](https://github.com/cli/cli) | GitHub CLI | <img src="https://img.shields.io/github/stars/cli/cli?style=flat&label=%E2%AD%90" alt="stars"> |
 | [Schniz/fnm](https://github.com/Schniz/fnm) | Node.js 버전관리 | <img src="https://img.shields.io/github/stars/Schniz/fnm?style=flat&label=%E2%AD%90" alt="stars"> |
 | [oven-sh/bun](https://github.com/oven-sh/bun) | JavaScript runtime & toolkit | <img src="https://img.shields.io/github/stars/oven-sh/bun?style=flat&label=%E2%AD%90" alt="stars"> |
-| [sxyazi/yazi](https://github.com/sxyazi/yazi) | 터미널 파일 매니저 | <img src="https://img.shields.io/github/stars/sxyazi/yazi?style=flat&label=%E2%AD%90" alt="stars"> |
 | [sharkdp/bat](https://github.com/sharkdp/bat) | `cat` with syntax highlighting | <img src="https://img.shields.io/github/stars/sharkdp/bat?style=flat&label=%E2%AD%90" alt="stars"> |
 | [junegunn/fzf](https://github.com/junegunn/fzf) | command-line fuzzy finder | <img src="https://img.shields.io/github/stars/junegunn/fzf?style=flat&label=%E2%AD%90" alt="stars"> |
 | [eza-community/eza](https://github.com/eza-community/eza) | alternative to `ls` | <img src="https://img.shields.io/github/stars/eza-community/eza?style=flat&label=%E2%AD%90" alt="stars"> |
 | [sharkdp/fd](https://github.com/sharkdp/fd) | alternative to `find` | <img src="https://img.shields.io/github/stars/sharkdp/fd?style=flat&label=%E2%AD%90" alt="stars"> |
-| [file/file](https://github.com/file/file) | Unix file 명령어 | <img src="https://img.shields.io/github/stars/file/file?style=flat&label=%E2%AD%90" alt="stars"> |
 | [dandavison/delta](https://github.com/dandavison/delta) | syntax-highlighting pager for git | <img src="https://img.shields.io/github/stars/dandavison/delta?style=flat&label=%E2%AD%90" alt="stars"> |
 | [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) | recursively search with regex | <img src="https://img.shields.io/github/stars/BurntSushi/ripgrep?style=flat&label=%E2%AD%90" alt="stars"> |
-| [atuinsh/atuin](https://github.com/atuinsh/atuin) | 셸 히스토리 검색 | <img src="https://img.shields.io/github/stars/atuinsh/atuin?style=flat&label=%E2%AD%90" alt="stars"> |
 | [jqlang/jq](https://github.com/jqlang/jq) | command-line JSON processor | <img src="https://img.shields.io/github/stars/jqlang/jq?style=flat&label=%E2%AD%90" alt="stars"> |
 | [mikefarah/yq](https://github.com/mikefarah/yq) | command-line YAML/JSON/XML processor | <img src="https://img.shields.io/github/stars/mikefarah/yq?style=flat&label=%E2%AD%90" alt="stars"> |
 | [ajeetdsouza/zoxide](https://github.com/ajeetdsouza/zoxide) | smarter `cd` command | <img src="https://img.shields.io/github/stars/ajeetdsouza/zoxide?style=flat&label=%E2%AD%90" alt="stars"> |

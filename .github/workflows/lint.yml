@@ -1,0 +1,34 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Shell scripts
+        run: |
+          git ls-files -z '*.sh' | xargs -0 shellcheck
+          shellcheck --shell=bash config/bash/bashrc
+
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          foreach ($file in git ls-files '*.ps1') {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$null, [ref]$errors)
+            if ($errors) { $errors; exit 1 }
+          }
+
+      - name: JSON and TOML syntax
+        run: |
+          git ls-files -z '*.json' | xargs -0 -n 1 jq empty
+          git ls-files -z '*.toml' | xargs -0 -n 1 yq -p toml -o json '.' > /dev/null
