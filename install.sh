@@ -81,9 +81,9 @@ install_release() {
     echo "    $name $version"
 }
 
-# 스스로 업데이트하는 도구는 없을 때만 공식 installer로 설치한다.
-install_if_missing() {
-    if command -v "$1" >/dev/null; then echo "    $1 (installed)"; return; fi
+# 없으면 공식 installer로 설치하고, 있으면 도구의 update 명령으로 최신을 맞춘다.
+install_or_update() {
+    if command -v "$1" >/dev/null; then "$1" update || fail "$1 update failed"; return; fi
     curl -fsSL "$2" | bash || fail "$1 installer failed: $2"
 }
 
@@ -157,9 +157,9 @@ step 'npm global packages'
 npm install -g $(manifest npm-global.txt) || fail 'npm install -g'
 
 step 'Claude Code, Antigravity CLI, herdr'
-install_if_missing claude https://claude.ai/install.sh
-install_if_missing agy https://antigravity.google/cli/install.sh
-if [[ $OS != Darwin ]]; then install_if_missing herdr https://herdr.dev/install.sh; fi
+install_or_update claude https://claude.ai/install.sh
+install_or_update agy https://antigravity.google/cli/install.sh
+if [[ $OS != Darwin ]]; then install_or_update herdr https://herdr.dev/install.sh; fi
 
 step 'shell profiles'
 if [[ $OS == Darwin ]]; then

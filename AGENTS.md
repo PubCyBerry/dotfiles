@@ -47,7 +47,7 @@ docs/
 2. git config: `config/git/gitconfig`의 키 중 아직 값이 없는 것만 `--global`에 넣고, OS별 `core.autocrlf`·`core.fileMode`를 설정한다
 3. 설정 파일 배포 (아래 "배포 규칙")
 4. fnm으로 Node.js LTS를 설치하고 기본값으로 지정한 뒤 `npm-global.txt`를 설치한다. 셸 밖에서 뜬 프로세스도 node를 찾도록 fnm 기본 버전을 Windows는 User PATH, Unix는 `~/.local/bin`에 둔다
-5. 공식 installer: Claude Code, Antigravity CLI(`agy`), herdr(macOS는 Brewfile). 이미 있으면 건너뛴다. 셋 다 스스로 업데이트한다
+5. 공식 installer: Claude Code, Antigravity CLI(`agy`), herdr(macOS는 Brewfile). 이미 있으면 각 도구의 `update` 명령으로 최신을 맞춘다
 6. 셸 프로파일 마커 블록
 7. `skills.txt`(`npx skills add`, 이미 있으면 최신으로 덮어씀), `plugins.txt`(마켓플레이스 추가·갱신 → `claude plugin install` → `claude plugin update`)
 
