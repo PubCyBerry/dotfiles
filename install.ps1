@@ -87,10 +87,14 @@ function Set-ProfileBlock([string]$Path, [string]$Content) {
     Write-Text $Path ((@($kept) + $begin + $Content.Trim() + $end) -join "`n")
 }
 
-# 스스로 업데이트하는 도구는 없을 때만 공식 installer로 설치한다.
+# 없으면 공식 installer로 설치하고, 있으면 도구의 update 명령으로 최신을 맞춘다.
 # installer 안의 exit가 이 스크립트를 끝내지 않도록 별도 프로세스에서 실행한다.
-function Install-IfMissing([string]$Command, [string]$Url) {
-    if (Get-Command $Command -ErrorAction SilentlyContinue) { return Write-Host "    $Command (installed)" }
+function Install-OrUpdate([string]$Command, [string]$Url) {
+    if (Get-Command $Command -ErrorAction SilentlyContinue) {
+        & $Command update
+        if ($LASTEXITCODE) { Fail "$Command update failed" }
+        return
+    }
     pwsh -NoProfile -ExecutionPolicy Bypass -Command "irm $Url | iex"
     if ($LASTEXITCODE) { Fail "$Command installer failed: $Url" }
     Sync-Path
@@ -155,9 +159,9 @@ Invoke-Step 'npm global packages' {
 }
 
 Invoke-Step 'Claude Code, Antigravity CLI, herdr' {
-    Install-IfMissing claude 'https://claude.ai/install.ps1'
-    Install-IfMissing agy 'https://antigravity.google/cli/install.ps1'
-    Install-IfMissing herdr 'https://herdr.dev/install.ps1'
+    Install-OrUpdate claude 'https://claude.ai/install.ps1'
+    Install-OrUpdate agy 'https://antigravity.google/cli/install.ps1'
+    Install-OrUpdate herdr 'https://herdr.dev/install.ps1'
 }
 
 Invoke-Step 'shell profiles' {
