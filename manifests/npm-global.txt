@@ -1,5 +1,6 @@
 # npm 전역 패키지 (전 OS). Claude Code는 npm이 아니라 공식 installer로 설치한다.
 
 @openai/codex
+@earendil-works/pi-coding-agent  # pi. @mariozechner/pi-coding-agent는 deprecated
 ccusage
 defuddle
