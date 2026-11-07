@@ -8,7 +8,7 @@ sources:
   - id: conventional-commits
     resource: https://www.conventionalcommits.org/ko/v1.0.0/
     title: Conventional Commits 1.0.0
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-06T20:22:12+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:04:58+09:00 }
 ---
 
 # 커밋 규칙
@@ -64,13 +64,23 @@ generated: { by: claude-code/claude-opus-5-5, at: 2026-11-06T20:22:12+09:00 }
 ## 브랜치와 PR
 
 - `main`에 직접 커밋하지 않는다. `<type>/<영문-kebab-case-설명>` 브랜치에서 작업한다(`feat/prek`, `fix/bashrc-msys-path-sanitize`).
-- PR 제목은 커밋 메시지 제목 형식을 따른다. squash 병합하면 PR 제목 뒤에 `(#번호)`가 붙어 `main`의 커밋 제목이 된다.
+- PR 제목은 커밋 메시지 제목 형식을 따른다. squash 병합하면 브랜치의 커밋 제목이 아니라 PR 제목 뒤에 `(#번호)`가 붙어 `main`의 커밋 제목이 된다.
 - PR 본문은 `.github/pull_request_template.md`의 절을 채워 쓴다. 해당 없는 절은 지운다. `gh pr create`로 만들 때도 템플릿의 절을 그대로 옮겨 `--body-file`로 넘긴다.
 - 이슈를 해결하는 PR은 [해결과 닫기](issues.md#해결과-닫기)를 따른다.
 - 병합은 squash로 한다. PR 하나가 `main`에 커밋 하나로 남는다.
+- 병합한 PR의 원격 브랜치는 GitHub가 지운다. 로컬 브랜치는 `main`을 최신으로 맞춘 뒤 `git branch -d`로 지운다.
+
+## 함께 고칠 곳
+
+| 바꾸는 것 | 함께 고칠 곳 |
+|---|---|
+| 병합 방식, 병합 후 브랜치 삭제, squash 커밋 제목에 관한 규칙 | GitHub 저장소 설정 |
 
 ## 검사
 
-자동 검사는 없다. 리뷰에서 확인한다.
+| 규칙 | 확인 |
+|---|---|
+| 병합 방식, 병합 후 브랜치 삭제, squash 커밋 제목 | GitHub 저장소 설정이 강제한다. `gh api repos/PubCyBerry/dotfiles`의 `allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge`, `delete_branch_on_merge`, `squash_merge_commit_title`로 확인한다 |
+| 커밋 메시지 형식, 브랜치 이름, PR 본문, 서명 | 리뷰 |
 
 [^conventional-commits]: Conventional Commits 1.0.0
