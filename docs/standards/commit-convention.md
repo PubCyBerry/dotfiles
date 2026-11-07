@@ -8,7 +8,7 @@ sources:
   - id: conventional-commits
     resource: https://www.conventionalcommits.org/ko/v1.0.0/
     title: Conventional Commits 1.0.0
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:04:58+09:00 }
+generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:11:08+09:00 }
 ---
 
 # 커밋 규칙
@@ -68,7 +68,7 @@ generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:04:58+09:00 }
 - PR 본문은 `.github/pull_request_template.md`의 절을 채워 쓴다. 해당 없는 절은 지운다. `gh pr create`로 만들 때도 템플릿의 절을 그대로 옮겨 `--body-file`로 넘긴다.
 - 이슈를 해결하는 PR은 [해결과 닫기](issues.md#해결과-닫기)를 따른다.
 - 병합은 squash로 한다. PR 하나가 `main`에 커밋 하나로 남는다.
-- 병합한 PR의 원격 브랜치는 GitHub가 지운다. 로컬 브랜치는 `main`을 최신으로 맞춘 뒤 `git branch -d`로 지운다.
+- 병합한 PR의 원격 브랜치는 GitHub가 지운다. squash 병합은 새 커밋을 만들므로 `git branch -d`로는 로컬 브랜치가 지워지지 않는다. `main`을 최신으로 맞추고 `gh pr view <브랜치> --json state`로 병합됐는지 확인한 뒤 `git branch -D`로 지운다.
 
 ## 함께 고칠 곳
 
