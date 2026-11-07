@@ -2,7 +2,7 @@
 
 Windows 11 / macOS / Ubuntu 환경을 위한 개인 dotfiles.
 터미널 설정, CLI 도구, AI 에이전트(Claude Code, Codex, Antigravity) 설정을 관리한다.
-구조와 동작 방식은 [AGENTS.md](AGENTS.md)에 있다.
+구조와 동작 방식은 [ARCHITECTURE.md](ARCHITECTURE.md)에, 에이전트용 안내는 [AGENTS.md](AGENTS.md)에 있다.
 
 ## 목차 <!-- omit from toc -->
 
@@ -19,6 +19,8 @@ Windows 11 / macOS / Ubuntu 환경을 위한 개인 dotfiles.
 | Ubuntu 22.04+ | apt + GitHub 릴리스 | bash |
 
 ## Quickstart
+
+에이전트에게 설치를 맡기려면 이 저장소의 `INSTALL.md`를 읽고 설치하라고 요청한다. 에이전트가 전제 조건을 확인하고 install을 실행한 뒤, 실패와 남은 할 일을 보고한다. 직접 설치하려면 아래 OS별 명령을 실행한다.
 
 ### Windows 11
 
