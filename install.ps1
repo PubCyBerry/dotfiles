@@ -123,19 +123,14 @@ Invoke-Step 'git config' {
 }
 
 Invoke-Step 'config files' {
-    $agentsMd = 'config\agents\global.md'
     Merge-Config 'config\claude\settings.json' "$UserHome\.claude\settings.json"
-    Deploy $agentsMd "$UserHome\.claude\CLAUDE.md"
     Deploy 'config\claude\hooks' "$UserHome\.claude\hooks"
     Deploy 'config\claude\statusline.sh' "$UserHome\.claude\statusline.sh"
     Deploy 'config\claude\claude-hud.json' "$UserHome\.claude\claude-hud.json"
     Merge-Config 'config\codex\config.toml' "$UserHome\.codex\config.toml"
     Merge-Config 'config\codex\hooks.json' "$UserHome\.codex\hooks.json"
-    Deploy $agentsMd "$UserHome\.codex\AGENTS.md"
     Deploy 'config\codex\hooks' "$UserHome\.codex\hooks"
     Merge-Config 'config\agy\hooks.json' "$UserHome\.gemini\config\hooks.json"
-    Deploy $agentsMd "$UserHome\.gemini\GEMINI.md"
-    Deploy $agentsMd "$UserHome\.gemini\config\GEMINI.md"
     Deploy 'config\agy\hooks' "$UserHome\.gemini\hooks"
     Merge-Config 'config\herdr\config.windows.toml' "$env:APPDATA\herdr\config.toml"
     Deploy 'config\tmux\tmux.windows.conf' "$UserHome\.tmux.conf"

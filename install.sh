@@ -121,19 +121,14 @@ git config --global core.autocrlf input
 git config --global core.fileMode true
 
 step 'config files'
-agents_md=config/agents/global.md
 merge_config config/claude/settings.json "$HOME/.claude/settings.json"
-deploy "$agents_md" "$HOME/.claude/CLAUDE.md"
 deploy config/claude/hooks "$HOME/.claude/hooks"
 deploy config/claude/statusline.sh "$HOME/.claude/statusline.sh"
 deploy config/claude/claude-hud.json "$HOME/.claude/claude-hud.json"
 merge_config config/codex/config.toml "$HOME/.codex/config.toml"
 merge_config config/codex/hooks.json "$HOME/.codex/hooks.json"
-deploy "$agents_md" "$HOME/.codex/AGENTS.md"
 deploy config/codex/hooks "$HOME/.codex/hooks"
 merge_config config/agy/hooks.json "$HOME/.gemini/config/hooks.json"
-deploy "$agents_md" "$HOME/.gemini/GEMINI.md"
-deploy "$agents_md" "$HOME/.gemini/config/GEMINI.md"
 deploy config/agy/hooks "$HOME/.gemini/hooks"
 merge_config config/herdr/config.toml "$HOME/.config/herdr/config.toml"
 deploy config/tmux/tmux.linux.conf "$HOME/.tmux.conf"
