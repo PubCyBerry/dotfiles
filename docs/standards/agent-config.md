@@ -3,7 +3,6 @@ type: Standard
 title: 에이전트 설정
 description: 에이전트별 설정과 hook을 모든 에이전트에서 같은 동작으로 유지하는 규칙을 정한다.
 scope:
-  - "config/agents/**"
   - "config/claude/**"
   - "config/codex/**"
   - "config/agy/**"
@@ -18,7 +17,7 @@ generated: { by: claude-code/claude-opus-5-5, at: 2026-11-03T00:19:10+09:00 }
 
 ## 지침 파일
 
-- 전역 지침의 원본은 `config/agents/global.md` 하나다. install이 이 파일을 각 에이전트의 전역 지침 위치로 복사한다. 에이전트별 지침 파일을 따로 만들지 않는다.
+- install은 전역 지침 파일(`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`)을 배포하지 않는다. 그 파일은 사용자가 머신마다 관리한다.
 - 이 저장소에서만 지킬 규칙은 전역 지침이 아니라 `docs/standards/`에 쓴다. 전역 지침은 모든 프로젝트에 들어간다.
 - 저장소의 진입점은 `AGENTS.md` 하나다. 규칙은 [파일 이름과 위치](metadata.md#파일-이름과-위치)에 있다.
 

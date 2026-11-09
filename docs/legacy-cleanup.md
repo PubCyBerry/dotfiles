@@ -47,6 +47,7 @@ description: "#10 이전 install로 설치한 머신의 잔재를 정리하는 �
 | rhwp | `~/rhwp`, MCP 등록 3곳 | 바로 정리: `claude mcp remove rhwp -s user`, `codex mcp remove rhwp`, `~/.gemini/config/mcp_config.json`에서 `.mcpServers.rhwp` 삭제. command가 `rhwp` 디렉터리를 가리키는 등록만 지운다 |
 | 예전 로컬 skill 사본 | `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 실제 디렉터리 | 바로 정리. 심볼릭 링크면 다른 도구 소유이므로 둔다. `~/.claude/skills`의 같은 이름은 새 install이 덮어쓰므로 둔다 |
 | Neovim yazi 플러그인 | `lua/plugins/yazi.lua` (Windows `%LOCALAPPDATA%\nvim`, Unix `~/.config/nvim`) | 바로 정리. 새 install은 남은 파일을 지우지 않는다 |
+| 빈 전역 지침 파일 | `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.gemini/config/GEMINI.md` 중 크기가 0바이트인 파일 | 바로 정리. 예전 install이 빈 `config/agents/global.md`를 복사한 것이다. #10 이후 설치본에도 남아 있다. 내용이 있는 파일은 사용자 것이므로 둔다 |
 | 백업 파일 | `~/.claude`, `~/.codex`, `~/.gemini`, `~/.tmux.conf`, herdr·yazi·nvim 설정 디렉터리의 `*.dotfiles-backup`, `*.dotfiles-backup.<숫자>` | 바로 정리. 예전 install이 덮어쓰기 전 원본을 남긴 것이고 쓰는 곳이 없다 |
 
 새 install은 기존 값이 이기는 병합이라, 아래 옛 값이 남아 있으면 고쳐지지 않는다. 해당하면 jq·yq로 고친 뒤 결과가 올바른 JSON·TOML인지 확인하고 같은 파일에 쓴다(BOM 없는 UTF-8).

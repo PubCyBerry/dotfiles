@@ -16,7 +16,6 @@ install은 여러 번 실행해도 된다. 실행할 때마다 패키지 매니�
 | `install.sh` | macOS와 Linux install 스크립트 |
 | `manifests/` | 패키지 목록. 파일마다 첫머리 주석에 형식과 설치 방법이 있다 |
 | `config/` | 배포할 설정 파일의 원본. 도구별 디렉터리로 나뉜다 |
-| `config/agents/global.md` | 모든 에이전트에 배포하는 전역 지침의 원본 |
 | `config/bash/` | Git Bash와 Linux의 bash 프로파일 |
 | `config/zsh/` | macOS의 zsh 프로파일 |
 | `config/powershell/` | Windows의 PowerShell 프로파일 |
