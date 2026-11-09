@@ -37,4 +37,4 @@ okf_version: "0.2"
 * [INSTALL.md](../INSTALL.md) - 에이전트가 사용자 대신 전제 조건을 확인하고 install을 실행해 결과를 보고하는 절차다.
 * [ARCHITECTURE.md](../ARCHITECTURE.md) - 저장소 구조, 설치 단계, 배포 방식, 도구별 동작을 설명한다.
 * [SECURITY.md](../SECURITY.md) - 취약점 보고 방법과 비밀 정보, 외부 코드, 권한 설정의 기준을 정한다.
-* [README.md](../README.md) - 지원 환경, 설치 방법, 참고 자료를 안내한다.
+* [README.md](../README.md) - 지원 환경, 설치 목록, 설치 방법을 안내한다.
