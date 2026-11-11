@@ -16,6 +16,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "cleanupPeriodDays": 3650,
   "includeCoAuthoredBy": false,
   "attribution": {
     "commit": "",
