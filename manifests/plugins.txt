@@ -3,5 +3,5 @@
 
 openai/codex-plugin-cc    codex@openai-codex            # Claude Code 안에서 Codex 사용
 jarrodwatts/claude-hud    claude-hud@claude-hud         # statusline 왼쪽 (config/claude/statusline.sh)
-snflkd/fluent-korean      fluent-korean@fluent-korean   # 한국어 출력 스타일 (settings.json의 outputStyle)
+https://git.k9714.dev/kth7186/fluent-output.git   fluent-output@fluent-output   # 출력 스타일 (settings.json의 outputStyle)
 DietrichGebert/ponytail   ponytail@ponytail             # YAGNI 모드
