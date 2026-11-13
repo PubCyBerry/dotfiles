@@ -62,7 +62,7 @@ Claude Code에는 플러그인([`manifests/plugins.txt`](manifests/plugins.txt))
 | 셸 프로파일 | fnm, zoxide, starship, fzf 초기화. `ls`, `ll`, `lt`를 eza로, `cat`을 bat으로 연결 |
 | git | delta pager, Neovim 편집기, 한글 파일명 그대로 표시, 기본 브랜치 `main`, `zdiff3` 충돌 표시 |
 | tmux | 마우스, truecolor, Neovim과 Claude Code에 맞춘 키 입력 설정 |
-| Claude Code | 현재 시각 주입 hook, statusline(claude-hud와 ccusage), 한국어 출력 스타일, 커밋 서명 끄기 |
+| Claude Code | 현재 시각 주입 hook, statusline(claude-hud와 ccusage), 출력 스타일, 커밋 서명 끄기 |
 | Codex, Antigravity | 현재 시각 주입 hook |
 | herdr, starship | 각 도구의 설정 파일 |
 
@@ -78,7 +78,7 @@ install을 다시 실행할 때 직접 바꾼 설정이 남는지는 파일마�
 # 1. PowerShell 7 설치
 winget install --id Microsoft.PowerShell --exact
 
-# 2. 저장소 클론 후 실행 (pwsh, 관리자 권한이면 설치 중 UAC 창이 뜨지 않는다)
+# 2. 저장소 클론 후 실행 (pwsh, 관리자 권한이면 설치 중 UAC 창 없음)
 git clone https://github.com/PubCyBerry/dotfiles.git $env:USERPROFILE\dotfiles
 pwsh -ExecutionPolicy Bypass -File $env:USERPROFILE\dotfiles\install.ps1
 
@@ -102,7 +102,7 @@ bash ~/dotfiles/install.sh
 git config --global user.name "Your Name"
 git config --global user.email "your@email.com"
 
-# 3. (macOS, 선택) 시스템 기본값 적용. Finder와 Dock이 재시작된다
+# 3. (macOS, 선택) 시스템 기본값 적용. Finder와 Dock 재시작
 bash ~/dotfiles/config/macos/.macos
 ```
 
