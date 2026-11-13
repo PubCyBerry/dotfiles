@@ -11,7 +11,7 @@
     "CLAUDE_CODE_SUPPRESS_SESSION_ATTRIBUTION": "1"
   },
   "language": "한국어",
-  "outputStyle": "fluent-korean:fluent-korean",
+  "outputStyle": "fluent-output:fluent-output",
   "remoteControlAtStartup": true,
   "permissions": {
     "defaultMode": "auto"

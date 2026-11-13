@@ -52,7 +52,7 @@ Windows 11, macOS, Ubuntu에서 같은 터미널 환경과 AI 코딩 에이전�
 
 Claude Code에는 플러그인([`manifests/plugins.txt`](manifests/plugins.txt))과 skill([`manifests/skills.txt`](manifests/skills.txt))도 설치한다.
 
-- 플러그인: Codex 연동(codex), statusline(claude-hud), 한국어 출력 스타일(fluent-korean), YAGNI 모드(ponytail)
+- 플러그인: Codex 연동(codex), statusline(claude-hud), 출력 스타일(fluent-output), YAGNI 모드(ponytail)
 - skill: 문서 파일 처리(pdf, docx, pptx, xlsx), skill과 subagent 작성(skill-creator, subagent-creator), 저장소 스캐폴딩(repo-scaffold), herdr 제어(herdr)
 
 ### 설정
