@@ -2,6 +2,7 @@
 type: Playbook
 title: 구버전 설치 잔재 정리 (에이전트용 프롬프트)
 description: "#10 이전 install로 설치한 머신의 잔재를 정리하는 에이전트용 임시 절차로, 정리할 머신이 남지 않으면 지운다."
+generated: { by: claude-code/claude-fable-5-2, at: 2026-11-13T14:01:27+09:00 }
 ---
 
 # 구버전 설치 잔재 정리 (에이전트용 프롬프트)
@@ -43,6 +44,7 @@ description: "#10 이전 install로 설치한 머신의 잔재를 정리하는 �
 | 항목 | 확인 | 처리 |
 |---|---|---|
 | caveman 플러그인 | `claude plugin list`에 `caveman@caveman` | 바로 정리: `claude plugin uninstall caveman@caveman --scope user`, `claude plugin marketplace remove caveman`, `~/.claude/.caveman-*`, `~/.claude/plugins/cache/caveman` |
+| fluent-korean 플러그인 | `claude plugin list`에 `fluent-korean@fluent-korean`, `~/.claude/plugins/cache/fluent-korean` | 바로 정리: `claude plugin uninstall fluent-korean@fluent-korean --scope user`, `claude plugin marketplace remove fluent-korean`, `~/.claude/plugins/cache/fluent-korean`. #10 이후 설치본에도 남아 있다. 새 install이 대신 `fluent-output` 플러그인을 설치한다 |
 | agent role 3종 | `~/.claude/agents/{planner,generator,evaluator}.md`, `~/.codex/agents/{planner,generator,evaluator}.toml`, `~/.codex/skills/{planner,generator,evaluator}/` | 바로 정리. 디렉터리가 비면 디렉터리도 지운다. 다른 이름의 agent는 사용자 것이므로 둔다 |
 | rhwp | `~/rhwp`, MCP 등록 3곳 | 바로 정리: `claude mcp remove rhwp -s user`, `codex mcp remove rhwp`, `~/.gemini/config/mcp_config.json`에서 `.mcpServers.rhwp` 삭제. command가 `rhwp` 디렉터리를 가리키는 등록만 지운다 |
 | 예전 로컬 skill 사본 | `~/.gemini/config/skills/{subagent-creator,repo-scaffold}`가 실제 디렉터리 | 바로 정리. 심볼릭 링크면 다른 도구 소유이므로 둔다. `~/.claude/skills`의 같은 이름은 새 install이 덮어쓰므로 둔다 |
@@ -52,10 +54,11 @@ description: "#10 이전 install로 설치한 머신의 잔재를 정리하는 �
 
 새 install은 기존 값이 이기는 병합이라, 아래 옛 값이 남아 있으면 고쳐지지 않는다. 해당하면 jq·yq로 고친 뒤 결과가 올바른 JSON·TOML인지 확인하고 같은 파일에 쓴다(BOM 없는 UTF-8).
 
-- `~/.claude/settings.json`, `~/.codex/hooks.json`: 예전 statusLine 명령(`claude-hud`를 포함하거나 정확히 `ccusage statusline`), 예전 환경변수 `CLAUDE_CODE_SUBAGENT_MODEL`, `SessionStart`에 남은 `temporal-context.sh` hook(지금은 `UserPromptSubmit`에서 돈다)을 지운다. 다른 hook(Orca 등)과 사용자가 만든 statusLine은 둔다.
+- `~/.claude/settings.json`, `~/.codex/hooks.json`: 예전 statusLine 명령(`claude-hud`를 포함하거나 정확히 `ccusage statusline`), 예전 환경변수 `CLAUDE_CODE_SUBAGENT_MODEL`, `SessionStart`에 남은 `temporal-context.sh` hook(지금은 `UserPromptSubmit`에서 돈다)을 지운다. `outputStyle`이 `fluent-korean:fluent-korean`이면 `fluent-output:fluent-output`으로 바꾼다. 다른 hook(Orca 등)과 사용자가 만든 statusLine, 다른 값의 `outputStyle`은 둔다.
 
   ```bash
-  jq 'if ((.statusLine.command // "") | contains("claude-hud") or . == "ccusage statusline") then del(.statusLine) else . end
+  jq 'if .outputStyle == "fluent-korean:fluent-korean" then .outputStyle = "fluent-output:fluent-output" else . end
+    | if ((.statusLine.command // "") | contains("claude-hud") or . == "ccusage statusline") then del(.statusLine) else . end
     | del(.env.CLAUDE_CODE_SUBAGENT_MODEL)
     | if .hooks.SessionStart then
         .hooks.SessionStart |= (map(.hooks |= map(select((.command // "") | contains("temporal-context.sh") | not))) | map(select(.hooks | length > 0)))
