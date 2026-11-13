@@ -8,7 +8,7 @@ sources:
   - id: conventional-commits
     resource: https://www.conventionalcommits.org/ko/v1.0.0/
     title: Conventional Commits 1.0.0
-generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:11:08+09:00 }
+generated: { by: claude-code/claude-fable-5-2, at: 2026-11-13T13:43:05+09:00 }
 ---
 
 # 커밋 규칙
@@ -27,7 +27,8 @@ generated: { by: claude-code/claude-opus-5-5, at: 2026-11-07T21:11:08+09:00 }
 - 제목은 한 줄로 쓰고 명사형(`추가`, `제거`, `수정`, `변경`)으로 끝낸다. 마침표를 찍지 않는다.
   - `fix(bash): Windows PATH에서 쪼개진 경로 조각 제거`
   - `feat(manifests): 모든 플랫폼 매니페스트에 prek 추가`
-- 본문에는 무엇을 왜 바꿨는지 `~한다`체로 쓴다. 제목만으로 충분하면 생략한다.
+- 본문에는 무엇을 바꿨는지 쓴다. 문체는 [문체](writing-style.md#문체)에 정한 커밋 본문 규칙을 따른다. 제목만으로 충분하면 생략한다.
+- 바꾼 이유는 읽는 사람이 변경을 판단하는 데 필요할 때만 쓴다. 이 저장소에서 무엇이 바뀌는지와 관계없는 배경은 쓰지 않는다.
 - 커밋 하나에는 논리적인 변경 하나를 담는다.
 - 기존 설치본에 수동 조치가 필요하면 본문에 조치 방법을 쓴다. 병합 대상 파일의 기존 키 값을 바꾼 경우와 도구를 제거한 경우가 해당한다. 병합 동작은 [병합 대상 파일](installer.md#병합-대상-파일)에 있다.
 
