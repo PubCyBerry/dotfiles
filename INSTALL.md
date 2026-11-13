@@ -26,7 +26,7 @@ OS별 전제 조건을 확인한다. 충족하지 않으면 실행하지 않고 
 
 이어서 다음을 확인하고, 해당하면 사용자에게 알린다.
 
-- 예전 버전 설치본: [docs/legacy-cleanup.md](docs/legacy-cleanup.md)의 준비 절에 있는 설치 기록(receipt)이 있으면, 그 문서를 먼저 수행할지 묻는다.
+- 예전 버전 설치본: [docs/legacy-cleanup.md](docs/legacy-cleanup.md)의 준비 절에 있는 설치 기록(receipt)이 있거나 `claude plugin list`에 `fluent-korean@fluent-korean`이 있으면, 그 문서를 먼저 수행할지 묻는다.
 - Windows에서 Git Bash 창이나 tmux가 떠 있으면 Git과 psmux 업그레이드가 실패할 수 있다([이슈 #19](https://github.com/PubCyBerry/dotfiles/issues/19)). 사용자에게 닫을 수 있는지 묻고, 닫지 않으면 그 실패를 감수하고 진행한다.
 - Windows에서는 설치 중 UAC 창이 뜰 수 있고, 사용자가 승인해야 진행된다. 언제 뜨지 않는지는 `README.md`의 Quickstart 주석에 있다.
 
