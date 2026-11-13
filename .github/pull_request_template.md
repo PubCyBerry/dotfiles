@@ -1,6 +1,6 @@
 ## 요약
 
-<!-- 무엇을 왜 바꿨는지 두세 문장으로 쓴다. -->
+<!-- 무엇을 바꿨는지 `~합니다`체로 한두 문장 쓴다. 아래 절의 항목은 개조식으로 쓴다. -->
 
 ## 관련 이슈
 
@@ -18,6 +18,6 @@
 
 ## 점검
 
-- [ ] PR 제목과 커밋 메시지가 `docs/standards/commit-convention.md`를 따른다
-- [ ] 바꾼 파일에 해당하는 규칙 문서의 "함께 고칠 곳"을 확인했다
-- [ ] 문서를 바꿨으면 front matter와 `docs/index.md`를 함께 고쳤다
+- [ ] PR 제목과 커밋 메시지의 `docs/standards/commit-convention.md` 준수
+- [ ] 바꾼 파일에 해당하는 규칙 문서의 "함께 고칠 곳" 확인
+- [ ] 문서를 바꿨으면 front matter와 `docs/index.md`도 함께 수정
