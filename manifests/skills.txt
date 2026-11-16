@@ -7,6 +7,5 @@ anthropics/skills@pdf
 anthropics/skills@pptx
 anthropics/skills@docx
 anthropics/skills@xlsx
-PubCyBerry/subagent-creator@subagent-creator
 PubCyBerry/repo-scaffold@repo-scaffold
 herdrdev/herdr@herdr
